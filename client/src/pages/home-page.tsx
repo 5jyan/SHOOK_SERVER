@@ -14,35 +14,71 @@ import {
   CheckCircle,
   Clock,
   Bot,
-  LogOut
+  LogOut,
+  Loader2
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Channel } from "@shared/schema";
 
 export default function HomePage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [channelHandle, setChannelHandle] = useState("");
   const [slackEmail, setSlackEmail] = useState("");
-  const [channels, setChannels] = useState([
-    {
-      id: "1",
-      title: "이종범의 스토리캠프",
-      handle: "@storycamper",
-      subscriberCount: "3.5만",
-      videoCount: "103",
-      thumbnail: "house"
-    },
-    {
-      id: "2", 
-      title: "슈카월드",
-      handle: "@syukaworld",
-      subscriberCount: "4.5만",
-      videoCount: "359",
-      thumbnail: "carrot"
-    }
-  ]);
   const [slackJoined, setSlackJoined] = useState(false);
+
+  // Query to get user's channels
+  const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<Channel[]>({
+    queryKey: ["/api/channels"],
+    enabled: !!user,
+  });
+
+  // Mutation to add a new channel
+  const addChannelMutation = useMutation({
+    mutationFn: async (handle: string) => {
+      const res = await apiRequest("POST", "/api/channels", { handle });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      toast({
+        title: "성공",
+        description: "채널이 성공적으로 추가되었습니다."
+      });
+      setChannelHandle("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive"
+      });
+    },
+  });
+
+  // Mutation to delete a channel
+  const deleteChannelMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      await apiRequest("DELETE", `/api/channels/${channelId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      toast({
+        title: "성공",
+        description: "채널이 삭제되었습니다."
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive"
+      });
+    },
+  });
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -58,20 +94,11 @@ export default function HomePage() {
       return;
     }
     
-    // TODO: Implement YouTube API integration
-    toast({
-      title: "성공",
-      description: "채널이 성공적으로 추가되었습니다."
-    });
-    setChannelHandle("");
+    addChannelMutation.mutate(channelHandle);
   };
 
   const handleRemoveChannel = (channelId: string) => {
-    setChannels(channels.filter(channel => channel.id !== channelId));
-    toast({
-      title: "성공", 
-      description: "채널이 삭제되었습니다."
-    });
+    deleteChannelMutation.mutate(channelId);
   };
 
   const handleSlackInvite = () => {
@@ -156,46 +183,71 @@ export default function HomePage() {
               </div>
               <Button 
                 onClick={handleAddChannel}
+                disabled={addChannelMutation.isPending}
                 className="bg-slate-900 hover:bg-slate-800 text-white whitespace-nowrap"
               >
-                <Plus className="w-4 h-4 mr-2" />
+                {addChannelMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
                 채널 추가
               </Button>
             </div>
 
             {/* Channel List */}
             <div className="space-y-3">
-              {channels.map((channel) => (
-                <div key={channel.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="flex items-center space-x-4">
-                    {getThumbnailIcon(channel.thumbnail)}
-                    <div>
-                      <h4 className="font-medium text-slate-900">{channel.title}</h4>
-                      <p className="text-sm text-slate-500 flex items-center gap-2">
-                        <span>{channel.handle}</span>
-                        <span>·</span>
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          구독자 {channel.subscriberCount}
-                        </span>
-                        <span>·</span>
-                        <span className="flex items-center gap-1">
-                          <Video className="w-3 h-3" />
-                          동영상 {channel.videoCount}개
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                  <Button 
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleRemoveChannel(channel.id)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    삭제
-                  </Button>
+              {channelsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-600" />
+                  <span className="ml-2 text-slate-600">채널을 불러오는 중...</span>
                 </div>
-              ))}
+              ) : channels.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Youtube className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                  <p>아직 추가된 채널이 없습니다.</p>
+                  <p className="text-sm">위에서 YouTube 채널을 추가해보세요.</p>
+                </div>
+              ) : (
+                channels.map((channel) => (
+                  <div key={channel.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+                        <Youtube className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-slate-900">{channel.title}</h4>
+                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                          <span>{channel.handle}</span>
+                          <span>·</span>
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            구독자 {parseInt(channel.subscriberCount || "0").toLocaleString()}명
+                          </span>
+                          <span>·</span>
+                          <span className="flex items-center gap-1">
+                            <Video className="w-3 h-3" />
+                            동영상 {parseInt(channel.videoCount || "0").toLocaleString()}개
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="destructive"
+                      size="sm"
+                      disabled={deleteChannelMutation.isPending}
+                      onClick={() => handleRemoveChannel(channel.channelId)}
+                    >
+                      {deleteChannelMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4 mr-2" />
+                      )}
+                      삭제
+                    </Button>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -274,7 +326,9 @@ export default function HomePage() {
               <div className={`w-8 h-8 ${channels.length > 0 ? 'bg-green-500' : 'bg-gray-300'} rounded-full flex items-center justify-center mx-auto mb-2`}>
                 <CheckCircle className="text-white w-4 h-4" />
               </div>
-              <p className="text-sm font-medium text-slate-900">채널 등록됨</p>
+              <p className="text-sm font-medium text-slate-900">
+                채널 등록됨 ({channels.length}개)
+              </p>
             </div>
             
             <div className="text-center">
