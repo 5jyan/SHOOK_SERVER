@@ -32,8 +32,9 @@ export default function HomePage() {
 
   // Query to get user's channels
   const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>({
-    queryKey: ["/api/channels"],
+    queryKey: ["/api/channels", user?.id],
     enabled: !!user,
+    staleTime: 0, // 캐시를 즉시 만료시켜 항상 최신 데이터 가져오기
   });
 
   // Mutation to add a new channel
@@ -43,7 +44,7 @@ export default function HomePage() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id] });
       toast({
         title: "성공",
         description: "채널이 성공적으로 추가되었습니다."
@@ -65,7 +66,7 @@ export default function HomePage() {
       await apiRequest("DELETE", `/api/channels/${channelId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id] });
       toast({
         title: "성공",
         description: "채널이 삭제되었습니다."

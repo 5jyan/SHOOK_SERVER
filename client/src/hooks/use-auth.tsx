@@ -42,7 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return await res.json();
     },
     onSuccess: (user: SelectUser) => {
+      // 이전 사용자 데이터를 모두 지우고 새 사용자 데이터 설정
+      queryClient.clear();
       queryClient.setQueryData(["/api/user"], user);
+      // 새 사용자의 데이터를 다시 가져오기 위해 무효화
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
     },
     onError: (error: Error) => {
       toast({
@@ -76,6 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      // 모든 캐시를 무효화하여 다른 사용자 데이터가 남지 않도록 함
+      queryClient.invalidateQueries();
+      queryClient.clear();
     },
     onError: (error: Error) => {
       toast({
