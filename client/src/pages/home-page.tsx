@@ -1,0 +1,299 @@
+import { useAuth } from "@/hooks/use-auth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { 
+  Youtube, 
+  Users, 
+  Video, 
+  Trash2, 
+  Plus,
+  Mail,
+  Send,
+  CheckCircle,
+  Clock,
+  Bot,
+  LogOut
+} from "lucide-react";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+
+export default function HomePage() {
+  const { user, logoutMutation } = useAuth();
+  const { toast } = useToast();
+  const [channelHandle, setChannelHandle] = useState("");
+  const [slackEmail, setSlackEmail] = useState("");
+  const [channels, setChannels] = useState([
+    {
+      id: "1",
+      title: "이종범의 스토리캠프",
+      handle: "@storycamper",
+      subscriberCount: "3.5만",
+      videoCount: "103",
+      thumbnail: "house"
+    },
+    {
+      id: "2", 
+      title: "슈카월드",
+      handle: "@syukaworld",
+      subscriberCount: "4.5만",
+      videoCount: "359",
+      thumbnail: "carrot"
+    }
+  ]);
+  const [slackJoined, setSlackJoined] = useState(false);
+
+  const handleLogout = () => {
+    logoutMutation.mutate();
+  };
+
+  const handleAddChannel = () => {
+    if (!channelHandle.startsWith('@')) {
+      toast({
+        title: "오류",
+        description: "채널 핸들러는 @로 시작해야 합니다.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // TODO: Implement YouTube API integration
+    toast({
+      title: "성공",
+      description: "채널이 성공적으로 추가되었습니다."
+    });
+    setChannelHandle("");
+  };
+
+  const handleRemoveChannel = (channelId: string) => {
+    setChannels(channels.filter(channel => channel.id !== channelId));
+    toast({
+      title: "성공", 
+      description: "채널이 삭제되었습니다."
+    });
+  };
+
+  const handleSlackInvite = () => {
+    if (!slackEmail || !slackEmail.includes('@')) {
+      toast({
+        title: "오류",
+        description: "올바른 이메일 주소를 입력해주세요.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // TODO: Implement Slack API invitation
+    toast({
+      title: "성공",
+      description: "Slack 초대가 발송되었습니다."
+    });
+  };
+
+  const getThumbnailIcon = (type: string) => {
+    switch(type) {
+      case "house": return <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center"><div className="w-6 h-6 bg-white" style={{clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)"}}></div></div>;
+      case "carrot": return <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center"><div className="w-4 h-8 bg-orange-600 rounded-full"></div></div>;
+      default: return <div className="w-12 h-12 bg-gray-400 rounded-lg flex items-center justify-center"><Youtube className="w-6 h-6 text-white" /></div>;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-slate-900">Roving Through</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-slate-600">{user?.username}님</span>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={handleLogout}
+                disabled={logoutMutation.isPending}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                로그아웃
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Service Title */}
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">
+            YouTube 영상이 올라오면<br />
+            요약본을 Slack으로 받아보세요
+          </h2>
+          <p className="text-slate-600 text-lg">좋아하는 채널의 새로운 영상을 놓치지 마세요</p>
+        </div>
+
+        {/* YouTube Channel Manager */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Youtube className="w-5 h-5 text-red-600" />
+              YouTube 채널 관리
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Channel Add Form */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  placeholder="@로시작하는 유튜브 채널ID 입력"
+                  value={channelHandle}
+                  onChange={(e) => setChannelHandle(e.target.value)}
+                />
+              </div>
+              <Button 
+                onClick={handleAddChannel}
+                className="bg-slate-900 hover:bg-slate-800 text-white whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                채널 추가
+              </Button>
+            </div>
+
+            {/* Channel List */}
+            <div className="space-y-3">
+              {channels.map((channel) => (
+                <div key={channel.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center space-x-4">
+                    {getThumbnailIcon(channel.thumbnail)}
+                    <div>
+                      <h4 className="font-medium text-slate-900">{channel.title}</h4>
+                      <p className="text-sm text-slate-500 flex items-center gap-2">
+                        <span>{channel.handle}</span>
+                        <span>·</span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          구독자 {channel.subscriberCount}
+                        </span>
+                        <span>·</span>
+                        <span className="flex items-center gap-1">
+                          <Video className="w-3 h-3" />
+                          동영상 {channel.videoCount}개
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleRemoveChannel(channel.id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    삭제
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Slack Integration */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <div className="w-5 h-5 bg-purple-600 rounded flex items-center justify-center">
+                <div className="w-3 h-3 bg-white rounded-sm"></div>
+              </div>
+              Slack 연동
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!slackJoined ? (
+              <>
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  <div className="flex-1">
+                    <Input
+                      type="email"
+                      placeholder="슬랙 e-mail 주소를 입력하세요"
+                      value={slackEmail}
+                      onChange={(e) => setSlackEmail(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    onClick={handleSlackInvite}
+                    className="bg-slate-800 hover:bg-slate-900 text-white whitespace-nowrap"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    초대 발송
+                  </Button>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
+                    <div className="text-sm text-blue-700">
+                      <p className="font-medium mb-1">e-mail로 초대 발송이 요청되었습니다.</p>
+                      <p>e-mail을 확인하시고 초대를 승인해주세요</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <CheckCircle className="text-green-500 mr-3 w-5 h-5" />
+                  <div className="text-sm text-green-700">
+                    <p className="font-medium">Slack 워크스페이스에 성공적으로 참여했습니다!</p>
+                    <p>이제 새로운 YouTube 영상 요약을 받아보실 수 있습니다.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Service Status */}
+        <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
+          <div className="flex items-center mb-4">
+            <Bot className="text-blue-600 text-xl mr-3 w-6 h-6" />
+            <h3 className="text-lg font-semibold text-slate-900">자동화 상태</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                <CheckCircle className="text-white w-4 h-4" />
+              </div>
+              <p className="text-sm font-medium text-slate-900">로그인 완료</p>
+            </div>
+            
+            <div className="text-center">
+              <div className={`w-8 h-8 ${channels.length > 0 ? 'bg-green-500' : 'bg-gray-300'} rounded-full flex items-center justify-center mx-auto mb-2`}>
+                <CheckCircle className="text-white w-4 h-4" />
+              </div>
+              <p className="text-sm font-medium text-slate-900">채널 등록됨</p>
+            </div>
+            
+            <div className="text-center">
+              <div className={`w-8 h-8 ${slackJoined ? 'bg-green-500' : 'bg-yellow-500'} rounded-full flex items-center justify-center mx-auto mb-2`}>
+                {slackJoined ? <CheckCircle className="text-white w-4 h-4" /> : <Clock className="text-white w-4 h-4" />}
+              </div>
+              <p className="text-sm font-medium text-slate-900">
+                {slackJoined ? 'Slack 연동 완료' : 'Slack 연동 대기'}
+              </p>
+            </div>
+          </div>
+          
+          <div className="mt-4 text-center">
+            <p className="text-sm text-slate-600">
+              모든 단계가 완료되면 10분마다 새로운 영상을 자동으로 확인합니다.
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
