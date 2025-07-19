@@ -212,8 +212,33 @@ export default function HomePage() {
                 channels.map((channel) => (
                   <div key={channel.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center">
-                        <Youtube className="w-6 h-6 text-white" />
+                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0 shadow-sm">
+                        {channel.thumbnail ? (
+                          <img 
+                            src={channel.thumbnail} 
+                            alt={`${channel.title} 썸네일`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // 이미지 로딩 실패 시 기본 아이콘으로 대체
+                              const target = e.target as HTMLElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                parent.innerHTML = `
+                                  <div class="w-full h-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                                    </svg>
+                                  </div>
+                                `;
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                            <Youtube className="w-6 h-6 text-white" />
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h4 className="font-medium text-slate-900">{channel.title}</h4>
