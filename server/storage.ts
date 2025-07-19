@@ -24,6 +24,7 @@ export interface IStorage {
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
+  getYoutubeChannelByHandle(handle: string): Promise<YoutubeChannel | undefined>;
   createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel>;
   
   // User Channel subscription methods
@@ -65,6 +66,11 @@ export class DatabaseStorage implements IStorage {
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
+    return channel || undefined;
+  }
+
+  async getYoutubeChannelByHandle(handle: string): Promise<YoutubeChannel | undefined> {
+    const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.handle, handle));
     return channel || undefined;
   }
 
