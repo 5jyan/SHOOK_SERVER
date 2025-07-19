@@ -21,7 +21,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Channel } from "@shared/schema";
+import type { YoutubeChannel } from "@shared/schema";
 
 export default function HomePage() {
   const { user, logoutMutation } = useAuth();
@@ -31,7 +31,7 @@ export default function HomePage() {
   const [slackJoined, setSlackJoined] = useState(false);
 
   // Query to get user's channels
-  const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<Channel[]>({
+  const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>({
     queryKey: ["/api/channels"],
     enabled: !!user,
   });

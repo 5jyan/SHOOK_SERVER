@@ -1,4 +1,14 @@
-import { users, channels, type User, type InsertUser, type Channel, type InsertChannel } from "@shared/schema";
+import { 
+  users, 
+  youtubeChannels, 
+  userChannels,
+  type User, 
+  type InsertUser, 
+  type YoutubeChannel, 
+  type InsertYoutubeChannel,
+  type UserChannel,
+  type InsertUserChannel
+} from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import session from "express-session";
@@ -12,11 +22,15 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   
-  // Channel methods
-  getUserChannels(userId: number): Promise<Channel[]>;
-  getChannelByChannelId(channelId: string): Promise<Channel | undefined>;
-  createChannel(channel: InsertChannel): Promise<Channel>;
-  deleteChannel(channelId: string, userId: number): Promise<void>;
+  // YouTube Channel methods
+  getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
+  createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel>;
+  
+  // User Channel subscription methods
+  getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>;
+  isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean>;
+  subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel>;
+  unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void>;
   
   sessionStore: session.Store;
 }
@@ -49,28 +63,82 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getUserChannels(userId: number): Promise<Channel[]> {
-    return await db.select().from(channels).where(eq(channels.userId, userId));
-  }
-
-  async getChannelByChannelId(channelId: string): Promise<Channel | undefined> {
-    const [channel] = await db.select().from(channels).where(eq(channels.channelId, channelId));
+  async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
+    const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
     return channel || undefined;
   }
 
-  async createChannel(channel: InsertChannel): Promise<Channel> {
-    const [newChannel] = await db
-      .insert(channels)
-      .values(channel)
-      .returning();
-    return newChannel;
+  async createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel> {
+    const existingChannel = await this.getYoutubeChannel(channel.channelId);
+    
+    if (existingChannel) {
+      // Update existing channel
+      const [updatedChannel] = await db
+        .update(youtubeChannels)
+        .set({
+          ...channel,
+          updatedAt: new Date()
+        })
+        .where(eq(youtubeChannels.channelId, channel.channelId))
+        .returning();
+      return updatedChannel;
+    } else {
+      // Create new channel
+      const [newChannel] = await db
+        .insert(youtubeChannels)
+        .values(channel)
+        .returning();
+      return newChannel;
+    }
   }
 
-  async deleteChannel(channelId: string, userId: number): Promise<void> {
-    await db.delete(channels).where(
+  async getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]> {
+    const result = await db
+      .select({
+        channelId: youtubeChannels.channelId,
+        handle: youtubeChannels.handle,
+        title: youtubeChannels.title,
+        description: youtubeChannels.description,
+        thumbnail: youtubeChannels.thumbnail,
+        subscriberCount: youtubeChannels.subscriberCount,
+        videoCount: youtubeChannels.videoCount,
+        updatedAt: youtubeChannels.updatedAt,
+        subscriptionId: userChannels.id,
+        subscribedAt: userChannels.createdAt
+      })
+      .from(userChannels)
+      .innerJoin(youtubeChannels, eq(userChannels.channelId, youtubeChannels.channelId))
+      .where(eq(userChannels.userId, userId));
+    
+    return result;
+  }
+
+  async isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean> {
+    const [subscription] = await db
+      .select()
+      .from(userChannels)
+      .where(and(
+        eq(userChannels.userId, userId),
+        eq(userChannels.channelId, channelId)
+      ));
+    
+    return !!subscription;
+  }
+
+  async subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel> {
+    const [subscription] = await db
+      .insert(userChannels)
+      .values({ userId, channelId })
+      .returning();
+    
+    return subscription;
+  }
+
+  async unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void> {
+    await db.delete(userChannels).where(
       and(
-        eq(channels.channelId, channelId),
-        eq(channels.userId, userId)
+        eq(userChannels.userId, userId),
+        eq(userChannels.channelId, channelId)
       )
     );
   }

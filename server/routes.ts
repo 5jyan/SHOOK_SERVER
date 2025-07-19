@@ -2,7 +2,6 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
-import { insertChannelSchema } from "@shared/schema";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -71,16 +70,15 @@ export function registerRoutes(app: Express): Server {
         videoCount: channelData.statistics.videoCount
       });
 
-      // Check if channel already exists
-      const existingChannel = await storage.getChannelByChannelId(channelData.id);
-      if (existingChannel) {
-        console.log(`[CHANNELS] Channel already exists: ${channelData.id}`);
+      // Check if user is already subscribed to this channel
+      const isSubscribed = await storage.isUserSubscribedToChannel(req.user.id, channelData.id);
+      if (isSubscribed) {
+        console.log(`[CHANNELS] User ${req.user.id} already subscribed to channel: ${channelData.id}`);
         return res.status(409).json({ error: "이미 추가된 채널입니다" });
       }
 
-      // Create channel record
-      const newChannel = await storage.createChannel({
-        userId: req.user.id,
+      // Create or update YouTube channel master data
+      const youtubeChannel = await storage.createOrUpdateYoutubeChannel({
         channelId: channelData.id,
         handle: handle,
         title: channelData.snippet.title,
@@ -90,8 +88,19 @@ export function registerRoutes(app: Express): Server {
         videoCount: channelData.statistics.videoCount || "0"
       });
 
-      console.log(`[CHANNELS] Successfully created channel record:`, newChannel);
-      res.status(201).json(newChannel);
+      // Subscribe user to the channel
+      const subscription = await storage.subscribeUserToChannel(req.user.id, channelData.id);
+
+      console.log(`[CHANNELS] Successfully subscribed user ${req.user.id} to channel ${channelData.id}:`, {
+        youtubeChannel,
+        subscription
+      });
+      
+      res.status(201).json({
+        ...youtubeChannel,
+        subscriptionId: subscription.id,
+        subscribedAt: subscription.createdAt
+      });
 
     } catch (error) {
       console.error("[CHANNELS] Error adding channel:", error);
@@ -106,15 +115,15 @@ export function registerRoutes(app: Express): Server {
 
     try {
       const { channelId } = req.params;
-      console.log(`[CHANNELS] Deleting channel ${channelId} for user ${req.user.id}`);
+      console.log(`[CHANNELS] Unsubscribing user ${req.user.id} from channel ${channelId}`);
       
-      await storage.deleteChannel(channelId, req.user.id);
-      console.log(`[CHANNELS] Successfully deleted channel ${channelId}`);
+      await storage.unsubscribeUserFromChannel(req.user.id, channelId);
+      console.log(`[CHANNELS] Successfully unsubscribed user ${req.user.id} from channel ${channelId}`);
       
-      res.status(200).json({ message: "Channel deleted successfully" });
+      res.status(200).json({ message: "Channel unsubscribed successfully" });
     } catch (error) {
-      console.error("[CHANNELS] Error deleting channel:", error);
-      res.status(500).json({ error: "Failed to delete channel" });
+      console.error("[CHANNELS] Error unsubscribing from channel:", error);
+      res.status(500).json({ error: "Failed to unsubscribe from channel" });
     }
   });
 

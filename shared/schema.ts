@@ -11,27 +11,42 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const channels = pgTable("channels", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  channelId: text("channel_id").notNull().unique(),
+// YouTube channel master data (shared across all users)
+export const youtubeChannels = pgTable("youtube_channels", {
+  channelId: text("channel_id").primaryKey(),
   handle: text("handle").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   thumbnail: text("thumbnail"),
   subscriberCount: text("subscriber_count"),
   videoCount: text("video_count"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User's subscribed channels (mapping table)
+export const userChannels = pgTable("user_channels", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  channelId: text("channel_id").notNull().references(() => youtubeChannels.channelId),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({
-  channels: many(channels),
+  userChannels: many(userChannels),
 }));
 
-export const channelsRelations = relations(channels, ({ one }) => ({
+export const youtubeChannelsRelations = relations(youtubeChannels, ({ many }) => ({
+  userChannels: many(userChannels),
+}));
+
+export const userChannelsRelations = relations(userChannels, ({ one }) => ({
   user: one(users, {
-    fields: [channels.userId],
+    fields: [userChannels.userId],
     references: [users.id],
+  }),
+  youtubeChannel: one(youtubeChannels, {
+    fields: [userChannels.channelId],
+    references: [youtubeChannels.channelId],
   }),
 }));
 
@@ -40,12 +55,18 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
 });
 
-export const insertChannelSchema = createInsertSchema(channels).omit({
+export const insertYoutubeChannelSchema = createInsertSchema(youtubeChannels).omit({
+  updatedAt: true,
+});
+
+export const insertUserChannelSchema = createInsertSchema(userChannels).omit({
   id: true,
   createdAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
-export type InsertChannel = z.infer<typeof insertChannelSchema>;
-export type Channel = typeof channels.$inferSelect;
+export type InsertYoutubeChannel = z.infer<typeof insertYoutubeChannelSchema>;
+export type YoutubeChannel = typeof youtubeChannels.$inferSelect;
+export type InsertUserChannel = z.infer<typeof insertUserChannelSchema>;
+export type UserChannel = typeof userChannels.$inferSelect;
