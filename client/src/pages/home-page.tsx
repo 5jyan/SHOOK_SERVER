@@ -93,7 +93,7 @@ export default function HomePage() {
       });
       return;
     }
-    
+
     addChannelMutation.mutate(channelHandle);
   };
 
@@ -110,7 +110,7 @@ export default function HomePage() {
       });
       return;
     }
-    
+
     // TODO: Implement Slack API invitation
     toast({
       title: "성공",
@@ -210,7 +210,7 @@ export default function HomePage() {
                 </div>
               ) : (
                 channels.map((channel) => (
-                  <div key={channel.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div key={channel.channelId} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <div className="flex items-center space-x-4">
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0 shadow-sm">
                         {channel.thumbnail ? (
@@ -307,7 +307,7 @@ export default function HomePage() {
                     초대 발송
                   </Button>
                 </div>
-                
+
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
@@ -338,7 +338,7 @@ export default function HomePage() {
             <Bot className="text-blue-600 text-xl mr-3 w-6 h-6" />
             <h3 className="text-lg font-semibold text-slate-900">자동화 상태</h3>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center">
               <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -346,7 +346,7 @@ export default function HomePage() {
               </div>
               <p className="text-sm font-medium text-slate-900">로그인 완료</p>
             </div>
-            
+
             <div className="text-center">
               <div className={`w-8 h-8 ${channels.length > 0 ? 'bg-green-500' : 'bg-gray-300'} rounded-full flex items-center justify-center mx-auto mb-2`}>
                 <CheckCircle className="text-white w-4 h-4" />
@@ -355,7 +355,7 @@ export default function HomePage() {
                 채널 등록됨 ({channels.length}개)
               </p>
             </div>
-            
+
             <div className="text-center">
               <div className={`w-8 h-8 ${slackJoined ? 'bg-green-500' : 'bg-yellow-500'} rounded-full flex items-center justify-center mx-auto mb-2`}>
                 {slackJoined ? <CheckCircle className="text-white w-4 h-4" /> : <Clock className="text-white w-4 h-4" />}
@@ -365,7 +365,7 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-          
+
           <div className="mt-4 text-center">
             <p className="text-sm text-slate-600">
               모든 단계가 완료되면 10분마다 새로운 영상을 자동으로 확인합니다.
