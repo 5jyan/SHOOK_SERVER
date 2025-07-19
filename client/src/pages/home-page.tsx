@@ -211,7 +211,7 @@ export default function HomePage() {
                 </div>
               ) : (
                 channels.map((channel) => (
-                  <div key={`${channel.channelId}-${channel.subscriptionId}`} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div key={channel.subscriptionId} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <div className="flex items-center space-x-4">
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0 shadow-sm">
                         {channel.thumbnail ? (
