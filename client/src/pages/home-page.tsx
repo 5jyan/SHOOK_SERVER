@@ -49,11 +49,16 @@ export default function HomePage() {
   // Mutation to add a new channel
   const addChannelMutation = useMutation({
     mutationFn: async (handle: string) => {
+      console.log(`[FRONTEND] Adding channel ${handle} for user ${user?.id}`);
       const res = await apiRequest("POST", "/api/channels", { handle });
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id] });
+      console.log(`[FRONTEND] Channel added successfully, invalidating queries for user ${user?.id}`);
+      // queryKey를 정확히 맞춰서 invalidate
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id?.toString()] });
+      // 채널 목록을 즉시 다시 가져오기
+      refetchChannels();
       toast({
         title: "성공",
         description: "채널이 성공적으로 추가되었습니다."
@@ -61,6 +66,7 @@ export default function HomePage() {
       setChannelHandle("");
     },
     onError: (error: Error) => {
+      console.error(`[FRONTEND] Error adding channel:`, error);
       toast({
         title: "오류",
         description: error.message,
@@ -72,16 +78,22 @@ export default function HomePage() {
   // Mutation to delete a channel
   const deleteChannelMutation = useMutation({
     mutationFn: async (channelId: string) => {
+      console.log(`[FRONTEND] Deleting channel ${channelId} for user ${user?.id}`);
       await apiRequest("DELETE", `/api/channels/${channelId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id] });
+      console.log(`[FRONTEND] Channel deleted successfully, invalidating queries for user ${user?.id}`);
+      // queryKey를 정확히 맞춰서 invalidate
+      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id?.toString()] });
+      // 채널 목록을 즉시 다시 가져오기
+      refetchChannels();
       toast({
         title: "성공",
         description: "채널이 삭제되었습니다."
       });
     },
     onError: (error: Error) => {
+      console.error(`[FRONTEND] Error deleting channel:`, error);
       toast({
         title: "오류",
         description: error.message,
