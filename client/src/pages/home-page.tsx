@@ -3,11 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Youtube, 
-  Users, 
-  Video, 
-  Trash2, 
+import {
+  Youtube,
+  Users,
+  Video,
+  Trash2,
   Plus,
   Mail,
   Send,
@@ -15,7 +15,7 @@ import {
   Clock,
   Bot,
   LogOut,
-  Loader2
+  Loader2,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -31,20 +31,34 @@ export default function HomePage() {
   const [slackJoined, setSlackJoined] = useState(false);
 
   // Query to get user's channels
-  const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>({
+  const {
+    data: channels = [],
+    isLoading: channelsLoading,
+    refetch: refetchChannels,
+  } = useQuery<
+    (YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]
+  >({
     queryKey: ["/api/channels", user?.id?.toString()],
     enabled: !!user,
     staleTime: 0, // 캐시를 즉시 만료시켜 항상 최신 데이터 가져오기
     onSuccess: (data) => {
-      console.log(`[FRONTEND] Successfully fetched ${data.length} channels for user ${user?.id}:`, data);
+      console.log(
+        `[FRONTEND] Successfully fetched ${data.length} channels for user ${user?.id}:`,
+        data,
+      );
     },
     onError: (error: Error) => {
-      console.error(`[FRONTEND] Error fetching channels for user ${user?.id}:`, error.message);
+      console.error(
+        `[FRONTEND] Error fetching channels for user ${user?.id}:`,
+        error.message,
+      );
     },
   });
 
   // useQuery가 실행되는지 확인하기 위한 로그
-  console.log(`[FRONTEND] useQuery state - user: ${user?.id}, enabled: ${!!user}, isLoading: ${channelsLoading}, channels: ${channels.length}`);
+  console.log(
+    `[FRONTEND] useQuery state - user: ${user?.id}, enabled: ${!!user}, isLoading: ${channelsLoading}, channels: ${channels.length}`,
+  );
 
   // Mutation to add a new channel
   const addChannelMutation = useMutation({
@@ -54,14 +68,18 @@ export default function HomePage() {
       return await res.json();
     },
     onSuccess: () => {
-      console.log(`[FRONTEND] Channel added successfully, invalidating queries for user ${user?.id}`);
+      console.log(
+        `[FRONTEND] Channel added successfully, invalidating queries for user ${user?.id}`,
+      );
       // queryKey를 정확히 맞춰서 invalidate
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id?.toString()] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/channels", user?.id?.toString()],
+      });
       // 채널 목록을 즉시 다시 가져오기
       refetchChannels();
       toast({
         title: "성공",
-        description: "채널이 성공적으로 추가되었습니다."
+        description: "채널이 성공적으로 추가되었습니다.",
       });
       setChannelHandle("");
     },
@@ -70,7 +88,7 @@ export default function HomePage() {
       toast({
         title: "오류",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       });
     },
   });
@@ -78,18 +96,24 @@ export default function HomePage() {
   // Mutation to delete a channel
   const deleteChannelMutation = useMutation({
     mutationFn: async (channelId: string) => {
-      console.log(`[FRONTEND] Deleting channel ${channelId} for user ${user?.id}`);
+      console.log(
+        `[FRONTEND] Deleting channel ${channelId} for user ${user?.id}`,
+      );
       await apiRequest("DELETE", `/api/channels/${channelId}`);
     },
     onSuccess: () => {
-      console.log(`[FRONTEND] Channel deleted successfully, invalidating queries for user ${user?.id}`);
+      console.log(
+        `[FRONTEND] Channel deleted successfully, invalidating queries for user ${user?.id}`,
+      );
       // queryKey를 정확히 맞춰서 invalidate
-      queryClient.invalidateQueries({ queryKey: ["/api/channels", user?.id?.toString()] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/channels", user?.id?.toString()],
+      });
       // 채널 목록을 즉시 다시 가져오기
       refetchChannels();
       toast({
         title: "성공",
-        description: "채널이 삭제되었습니다."
+        description: "채널이 삭제되었습니다.",
       });
     },
     onError: (error: Error) => {
@@ -97,7 +121,7 @@ export default function HomePage() {
       toast({
         title: "오류",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       });
     },
   });
@@ -107,11 +131,11 @@ export default function HomePage() {
   };
 
   const handleAddChannel = () => {
-    if (!channelHandle.startsWith('@')) {
+    if (!channelHandle.startsWith("@")) {
       toast({
         title: "오류",
         description: "채널 핸들러는 @로 시작해야 합니다.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -123,13 +147,29 @@ export default function HomePage() {
     deleteChannelMutation.mutate(channelId);
   };
 
-  
-
   const getThumbnailIcon = (type: string) => {
-    switch(type) {
-      case "house": return <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center"><div className="w-6 h-6 bg-white" style={{clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)"}}></div></div>;
-      case "carrot": return <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center"><div className="w-4 h-8 bg-orange-600 rounded-full"></div></div>;
-      default: return <div className="w-12 h-12 bg-gray-400 rounded-lg flex items-center justify-center"><Youtube className="w-6 h-6 text-white" /></div>;
+    switch (type) {
+      case "house":
+        return (
+          <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center">
+            <div
+              className="w-6 h-6 bg-white"
+              style={{ clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" }}
+            ></div>
+          </div>
+        );
+      case "carrot":
+        return (
+          <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center">
+            <div className="w-4 h-8 bg-orange-600 rounded-full"></div>
+          </div>
+        );
+      default:
+        return (
+          <div className="w-12 h-12 bg-gray-400 rounded-lg flex items-center justify-center">
+            <Youtube className="w-6 h-6 text-white" />
+          </div>
+        );
     }
   };
 
@@ -140,12 +180,14 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-slate-900">Roving Through</h1>
+              <h1 className="text-2xl font-bold text-slate-900">
+                Roving Through
+              </h1>
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm text-slate-600">{user?.username}님</span>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
@@ -163,10 +205,13 @@ export default function HomePage() {
         {/* Service Title */}
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-slate-900 mb-4">
-            YouTube 영상이 올라오면<br />
+            YouTube 영상이 올라오면
+            <br />
             요약본을 Slack으로 받아보세요
           </h2>
-          <p className="text-slate-600 text-lg">좋아하는 채널의 새로운 영상을 놓치지 마세요</p>
+          <p className="text-slate-600 text-lg">
+            좋아하는 채널의 새로운 영상을 놓치지 마세요
+          </p>
         </div>
 
         {/* YouTube Channel Manager */}
@@ -188,7 +233,7 @@ export default function HomePage() {
                   onChange={(e) => setChannelHandle(e.target.value)}
                 />
               </div>
-              <Button 
+              <Button
                 onClick={handleAddChannel}
                 disabled={addChannelMutation.isPending}
                 className="bg-slate-900 hover:bg-slate-800 text-white whitespace-nowrap"
@@ -207,7 +252,9 @@ export default function HomePage() {
               {channelsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-slate-600" />
-                  <span className="ml-2 text-slate-600">채널을 불러오는 중...</span>
+                  <span className="ml-2 text-slate-600">
+                    채널을 불러오는 중...
+                  </span>
                 </div>
               ) : channels.length === 0 ? (
                 <div className="text-center py-8 text-slate-500">
@@ -217,18 +264,21 @@ export default function HomePage() {
                 </div>
               ) : (
                 channels.map((channel) => (
-                  <div key={channel.subscriptionId} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div
+                    key={channel.subscriptionId}
+                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200"
+                  >
                     <div className="flex items-center space-x-4">
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0 shadow-sm">
                         {channel.thumbnail ? (
-                          <img 
-                            src={channel.thumbnail} 
+                          <img
+                            src={channel.thumbnail}
                             alt={`${channel.title} 썸네일`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                               // 이미지 로딩 실패 시 기본 아이콘으로 대체
                               const target = e.target as HTMLElement;
-                              target.style.display = 'none';
+                              target.style.display = "none";
                               const parent = target.parentElement;
                               if (parent) {
                                 parent.innerHTML = `
@@ -248,23 +298,33 @@ export default function HomePage() {
                         )}
                       </div>
                       <div>
-                        <h4 className="font-medium text-slate-900">{channel.title}</h4>
+                        <h4 className="font-medium text-slate-900">
+                          {channel.title}
+                        </h4>
                         <p className="text-sm text-slate-500 flex items-center gap-2">
                           <span>{channel.handle}</span>
                           <span>·</span>
                           <span className="flex items-center gap-1">
                             <Users className="w-3 h-3" />
-                            구독자 {parseInt(channel.subscriberCount || "0").toLocaleString()}명
+                            구독자{" "}
+                            {parseInt(
+                              channel.subscriberCount || "0",
+                            ).toLocaleString()}
+                            명
                           </span>
                           <span>·</span>
                           <span className="flex items-center gap-1">
                             <Video className="w-3 h-3" />
-                            동영상 {parseInt(channel.videoCount || "0").toLocaleString()}개
+                            동영상{" "}
+                            {parseInt(
+                              channel.videoCount || "0",
+                            ).toLocaleString()}
+                            개
                           </span>
                         </p>
                       </div>
                     </div>
-                    <Button 
+                    <Button
                       variant="destructive"
                       size="sm"
                       disabled={deleteChannelMutation.isPending}
@@ -299,9 +359,10 @@ export default function HomePage() {
               <>
                 <div className="space-y-4">
                   <p className="text-slate-600 text-center">
-                    YouTube 영상 요약을 받기 위해 Slack 워크스페이스에 참여하세요.
+                    YouTube 영상 요약을 받기 위해 Slack 워크스페이스에
+                    참여하세요.
                   </p>
-                  
+
                   <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -315,17 +376,17 @@ export default function HomePage() {
                         className="w-full"
                       />
                     </div>
-                    
+
                     <div className="flex gap-3">
-                      <Button 
+                      <Button
                         onClick={() => {
                           if (slackInviteLink) {
-                            window.open(slackInviteLink, '_blank');
+                            window.open(slackInviteLink, "_blank");
                           } else {
                             toast({
                               title: "오류",
                               description: "Slack 초대 링크를 입력해주세요.",
-                              variant: "destructive"
+                              variant: "destructive",
                             });
                           }
                         }}
@@ -337,8 +398,8 @@ export default function HomePage() {
                         </div>
                         워크스페이스 가입하기
                       </Button>
-                      
-                      <Button 
+
+                      <Button
                         onClick={() => setSlackJoined(true)}
                         variant="outline"
                         className="whitespace-nowrap"
@@ -348,9 +409,10 @@ export default function HomePage() {
                       </Button>
                     </div>
                   </div>
-                  
+
                   <p className="text-xs text-slate-500 text-center">
-                    초대 링크를 입력하고 "워크스페이스 가입하기"를 클릭한 후, 가입이 완료되면 "가입 완료" 버튼을 눌러주세요.
+                    초대 링크를 입력하고 "워크스페이스 가입하기"를 클릭한 후,
+                    가입이 완료되면 "가입 완료" 버튼을 눌러주세요.
                   </p>
                 </div>
 
@@ -358,7 +420,9 @@ export default function HomePage() {
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
                     <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-1">워크스페이스: newsfeed-fcm6025.slack.com</p>
+                      <p className="font-medium mb-1">
+                        워크스페이스: newsfeed-fcm6025.slack.com
+                      </p>
                       <p>관리자로부터 초대 링크를 받아 위에 입력해주세요.</p>
                     </div>
                   </div>
@@ -370,11 +434,15 @@ export default function HomePage() {
                   <div className="flex items-center">
                     <CheckCircle className="text-green-500 mr-3 w-5 h-5" />
                     <div className="text-sm text-green-700">
-                      <p className="font-medium">Slack 워크스페이스에 성공적으로 참여했습니다!</p>
-                      <p>이제 새로운 YouTube 영상 요약을 받아보실 수 있습니다.</p>
+                      <p className="font-medium">
+                        Slack 워크스페이스에 성공적으로 참여했습니다!
+                      </p>
+                      <p>
+                        이제 새로운 YouTube 영상 요약을 받아보실 수 있습니다.
+                      </p>
                     </div>
                   </div>
-                  <Button 
+                  <Button
                     onClick={() => setSlackJoined(false)}
                     variant="ghost"
                     size="sm"
@@ -392,7 +460,9 @@ export default function HomePage() {
         <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
           <div className="flex items-center mb-4">
             <Bot className="text-blue-600 text-xl mr-3 w-6 h-6" />
-            <h3 className="text-lg font-semibold text-slate-900">자동화 상태</h3>
+            <h3 className="text-lg font-semibold text-slate-900">
+              자동화 상태
+            </h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -404,7 +474,9 @@ export default function HomePage() {
             </div>
 
             <div className="text-center">
-              <div className={`w-8 h-8 ${channels.length > 0 ? 'bg-green-500' : 'bg-gray-300'} rounded-full flex items-center justify-center mx-auto mb-2`}>
+              <div
+                className={`w-8 h-8 ${channels.length > 0 ? "bg-green-500" : "bg-gray-300"} rounded-full flex items-center justify-center mx-auto mb-2`}
+              >
                 <CheckCircle className="text-white w-4 h-4" />
               </div>
               <p className="text-sm font-medium text-slate-900">
@@ -413,11 +485,17 @@ export default function HomePage() {
             </div>
 
             <div className="text-center">
-              <div className={`w-8 h-8 ${slackJoined ? 'bg-green-500' : 'bg-yellow-500'} rounded-full flex items-center justify-center mx-auto mb-2`}>
-                {slackJoined ? <CheckCircle className="text-white w-4 h-4" /> : <Clock className="text-white w-4 h-4" />}
+              <div
+                className={`w-8 h-8 ${slackJoined ? "bg-green-500" : "bg-yellow-500"} rounded-full flex items-center justify-center mx-auto mb-2`}
+              >
+                {slackJoined ? (
+                  <CheckCircle className="text-white w-4 h-4" />
+                ) : (
+                  <Clock className="text-white w-4 h-4" />
+                )}
               </div>
               <p className="text-sm font-medium text-slate-900">
-                {slackJoined ? 'Slack 연동 완료' : 'Slack 연동 대기'}
+                {slackJoined ? "Slack 연동 완료" : "Slack 연동 대기"}
               </p>
             </div>
           </div>
