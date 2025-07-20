@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
+import { slackService } from "./slack";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -149,6 +150,53 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("[CHANNELS] Error unsubscribing from channel:", error);
       res.status(500).json({ error: "Failed to unsubscribe from channel" });
+    }
+  });
+
+  // Slack Events API endpoint
+  app.post("/api/slack/events", async (req, res) => {
+    try {
+      const signature = req.headers['x-slack-signature'] as string;
+      const timestamp = req.headers['x-slack-request-timestamp'] as string;
+      const body = JSON.stringify(req.body);
+
+      console.log(`[SLACK] Received event:`, req.body);
+
+      // URL verification for initial setup
+      if (req.body.type === 'url_verification') {
+        console.log(`[SLACK] URL verification challenge received`);
+        return res.json({ challenge: req.body.challenge });
+      }
+
+      // Verify request authenticity
+      const isValid = await slackService.verifyRequest(body, signature, timestamp);
+      if (!isValid) {
+        console.log(`[SLACK] Invalid request signature`);
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Handle team_join event
+      if (req.body.type === 'event_callback' && req.body.event.type === 'team_join') {
+        console.log(`[SLACK] Processing team_join event for user: ${req.body.event.user.profile.email}`);
+        
+        // team_join 이벤트에서 이메일 정보 추출
+        const event = {
+          type: 'team_join' as const,
+          user: {
+            id: req.body.event.user.id,
+            email: req.body.event.user.profile.email,
+            name: req.body.event.user.profile.display_name || req.body.event.user.profile.real_name
+          },
+          event_ts: req.body.event.event_ts
+        };
+
+        await slackService.handleTeamJoinEvent(event);
+      }
+
+      res.status(200).json({ status: 'ok' });
+    } catch (error) {
+      console.error("[SLACK] Error processing event:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

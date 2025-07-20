@@ -20,7 +20,9 @@ const PostgresSessionStore = connectPg(session);
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackJoinedAt: Date }): Promise<void>;
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
@@ -62,6 +64,22 @@ export class DatabaseStorage implements IStorage {
       .values(insertUser)
       .returning();
     return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
+  async updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackJoinedAt: Date }): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        slackUserId: slackInfo.slackUserId,
+        slackChannelId: slackInfo.slackChannelId,
+        slackJoinedAt: slackInfo.slackJoinedAt
+      })
+      .where(eq(users.id, userId));
   }
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {

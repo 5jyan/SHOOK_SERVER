@@ -30,6 +30,9 @@ export default function HomePage() {
   const [slackInviteLink, setSlackInviteLink] = useState("");
   const [slackJoined, setSlackJoined] = useState(false);
 
+  // 사용자의 Slack 연동 상태를 확인
+  const isSlackConnected = user?.slackUserId && user?.slackChannelId;
+
   // Slack 초대 링크를 상수로 정의합니다.
   const SLACK_INVITE_URL =
     "https://join.slack.com/t/newsfeed-fcm6025/shared_invite/zt-38tfhkqx0-kKR5RJe43a8LbbnP4ei5ww";
@@ -359,7 +362,7 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {!slackJoined ? (
+            {!isSlackConnected ? (
               <div className="space-y-4">
                 <p className="text-slate-600 text-center">
                   YouTube 영상 요약을 받기 위해 Slack 워크스페이스에 참여하세요.
@@ -384,9 +387,10 @@ export default function HomePage() {
                     variant="outline"
                     size="lg"
                     className="whitespace-nowrap"
+                    disabled={!slackJoined}
                   >
                     <CheckCircle className="w-4 h-4 mr-2" />
-                    가입 완료
+                    {slackJoined ? "연동 확인 중..." : "가입 완료"}
                   </Button>
                 </div>
 
@@ -464,16 +468,16 @@ export default function HomePage() {
 
             <div className="text-center">
               <div
-                className={`w-8 h-8 ${slackJoined ? "bg-green-500" : "bg-yellow-500"} rounded-full flex items-center justify-center mx-auto mb-2`}
+                className={`w-8 h-8 ${isSlackConnected ? "bg-green-500" : "bg-yellow-500"} rounded-full flex items-center justify-center mx-auto mb-2`}
               >
-                {slackJoined ? (
+                {isSlackConnected ? (
                   <CheckCircle className="text-white w-4 h-4" />
                 ) : (
                   <Clock className="text-white w-4 h-4" />
                 )}
               </div>
               <p className="text-sm font-medium text-slate-900">
-                {slackJoined ? "Slack 연동 완료" : "Slack 연동 대기"}
+                {isSlackConnected ? "Slack 연동 완료" : "Slack 연동 대기"}
               </p>
             </div>
           </div>
