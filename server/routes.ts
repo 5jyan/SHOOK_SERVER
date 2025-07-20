@@ -8,14 +8,22 @@ export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
   // YouTube Channel Management Routes
-  app.get("/api/channels", async (req, res) => {
-    console.log(`[CHANNELS] Received GET /api/channels request`);
+  app.get("/api/channels/:userId", async (req, res) => {
+    console.log(`[CHANNELS] Received GET /api/channels/${req.params.userId} request`);
     console.log(`[CHANNELS] Authentication status: ${req.isAuthenticated()}`);
     console.log(`[CHANNELS] User info:`, req.user);
+    console.log(`[CHANNELS] Requested userId: ${req.params.userId}`);
     
     if (!req.isAuthenticated()) {
       console.log(`[CHANNELS] Request rejected - user not authenticated`);
       return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // 요청된 userId가 현재 로그인한 사용자의 ID와 일치하는지 확인
+    const requestedUserId = parseInt(req.params.userId, 10);
+    if (requestedUserId !== req.user.id) {
+      console.log(`[CHANNELS] Access denied - user ${req.user.id} tried to access user ${requestedUserId}'s channels`);
+      return res.status(403).json({ error: "Forbidden" });
     }
     
     try {

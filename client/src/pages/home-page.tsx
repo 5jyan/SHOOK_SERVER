@@ -32,7 +32,7 @@ export default function HomePage() {
 
   // Query to get user's channels
   const { data: channels = [], isLoading: channelsLoading, refetch: refetchChannels } = useQuery<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>({
-    queryKey: ["/api/channels", user?.id],
+    queryKey: ["/api/channels", user?.id?.toString()],
     enabled: !!user,
     staleTime: 0, // 캐시를 즉시 만료시켜 항상 최신 데이터 가져오기
     onSuccess: (data) => {
