@@ -35,7 +35,16 @@ export default function HomePage() {
     queryKey: ["/api/channels", user?.id],
     enabled: !!user,
     staleTime: 0, // 캐시를 즉시 만료시켜 항상 최신 데이터 가져오기
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Successfully fetched ${data.length} channels for user ${user?.id}:`, data);
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error fetching channels for user ${user?.id}:`, error.message);
+    },
   });
+
+  // useQuery가 실행되는지 확인하기 위한 로그
+  console.log(`[FRONTEND] useQuery state - user: ${user?.id}, enabled: ${!!user}, isLoading: ${channelsLoading}, channels: ${channels.length}`);
 
   // Mutation to add a new channel
   const addChannelMutation = useMutation({

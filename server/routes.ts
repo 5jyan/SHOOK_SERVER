@@ -9,7 +9,12 @@ export function registerRoutes(app: Express): Server {
 
   // YouTube Channel Management Routes
   app.get("/api/channels", async (req, res) => {
+    console.log(`[CHANNELS] Received GET /api/channels request`);
+    console.log(`[CHANNELS] Authentication status: ${req.isAuthenticated()}`);
+    console.log(`[CHANNELS] User info:`, req.user);
+    
     if (!req.isAuthenticated()) {
+      console.log(`[CHANNELS] Request rejected - user not authenticated`);
       return res.status(401).json({ error: "Unauthorized" });
     }
     
