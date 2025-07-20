@@ -30,6 +30,10 @@ export default function HomePage() {
   const [slackInviteLink, setSlackInviteLink] = useState("");
   const [slackJoined, setSlackJoined] = useState(false);
 
+  // Slack 초대 링크를 상수로 정의합니다.
+  const SLACK_INVITE_URL =
+    "https://join.slack.com/t/newsfeed-fcm6025/shared_invite/zt-38tfhkqx0-kKR5RJe43a8LbbnP4ei5ww";
+
   // Query to get user's channels
   const {
     data: channels = [],
@@ -356,78 +360,52 @@ export default function HomePage() {
           </CardHeader>
           <CardContent>
             {!slackJoined ? (
-              <>
-                <div className="space-y-4">
-                  <p className="text-slate-600 text-center">
-                    YouTube 영상 요약을 받기 위해 Slack 워크스페이스에
-                    참여하세요.
-                  </p>
+              <div className="space-y-4">
+                <p className="text-slate-600 text-center">
+                  YouTube 영상 요약을 받기 위해 Slack 워크스페이스에 참여하세요.
+                </p>
 
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Slack 초대 링크
-                      </label>
-                      <Input
-                        type="url"
-                        placeholder="https://join.slack.com/t/workspace-name/shared_invite/..."
-                        value={slackInviteLink}
-                        onChange={(e) => setSlackInviteLink(e.target.value)}
-                        className="w-full"
-                      />
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    onClick={() => {
+                      window.open(SLACK_INVITE_URL, "_blank");
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    size="lg"
+                  >
+                    <div className="w-4 h-4 bg-white rounded mr-2 flex items-center justify-center">
+                      <div className="w-2 h-2 bg-purple-600 rounded-sm"></div>
                     </div>
+                    Slack 워크스페이스 가입하기
+                  </Button>
 
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={() => {
-                          if (slackInviteLink) {
-                            window.open(slackInviteLink, "_blank");
-                          } else {
-                            toast({
-                              title: "오류",
-                              description: "Slack 초대 링크를 입력해주세요.",
-                              variant: "destructive",
-                            });
-                          }
-                        }}
-                        className="bg-purple-600 hover:bg-purple-700 text-white flex-1"
-                        disabled={!slackInviteLink.trim()}
-                      >
-                        <div className="w-4 h-4 bg-white rounded mr-2 flex items-center justify-center">
-                          <div className="w-2 h-2 bg-purple-600 rounded-sm"></div>
-                        </div>
-                        워크스페이스 가입하기
-                      </Button>
-
-                      <Button
-                        onClick={() => setSlackJoined(true)}
-                        variant="outline"
-                        className="whitespace-nowrap"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        가입 완료
-                      </Button>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-500 text-center">
-                    초대 링크를 입력하고 "워크스페이스 가입하기"를 클릭한 후,
-                    가입이 완료되면 "가입 완료" 버튼을 눌러주세요.
-                  </p>
+                  <Button
+                    onClick={() => setSlackJoined(true)}
+                    variant="outline"
+                    size="lg"
+                    className="whitespace-nowrap"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    가입 완료
+                  </Button>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                <p className="text-sm text-slate-500 text-center">
+                  "Slack 워크스페이스 가입하기"를 클릭하여 가입한 후, "가입 완료" 버튼을 눌러주세요.
+                </p>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
                     <div className="text-sm text-blue-700">
                       <p className="font-medium mb-1">
                         워크스페이스: newsfeed-fcm6025.slack.com
                       </p>
-                      <p>관리자로부터 초대 링크를 받아 위에 입력해주세요.</p>
+                      <p>버튼 클릭 시 자동으로 초대 페이지로 이동합니다.</p>
                     </div>
                   </div>
                 </div>
-              </>
+              </div>
             ) : (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center justify-between">
