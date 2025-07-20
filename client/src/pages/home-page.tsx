@@ -27,11 +27,11 @@ export default function HomePage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [channelHandle, setChannelHandle] = useState("");
-  const [slackInviteLink, setSlackInviteLink] = useState("");
-  const [slackJoined, setSlackJoined] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [slackSetupCompleted, setSlackSetupCompleted] = useState(false);
 
   // 사용자의 Slack 연동 상태를 확인
-  const isSlackConnected = user?.slackUserId && user?.slackChannelId;
+  const isSlackConnected = user?.slackChannelId;
 
   // Slack 초대 링크를 상수로 정의합니다.
   const SLACK_INVITE_URL =
@@ -133,6 +133,33 @@ export default function HomePage() {
     },
   });
 
+  // Mutation to setup Slack manually
+  const slackSetupMutation = useMutation({
+    mutationFn: async (email: string) => {
+      console.log(`[FRONTEND] Setting up Slack for user ${user?.id} with email: ${email}`);
+      const res = await apiRequest("POST", "/api/slack/setup", { email });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Slack setup successful:`, data);
+      toast({
+        title: "성공",
+        description: "Slack 채널이 성공적으로 생성되었습니다! Slack 워크스페이스에서 확인해보세요.",
+      });
+      setSlackSetupCompleted(true);
+      // 사용자 정보 갱신
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error setting up Slack:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleLogout = () => {
     logoutMutation.mutate();
   };
@@ -152,6 +179,18 @@ export default function HomePage() {
 
   const handleRemoveChannel = (channelId: string) => {
     deleteChannelMutation.mutate(channelId);
+  };
+
+  const handleSlackSetup = () => {
+    if (!userEmail || !userEmail.includes('@')) {
+      toast({
+        title: "오류",
+        description: "올바른 이메일 주소를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    slackSetupMutation.mutate(userEmail);
   };
 
   const getThumbnailIcon = (type: string) => {
@@ -365,47 +404,43 @@ export default function HomePage() {
             {!isSlackConnected ? (
               <div className="space-y-4">
                 <p className="text-slate-600 text-center">
-                  YouTube 영상 요약을 받기 위해 Slack 워크스페이스에 참여하세요.
+                  YouTube 영상 요약을 Slack으로 받기 위해 이메일을 입력하고 설정하세요.
                 </p>
 
-                <div className="flex gap-3 justify-center">
-                  <Button
-                    onClick={() => {
-                      window.open(SLACK_INVITE_URL, "_blank");
-                    }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
-                    size="lg"
-                  >
-                    <div className="w-4 h-4 bg-white rounded mr-2 flex items-center justify-center">
-                      <div className="w-2 h-2 bg-purple-600 rounded-sm"></div>
-                    </div>
-                    Slack 워크스페이스 가입하기
-                  </Button>
-
-                  <Button
-                    onClick={() => setSlackJoined(true)}
-                    variant="outline"
-                    size="lg"
-                    className="whitespace-nowrap"
-                    disabled={!slackJoined}
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    {slackJoined ? "연동 확인 중..." : "가입 완료"}
-                  </Button>
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Input
+                      type="email"
+                      placeholder="이메일 주소를 입력하세요"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleSlackSetup}
+                      disabled={slackSetupMutation.isPending}
+                      className="bg-purple-600 hover:bg-purple-700 text-white whitespace-nowrap"
+                    >
+                      {slackSetupMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-2" />
+                      )}
+                      Slack 채널 생성
+                    </Button>
+                  </div>
                 </div>
-
-                <p className="text-sm text-slate-500 text-center">
-                  "Slack 워크스페이스 가입하기"를 클릭하여 가입한 후, "가입 완료" 버튼을 눌러주세요.
-                </p>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
                     <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-1">
-                        워크스페이스: newsfeed-fcm6025.slack.com
-                      </p>
-                      <p>버튼 클릭 시 자동으로 초대 페이지로 이동합니다.</p>
+                      <p className="font-medium mb-2">설정 방법:</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>위에 이메일 주소를 입력하고 "Slack 채널 생성" 버튼을 클릭하세요</li>
+                        <li>자동으로 Slack에 전용 채널이 생성됩니다</li>
+                        <li>필요한 경우 <a href={SLACK_INVITE_URL} target="_blank" className="underline">여기서 워크스페이스에 가입</a>하세요</li>
+                      </ol>
                     </div>
                   </div>
                 </div>
@@ -417,7 +452,7 @@ export default function HomePage() {
                     <CheckCircle className="text-green-500 mr-3 w-5 h-5" />
                     <div className="text-sm text-green-700">
                       <p className="font-medium">
-                        Slack 워크스페이스에 성공적으로 참여했습니다!
+                        Slack 채널이 성공적으로 생성되었습니다!
                       </p>
                       <p>
                         이제 새로운 YouTube 영상 요약을 받아보실 수 있습니다.
@@ -425,12 +460,12 @@ export default function HomePage() {
                     </div>
                   </div>
                   <Button
-                    onClick={() => setSlackJoined(false)}
-                    variant="ghost"
+                    onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
+                    variant="outline"
                     size="sm"
-                    className="text-green-600 hover:text-green-700"
+                    className="text-purple-600 border-purple-600 hover:bg-purple-50"
                   >
-                    다시 설정
+                    Slack 열기
                   </Button>
                 </div>
               </div>

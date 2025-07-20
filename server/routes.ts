@@ -153,6 +153,59 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Slack Manual Setup API endpoint
+  app.post("/api/slack/setup", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const { email } = req.body;
+      console.log(`[SLACK] Manual setup request from user ${req.user.id} with email: ${email}`);
+
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: "올바른 이메일 주소를 입력해주세요" });
+      }
+
+      // 사용자 이메일 업데이트
+      await storage.updateUserEmail(req.user.id, email);
+      console.log(`[SLACK] Updated user ${req.user.id} email to: ${email}`);
+
+      // 사용자 전용 채널 생성
+      const channelName = `youtube-summary-${req.user.id}`;
+      console.log(`[SLACK] Creating private channel: ${channelName}`);
+      
+      const channel = await slackService.createPrivateChannel(channelName, req.user.username);
+      
+      if (channel) {
+        console.log(`[SLACK] Successfully created channel: ${channel.id}`);
+        
+        // 데이터베이스에 Slack 연동 정보 저장 (slackUserId는 나중에 설정)
+        await storage.updateUserSlackInfo(req.user.id, {
+          slackUserId: '', // 아직 슬랙 유저 ID를 모르므로 빈 문자열
+          slackChannelId: channel.id,
+          slackJoinedAt: new Date()
+        });
+
+        // 환영 메시지 전송
+        await slackService.sendWelcomeMessage(channel.id, req.user.username);
+        
+        res.json({ 
+          success: true, 
+          message: "Slack 채널이 성공적으로 생성되었습니다.",
+          channelId: channel.id,
+          channelName: channel.name
+        });
+      } else {
+        res.status(500).json({ error: "채널 생성에 실패했습니다" });
+      }
+
+    } catch (error) {
+      console.error("[SLACK] Error in manual setup:", error);
+      res.status(500).json({ error: "슬랙 설정 중 오류가 발생했습니다" });
+    }
+  });
+
   // Slack Events API endpoint
   app.post("/api/slack/events", async (req, res) => {
     try {
