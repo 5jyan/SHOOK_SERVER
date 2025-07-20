@@ -27,7 +27,6 @@ export default function HomePage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [channelHandle, setChannelHandle] = useState("");
-  const [slackEmail, setSlackEmail] = useState("");
   const [slackJoined, setSlackJoined] = useState(false);
 
   // Query to get user's channels
@@ -123,22 +122,7 @@ export default function HomePage() {
     deleteChannelMutation.mutate(channelId);
   };
 
-  const handleSlackInvite = () => {
-    if (!slackEmail || !slackEmail.includes('@')) {
-      toast({
-        title: "오류",
-        description: "올바른 이메일 주소를 입력해주세요.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // TODO: Implement Slack API invitation
-    toast({
-      title: "성공",
-      description: "Slack 초대가 발송되었습니다."
-    });
-  };
+  
 
   const getThumbnailIcon = (type: string) => {
     switch(type) {
@@ -312,30 +296,33 @@ export default function HomePage() {
           <CardContent>
             {!slackJoined ? (
               <>
-                <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                  <div className="flex-1">
-                    <Input
-                      type="email"
-                      placeholder="슬랙 e-mail 주소를 입력하세요"
-                      value={slackEmail}
-                      onChange={(e) => setSlackEmail(e.target.value)}
-                    />
-                  </div>
+                <div className="text-center space-y-4">
+                  <p className="text-slate-600">
+                    YouTube 영상 요약을 받기 위해 Slack 워크스페이스에 참여하세요.
+                  </p>
+                  
                   <Button 
-                    onClick={handleSlackInvite}
-                    className="bg-slate-800 hover:bg-slate-900 text-white whitespace-nowrap"
+                    onClick={() => window.open('https://join.slack.com/t/newsfeed-fcm6025/shared_invite/zt-your-invite-token', '_blank')}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    size="lg"
                   >
-                    <Send className="w-4 h-4 mr-2" />
-                    초대 발송
+                    <div className="w-5 h-5 bg-white rounded mr-2 flex items-center justify-center">
+                      <div className="w-3 h-3 bg-purple-600 rounded-sm"></div>
+                    </div>
+                    Slack 워크스페이스 가입하기
                   </Button>
+                  
+                  <p className="text-sm text-slate-500">
+                    위 버튼을 클릭하면 새 탭에서 Slack 초대 페이지가 열립니다.
+                  </p>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
                     <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-1">e-mail로 초대 발송이 요청되었습니다.</p>
-                      <p>e-mail을 확인하시고 초대를 승인해주세요</p>
+                      <p className="font-medium mb-1">Slack 워크스페이스 참여 후</p>
+                      <p>자동으로 개인 채널이 생성되어 영상 요약을 받아보실 수 있습니다.</p>
                     </div>
                   </div>
                 </div>
