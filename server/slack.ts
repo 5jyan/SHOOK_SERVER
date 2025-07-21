@@ -1,4 +1,5 @@
-
+import { WebClient } from "@slack/web-api";
+import crypto from "crypto";
 import { storage } from "./storage";
 
 interface SlackUser {
@@ -14,138 +15,180 @@ interface SlackTeamJoinEvent {
 }
 
 export class SlackService {
-  private botToken: string;
+  private slack: WebClient;
   private signingSecret: string;
 
   constructor() {
-    this.botToken = process.env.SLACK_BOT_TOKEN || "";
-    this.signingSecret = process.env.SLACK_SIGNING_SECRET || "";
-  }
-
-  async verifyRequest(body: string, signature: string, timestamp: string): Promise<boolean> {
-    const crypto = require('crypto');
+    console.log(`[SLACK_SERVICE] Initializing Slack service...`);
     
-    // Verify timestamp (should be within 5 minutes)
-    const time = Math.floor(new Date().getTime() / 1000);
-    if (Math.abs(time - parseInt(timestamp)) > 300) {
-      return false;
+    if (!process.env.SLACK_BOT_TOKEN) {
+      console.error(`[SLACK_SERVICE] SLACK_BOT_TOKEN environment variable is missing`);
+      throw new Error("SLACK_BOT_TOKEN environment variable must be set");
     }
 
-    // Create signature
-    const sigBasestring = 'v0:' + timestamp + ':' + body;
-    const mySignature = 'v0=' + crypto
-      .createHmac('sha256', this.signingSecret)
-      .update(sigBasestring, 'utf8')
-      .digest('hex');
-
-    return crypto.timingSafeEqual(
-      Buffer.from(mySignature, 'utf8'),
-      Buffer.from(signature, 'utf8')
-    );
-  }
-
-  async handleTeamJoinEvent(event: SlackTeamJoinEvent): Promise<void> {
-    try {
-      console.log(`[SLACK] Team join event received for user: ${event.user.email}`);
-      
-      // 이메일로 우리 데이터베이스에서 사용자 찾기
-      const user = await storage.getUserByEmail(event.user.email);
-      if (!user) {
-        console.log(`[SLACK] User not found in database: ${event.user.email}`);
-        return;
-      }
-
-      console.log(`[SLACK] Found user in database: ${user.username} (ID: ${user.id})`);
-
-      // 사용자 전용 채널 생성
-      const channelName = `youtube-summary-${user.id}`;
-      const channel = await this.createPrivateChannel(channelName, user.username);
-      
-      if (channel) {
-        // 사용자를 채널에 초대
-        await this.inviteUserToChannel(channel.id, event.user.id);
-        
-        // 데이터베이스에 Slack 연동 정보 저장
-        await storage.updateUserSlackInfo(user.id, {
-          slackUserId: event.user.id,
-          slackChannelId: channel.id,
-          slackJoinedAt: new Date()
-        });
-
-        console.log(`[SLACK] Successfully set up private channel for user ${user.username}`);
-        
-        // 환영 메시지 전송
-        await this.sendWelcomeMessage(channel.id, user.username);
-      }
-    } catch (error) {
-      console.error('[SLACK] Error handling team join event:', error);
+    if (!process.env.SLACK_CHANNEL_ID) {
+      console.error(`[SLACK_SERVICE] SLACK_CHANNEL_ID environment variable is missing`);
+      throw new Error("SLACK_CHANNEL_ID environment variable must be set");
     }
+
+    console.log(`[SLACK_SERVICE] Environment variables validated successfully`);
+    
+    this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+    this.signingSecret = process.env.SLACK_SIGNING_SECRET || '';
+    
+    console.log(`[SLACK_SERVICE] WebClient initialized with bot token`);
+    console.log(`[SLACK_SERVICE] Signing secret ${this.signingSecret ? 'is set' : 'is not set'}`);
   }
 
-  async createPrivateChannel(channelName: string, userName: string): Promise<{ id: string; name: string } | null> {
+  /**
+   * 이메일이 Slack 워크스페이스에 존재하는지 확인
+   */
+  async verifyEmailInWorkspace(email: string): Promise<{ exists: boolean; userId?: string; userInfo?: any }> {
     try {
-      const response = await fetch('https://slack.com/api/conversations.create', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: channelName,
-          is_private: true,
-          purpose: `${userName}님의 YouTube 영상 요약 전용 채널`
-        }),
+      console.log(`[SLACK_SERVICE] Verifying email in workspace: ${email}`);
+      
+      const response = await this.slack.users.lookupByEmail({
+        email: email
       });
 
-      const data = await response.json();
-      
-      if (data.ok) {
-        console.log(`[SLACK] Created private channel: ${data.channel.name} (${data.channel.id})`);
+      console.log(`[SLACK_SERVICE] Slack API users.lookupByEmail response:`, {
+        ok: response.ok,
+        error: response.error,
+        userId: response.user?.id,
+        userProfile: response.user?.profile
+      });
+
+      if (response.ok && response.user) {
+        console.log(`[SLACK_SERVICE] Email ${email} found in workspace with user ID: ${response.user.id}`);
         return {
-          id: data.channel.id,
-          name: data.channel.name
+          exists: true,
+          userId: response.user.id,
+          userInfo: response.user
         };
       } else {
-        console.error('[SLACK] Failed to create channel:', data.error);
+        console.log(`[SLACK_SERVICE] Email ${email} not found in workspace. Error: ${response.error}`);
+        return { exists: false };
+      }
+    } catch (error) {
+      console.error(`[SLACK_SERVICE] Error verifying email in workspace:`, error);
+      return { exists: false };
+    }
+  }
+
+  /**
+   * 요청 서명 검증
+   */
+  async verifyRequest(body: string, signature: string, timestamp: string): Promise<boolean> {
+    try {
+      console.log(`[SLACK_SERVICE] Verifying request signature...`);
+      console.log(`[SLACK_SERVICE] Signature: ${signature}`);
+      console.log(`[SLACK_SERVICE] Timestamp: ${timestamp}`);
+      
+      // Verify timestamp (should be within 5 minutes)
+      const time = Math.floor(new Date().getTime() / 1000);
+      const timeDiff = Math.abs(time - parseInt(timestamp));
+      
+      console.log(`[SLACK_SERVICE] Current time: ${time}, Request time: ${timestamp}, Difference: ${timeDiff}s`);
+      
+      if (timeDiff > 300) {
+        console.log(`[SLACK_SERVICE] Request timestamp too old: ${timeDiff}s > 300s`);
+        return false;
+      }
+
+      // Create signature
+      const sigBasestring = 'v0:' + timestamp + ':' + body;
+      const mySignature = 'v0=' + crypto
+        .createHmac('sha256', this.signingSecret)
+        .update(sigBasestring, 'utf8')
+        .digest('hex');
+
+      console.log(`[SLACK_SERVICE] Generated signature: ${mySignature}`);
+      
+      const isValid = crypto.timingSafeEqual(
+        Buffer.from(mySignature, 'utf8'),
+        Buffer.from(signature, 'utf8')
+      );
+
+      console.log(`[SLACK_SERVICE] Signature verification result: ${isValid}`);
+      return isValid;
+    } catch (error) {
+      console.error(`[SLACK_SERVICE] Error verifying request:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 프라이빗 채널 생성
+   */
+  async createPrivateChannel(channelName: string, userName: string): Promise<{ id: string; name: string } | null> {
+    try {
+      console.log(`[SLACK_SERVICE] Creating private channel: ${channelName} for user: ${userName}`);
+      
+      const response = await this.slack.conversations.create({
+        name: channelName,
+        is_private: true
+      });
+
+      console.log(`[SLACK_SERVICE] conversations.create response:`, {
+        ok: response.ok,
+        error: response.error,
+        channelId: response.channel?.id,
+        channelName: response.channel?.name
+      });
+      
+      if (response.ok && response.channel) {
+        console.log(`[SLACK_SERVICE] Successfully created private channel: ${response.channel.name} (ID: ${response.channel.id})`);
+        return {
+          id: response.channel.id!,
+          name: response.channel.name!
+        };
+      } else {
+        console.error(`[SLACK_SERVICE] Failed to create channel. Error: ${response.error}`);
         return null;
       }
     } catch (error) {
-      console.error('[SLACK] Error creating channel:', error);
+      console.error(`[SLACK_SERVICE] Error creating channel:`, error);
       return null;
     }
   }
 
+  /**
+   * 사용자를 채널에 초대
+   */
   async inviteUserToChannel(channelId: string, userId: string): Promise<boolean> {
     try {
-      const response = await fetch('https://slack.com/api/conversations.invite', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          channel: channelId,
-          users: userId
-        }),
+      console.log(`[SLACK_SERVICE] Inviting user ${userId} to channel ${channelId}`);
+      
+      const response = await this.slack.conversations.invite({
+        channel: channelId,
+        users: userId
       });
 
-      const data = await response.json();
+      console.log(`[SLACK_SERVICE] conversations.invite response:`, {
+        ok: response.ok,
+        error: response.error
+      });
       
-      if (data.ok) {
-        console.log(`[SLACK] Successfully invited user ${userId} to channel ${channelId}`);
+      if (response.ok) {
+        console.log(`[SLACK_SERVICE] Successfully invited user ${userId} to channel ${channelId}`);
         return true;
       } else {
-        console.error('[SLACK] Failed to invite user to channel:', data.error);
+        console.error(`[SLACK_SERVICE] Failed to invite user to channel. Error: ${response.error}`);
         return false;
       }
     } catch (error) {
-      console.error('[SLACK] Error inviting user to channel:', error);
+      console.error(`[SLACK_SERVICE] Error inviting user to channel:`, error);
       return false;
     }
   }
 
+  /**
+   * 환영 메시지 전송
+   */
   async sendWelcomeMessage(channelId: string, userName: string): Promise<void> {
     try {
+      console.log(`[SLACK_SERVICE] Sending welcome message to channel ${channelId} for user ${userName}`);
+      
       const message = {
         channel: channelId,
         text: `안녕하세요 ${userName}님! 🎉`,
@@ -174,29 +217,33 @@ export class SlackService {
         ]
       };
 
-      const response = await fetch('https://slack.com/api/chat.postMessage', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      });
+      const response = await this.slack.chat.postMessage(message);
 
-      const data = await response.json();
+      console.log(`[SLACK_SERVICE] chat.postMessage response:`, {
+        ok: response.ok,
+        error: response.error,
+        ts: response.ts
+      });
       
-      if (data.ok) {
-        console.log(`[SLACK] Welcome message sent to channel ${channelId}`);
+      if (response.ok) {
+        console.log(`[SLACK_SERVICE] Welcome message sent successfully to channel ${channelId}`);
       } else {
-        console.error('[SLACK] Failed to send welcome message:', data.error);
+        console.error(`[SLACK_SERVICE] Failed to send welcome message. Error: ${response.error}`);
       }
     } catch (error) {
-      console.error('[SLACK] Error sending welcome message:', error);
+      console.error(`[SLACK_SERVICE] Error sending welcome message:`, error);
     }
   }
 
+  /**
+   * 비디오 요약 메시지 전송
+   */
   async sendVideoSummary(channelId: string, videoTitle: string, videoUrl: string, summary: string): Promise<void> {
     try {
+      console.log(`[SLACK_SERVICE] Sending video summary to channel ${channelId}`);
+      console.log(`[SLACK_SERVICE] Video: ${videoTitle}`);
+      console.log(`[SLACK_SERVICE] URL: ${videoUrl}`);
+      
       const message = {
         channel: channelId,
         text: `새로운 영상 요약: ${videoTitle}`,
@@ -236,24 +283,72 @@ export class SlackService {
         ]
       };
 
-      const response = await fetch('https://slack.com/api/chat.postMessage', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      });
+      const response = await this.slack.chat.postMessage(message);
 
-      const data = await response.json();
+      console.log(`[SLACK_SERVICE] Video summary chat.postMessage response:`, {
+        ok: response.ok,
+        error: response.error,
+        ts: response.ts
+      });
       
-      if (data.ok) {
-        console.log(`[SLACK] Video summary sent to channel ${channelId}`);
+      if (response.ok) {
+        console.log(`[SLACK_SERVICE] Video summary sent successfully to channel ${channelId}`);
       } else {
-        console.error('[SLACK] Failed to send video summary:', data.error);
+        console.error(`[SLACK_SERVICE] Failed to send video summary. Error: ${response.error}`);
       }
     } catch (error) {
-      console.error('[SLACK] Error sending video summary:', error);
+      console.error(`[SLACK_SERVICE] Error sending video summary:`, error);
+    }
+  }
+
+  /**
+   * Team join 이벤트 처리
+   */
+  async handleTeamJoinEvent(event: SlackTeamJoinEvent): Promise<void> {
+    try {
+      console.log(`[SLACK_SERVICE] Processing team join event for user: ${event.user.email}`);
+      console.log(`[SLACK_SERVICE] User details:`, {
+        id: event.user.id,
+        email: event.user.email,
+        name: event.user.name,
+        event_ts: event.event_ts
+      });
+      
+      // 이메일로 우리 데이터베이스에서 사용자 찾기
+      const user = await storage.getUserByEmail(event.user.email);
+      if (!user) {
+        console.log(`[SLACK_SERVICE] User not found in database: ${event.user.email}`);
+        return;
+      }
+
+      console.log(`[SLACK_SERVICE] Found user in database: ${user.username} (ID: ${user.id})`);
+
+      // 사용자 전용 채널 생성
+      const channelName = `youtube-summary-${user.id}`;
+      const channel = await this.createPrivateChannel(channelName, user.username);
+      
+      if (channel) {
+        // 사용자를 채널에 초대
+        const inviteSuccess = await this.inviteUserToChannel(channel.id, event.user.id);
+        
+        // 데이터베이스에 Slack 연동 정보 저장
+        await storage.updateUserSlackInfo(user.id, {
+          slackUserId: event.user.id,
+          slackChannelId: channel.id,
+          slackJoinedAt: new Date()
+        });
+
+        console.log(`[SLACK_SERVICE] Successfully updated database with Slack info for user ${user.username}`);
+        
+        // 환영 메시지 전송
+        await this.sendWelcomeMessage(channel.id, user.username);
+        
+        console.log(`[SLACK_SERVICE] Team join event processed successfully for user ${user.username}`);
+      } else {
+        console.error(`[SLACK_SERVICE] Failed to create channel for user ${user.username}`);
+      }
+    } catch (error) {
+      console.error(`[SLACK_SERVICE] Error handling team join event:`, error);
     }
   }
 }

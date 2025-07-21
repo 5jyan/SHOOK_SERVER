@@ -435,12 +435,18 @@ export default function HomePage() {
                   <div className="flex items-start">
                     <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
                     <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-2">설정 방법:</p>
+                      <p className="font-medium mb-2">중요한 안내:</p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>위에 이메일 주소를 입력하고 "Slack 채널 생성" 버튼을 클릭하세요</li>
-                        <li>자동으로 Slack에 전용 채널이 생성됩니다</li>
-                        <li>필요한 경우 <a href={SLACK_INVITE_URL} target="_blank" className="underline">여기서 워크스페이스에 가입</a>하세요</li>
+                        <li>먼저 <a href={SLACK_INVITE_URL} target="_blank" className="underline font-medium">Slack 워크스페이스에 가입</a>하세요</li>
+                        <li>가입할 때 사용한 <strong>정확한 이메일 주소</strong>를 위에 입력하세요</li>
+                        <li>"Slack 채널 생성" 버튼을 클릭하면 전용 채널이 자동 생성됩니다</li>
+                        <li>Slack에서 생성된 채널을 확인하고 YouTube 요약을 받아보세요</li>
                       </ol>
+                      <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                        <p className="text-yellow-800 text-xs">
+                          ⚠️ 워크스페이스에 가입하지 않은 이메일로는 채널 생성이 불가능합니다
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>

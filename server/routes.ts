@@ -155,82 +155,131 @@ export function registerRoutes(app: Express): Server {
 
   // Slack Manual Setup API endpoint
   app.post("/api/slack/setup", async (req, res) => {
+    console.log(`[SLACK_SETUP] Received setup request`);
+    
     if (!req.isAuthenticated()) {
+      console.log(`[SLACK_SETUP] User not authenticated`);
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     try {
       const { email } = req.body;
-      console.log(`[SLACK] Manual setup request from user ${req.user.id} with email: ${email}`);
+      console.log(`[SLACK_SETUP] Manual setup request from user ${req.user.id} (${req.user.username}) with email: ${email}`);
 
       if (!email || !email.includes('@')) {
+        console.log(`[SLACK_SETUP] Invalid email format: ${email}`);
         return res.status(400).json({ error: "올바른 이메일 주소를 입력해주세요" });
       }
 
-      // 사용자 이메일 업데이트
-      await storage.updateUserEmail(req.user.id, email);
-      console.log(`[SLACK] Updated user ${req.user.id} email to: ${email}`);
+      // 1. Slack 워크스페이스에서 이메일 확인
+      console.log(`[SLACK_SETUP] Verifying email ${email} in Slack workspace...`);
+      const emailVerification = await slackService.verifyEmailInWorkspace(email);
+      
+      if (!emailVerification.exists) {
+        console.log(`[SLACK_SETUP] Email ${email} not found in Slack workspace`);
+        return res.status(400).json({ 
+          error: "입력하신 이메일이 Slack 워크스페이스에 존재하지 않습니다. 먼저 워크스페이스에 가입해주세요." 
+        });
+      }
 
-      // 사용자 전용 채널 생성
+      console.log(`[SLACK_SETUP] Email ${email} verified in workspace. Slack User ID: ${emailVerification.userId}`);
+
+      // 2. 사용자 이메일 업데이트
+      console.log(`[SLACK_SETUP] Updating user ${req.user.id} email to: ${email}`);
+      await storage.updateUserEmail(req.user.id, email);
+      console.log(`[SLACK_SETUP] Successfully updated user email`);
+
+      // 3. 사용자 전용 채널 생성
       const channelName = `youtube-summary-${req.user.id}`;
-      console.log(`[SLACK] Creating private channel: ${channelName}`);
+      console.log(`[SLACK_SETUP] Creating private channel: ${channelName} for user: ${req.user.username}`);
       
       const channel = await slackService.createPrivateChannel(channelName, req.user.username);
       
-      if (channel) {
-        console.log(`[SLACK] Successfully created channel: ${channel.id}`);
-        
-        // 데이터베이스에 Slack 연동 정보 저장 (slackUserId는 나중에 설정)
-        await storage.updateUserSlackInfo(req.user.id, {
-          slackUserId: '', // 아직 슬랙 유저 ID를 모르므로 빈 문자열
-          slackChannelId: channel.id,
-          slackJoinedAt: new Date()
-        });
-
-        // 환영 메시지 전송
-        await slackService.sendWelcomeMessage(channel.id, req.user.username);
-        
-        res.json({ 
-          success: true, 
-          message: "Slack 채널이 성공적으로 생성되었습니다.",
-          channelId: channel.id,
-          channelName: channel.name
-        });
-      } else {
-        res.status(500).json({ error: "채널 생성에 실패했습니다" });
+      if (!channel) {
+        console.error(`[SLACK_SETUP] Failed to create channel for user ${req.user.username}`);
+        return res.status(500).json({ error: "채널 생성에 실패했습니다" });
       }
 
+      console.log(`[SLACK_SETUP] Successfully created channel: ${channel.name} (ID: ${channel.id})`);
+
+      // 4. 사용자를 채널에 초대
+      console.log(`[SLACK_SETUP] Inviting user ${emailVerification.userId} to channel ${channel.id}`);
+      const inviteSuccess = await slackService.inviteUserToChannel(channel.id, emailVerification.userId!);
+      
+      if (!inviteSuccess) {
+        console.error(`[SLACK_SETUP] Failed to invite user to channel`);
+        return res.status(500).json({ error: "사용자를 채널에 초대하는데 실패했습니다" });
+      }
+
+      console.log(`[SLACK_SETUP] Successfully invited user to channel`);
+
+      // 5. 데이터베이스에 Slack 연동 정보 저장
+      console.log(`[SLACK_SETUP] Updating database with Slack info for user ${req.user.id}`);
+      await storage.updateUserSlackInfo(req.user.id, {
+        slackUserId: emailVerification.userId!,
+        slackChannelId: channel.id,
+        slackJoinedAt: new Date()
+      });
+      console.log(`[SLACK_SETUP] Successfully updated database with Slack info`);
+
+      // 6. 환영 메시지 전송
+      console.log(`[SLACK_SETUP] Sending welcome message to channel ${channel.id}`);
+      await slackService.sendWelcomeMessage(channel.id, req.user.username);
+      console.log(`[SLACK_SETUP] Welcome message sent`);
+      
+      console.log(`[SLACK_SETUP] Slack setup completed successfully for user ${req.user.username}`);
+      
+      res.json({ 
+        success: true, 
+        message: "Slack 채널이 성공적으로 생성되었습니다.",
+        channelId: channel.id,
+        channelName: channel.name
+      });
+
     } catch (error) {
-      console.error("[SLACK] Error in manual setup:", error);
+      console.error("[SLACK_SETUP] Error in manual setup:", error);
       res.status(500).json({ error: "슬랙 설정 중 오류가 발생했습니다" });
     }
   });
 
   // Slack Events API endpoint
   app.post("/api/slack/events", async (req, res) => {
+    console.log(`[SLACK_EVENTS] Received Slack event`);
+    
     try {
       const signature = req.headers['x-slack-signature'] as string;
       const timestamp = req.headers['x-slack-request-timestamp'] as string;
       const body = JSON.stringify(req.body);
 
-      console.log(`[SLACK] Received event:`, req.body);
+      console.log(`[SLACK_EVENTS] Event details:`, {
+        type: req.body.type,
+        eventType: req.body.event?.type,
+        headers: {
+          signature: signature ? signature.substring(0, 20) + '...' : 'missing',
+          timestamp: timestamp
+        }
+      });
 
       // URL verification for initial setup
       if (req.body.type === 'url_verification') {
-        console.log(`[SLACK] URL verification challenge received`);
+        console.log(`[SLACK_EVENTS] URL verification challenge received: ${req.body.challenge}`);
         return res.json({ challenge: req.body.challenge });
       }
 
       // Verify request authenticity
+      console.log(`[SLACK_EVENTS] Verifying request signature...`);
       const isValid = await slackService.verifyRequest(body, signature, timestamp);
       if (!isValid) {
-        console.log(`[SLACK] Invalid request signature`);
+        console.log(`[SLACK_EVENTS] Invalid request signature - rejecting request`);
         return res.status(401).json({ error: "Unauthorized" });
       }
 
+      console.log(`[SLACK_EVENTS] Request signature verified successfully`);
+
       // Handle team_join event
       if (req.body.type === 'event_callback' && req.body.event.type === 'team_join') {
-        console.log(`[SLACK] Processing team_join event for user: ${req.body.event.user.profile.email}`);
+        console.log(`[SLACK_EVENTS] Processing team_join event`);
+        console.log(`[SLACK_EVENTS] User profile:`, req.body.event.user.profile);
         
         // team_join 이벤트에서 이메일 정보 추출
         const event = {
@@ -243,12 +292,17 @@ export function registerRoutes(app: Express): Server {
           event_ts: req.body.event.event_ts
         };
 
+        console.log(`[SLACK_EVENTS] Extracted event data:`, event);
         await slackService.handleTeamJoinEvent(event);
+        console.log(`[SLACK_EVENTS] Team join event processing completed`);
+      } else {
+        console.log(`[SLACK_EVENTS] Unhandled event type: ${req.body.type} / ${req.body.event?.type}`);
       }
 
+      console.log(`[SLACK_EVENTS] Sending success response`);
       res.status(200).json({ status: 'ok' });
     } catch (error) {
-      console.error("[SLACK] Error processing event:", error);
+      console.error("[SLACK_EVENTS] Error processing event:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
