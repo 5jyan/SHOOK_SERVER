@@ -16,6 +16,7 @@ interface SlackTeamJoinEvent {
 
 export class SlackService {
   private slack: WebClient;
+  private userSlack: WebClient;
   private signingSecret: string;
 
   constructor() {
@@ -26,6 +27,11 @@ export class SlackService {
       throw new Error("SLACK_BOT_TOKEN environment variable must be set");
     }
 
+    if (!process.env.SLACK_USER_OAUTH_TOKEN) {
+      console.error(`[SLACK_SERVICE] SLACK_USER_OAUTH_TOKEN environment variable is missing`);
+      throw new Error("SLACK_USER_OAUTH_TOKEN environment variable must be set");
+    }
+
     if (!process.env.SLACK_CHANNEL_ID) {
       console.error(`[SLACK_SERVICE] SLACK_CHANNEL_ID environment variable is missing`);
       throw new Error("SLACK_CHANNEL_ID environment variable must be set");
@@ -33,10 +39,14 @@ export class SlackService {
 
     console.log(`[SLACK_SERVICE] Environment variables validated successfully`);
     
+    // Bot 토큰 (채널 생성, 메시지 전송용)
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+    // User 토큰 (이메일 검증용 - users:read.email 권한 필요)
+    this.userSlack = new WebClient(process.env.SLACK_USER_OAUTH_TOKEN);
     this.signingSecret = process.env.SLACK_SIGNING_SECRET || '';
     
-    console.log(`[SLACK_SERVICE] WebClient initialized with bot token`);
+    console.log(`[SLACK_SERVICE] WebClient initialized with bot token: ${process.env.SLACK_BOT_TOKEN?.substring(0, 20)}...`);
+    console.log(`[SLACK_SERVICE] UserSlack initialized with user token: ${process.env.SLACK_USER_OAUTH_TOKEN?.substring(0, 20)}...`);
     console.log(`[SLACK_SERVICE] Signing secret ${this.signingSecret ? 'is set' : 'is not set'}`);
   }
 
@@ -46,8 +56,10 @@ export class SlackService {
   async verifyEmailInWorkspace(email: string): Promise<{ exists: boolean; userId?: string; userInfo?: any }> {
     try {
       console.log(`[SLACK_SERVICE] Verifying email in workspace: ${email}`);
+      console.log(`[SLACK_SERVICE] Using USER_OAUTH_TOKEN for email verification`);
       
-      const response = await this.slack.users.lookupByEmail({
+      // User OAuth 토큰을 사용하여 이메일 검증 (users:read.email 권한 필요)
+      const response = await this.userSlack.users.lookupByEmail({
         email: email
       });
 
