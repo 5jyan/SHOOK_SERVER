@@ -16,6 +16,9 @@ import {
   Bot,
   LogOut,
   Loader2,
+  ExternalLink,
+  AlertTriangle,
+  ArrowLeft,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +32,8 @@ export default function HomePage() {
   const [channelHandle, setChannelHandle] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [slackSetupCompleted, setSlackSetupCompleted] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [workspaceJoined, setWorkspaceJoined] = useState(false);
 
   // 사용자의 Slack 연동 상태를 확인
   const isSlackConnected = user?.slackChannelId;
@@ -147,6 +152,8 @@ export default function HomePage() {
         description: "Slack 채널이 성공적으로 생성되었습니다! Slack 워크스페이스에서 확인해보세요.",
       });
       setSlackSetupCompleted(true);
+      setShowEmailInput(false);
+      setUserEmail("");
       // 사용자 정보 갱신
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
@@ -401,79 +408,134 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {!isSlackConnected ? (
-              <div className="space-y-4">
-                <p className="text-slate-600 text-center">
-                  YouTube 영상 요약을 Slack으로 받기 위해 이메일을 입력하고 설정하세요.
-                </p>
-
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <Input
-                      type="email"
-                      placeholder="이메일 주소를 입력하세요"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={handleSlackSetup}
-                      disabled={slackSetupMutation.isPending}
-                      className="bg-purple-600 hover:bg-purple-700 text-white whitespace-nowrap"
-                    >
-                      {slackSetupMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Send className="w-4 h-4 mr-2" />
-                      )}
-                      Slack 채널 생성
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
-                    <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-2">중요한 안내:</p>
-                      <ol className="list-decimal list-inside space-y-1">
-                        <li>먼저 <a href={SLACK_INVITE_URL} target="_blank" className="underline font-medium">Slack 워크스페이스에 가입</a>하세요</li>
-                        <li>가입할 때 사용한 <strong>정확한 이메일 주소</strong>를 위에 입력하세요</li>
-                        <li>"Slack 채널 생성" 버튼을 클릭하면 전용 채널이 자동 생성됩니다</li>
-                        <li>Slack에서 생성된 채널을 확인하고 YouTube 요약을 받아보세요</li>
-                      </ol>
-                      <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
-                        <p className="text-yellow-800 text-xs">
-                          ⚠️ 워크스페이스에 가입하지 않은 이메일로는 채널 생성이 불가능합니다
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            {isSlackConnected ? (
+              // 연동 완료된 상태
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <CheckCircle className="text-green-500 mr-3 w-5 h-5" />
-                    <div className="text-sm text-green-700">
-                      <p className="font-medium">
-                        Slack 채널이 성공적으로 생성되었습니다!
+                    <div className="relative">
+                      <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center">
+                        <CheckCircle className="text-white w-6 h-6" />
+                      </div>
+                      {/* Active 애니메이션 효과 */}
+                      <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-20 animate-ping"></div>
+                    </div>
+                    <div className="ml-4">
+                      <p className="font-semibold text-green-800 text-lg">
+                        Slack 채널 연동중
                       </p>
-                      <p>
-                        이제 새로운 YouTube 영상 요약을 받아보실 수 있습니다.
+                      <p className="text-green-600 text-sm">
+                        새로운 YouTube 영상 요약을 실시간으로 받아보실 수 있습니다
                       </p>
                     </div>
                   </div>
                   <Button
                     onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
                     variant="outline"
-                    size="sm"
-                    className="text-purple-600 border-purple-600 hover:bg-purple-50"
+                    className="text-purple-600 border-purple-600 hover:bg-purple-50 shrink-0"
                   >
+                    <ExternalLink className="w-4 h-4 mr-2" />
                     Slack 열기
                   </Button>
                 </div>
+              </div>
+            ) : (
+              // 연동 안된 상태
+              <div className="space-y-4">
+                {!showEmailInput ? (
+                  // 초기 상태: 워크스페이스 가입 버튼들
+                  <div className="text-center space-y-4">
+                    <p className="text-slate-600">
+                      YouTube 영상 요약을 Slack으로 받기 위해 먼저 워크스페이스에 가입하세요.
+                    </p>
+                    
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                      <Button
+                        onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Slack 워크스페이스 가입하기
+                      </Button>
+                      
+                      <Button
+                        onClick={() => setShowEmailInput(true)}
+                        variant="outline"
+                        className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        가입 완료 했어요
+                      </Button>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                      <div className="flex items-start">
+                        <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
+                        <div className="text-sm text-blue-700">
+                          <p className="font-medium mb-2">가입 방법:</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>"Slack 워크스페이스 가입하기" 버튼을 클릭하세요</li>
+                            <li>이메일 주소로 워크스페이스에 가입하세요</li>
+                            <li>"가입 완료 했어요" 버튼을 눌러 다음 단계로 진행하세요</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // 이메일 입력 상태
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <h3 className="font-semibold text-slate-900 mb-2">
+                        Slack 이메일 주소를 입력하세요
+                      </h3>
+                      <p className="text-slate-600 text-sm">
+                        워크스페이스 가입시 사용한 정확한 이메일 주소를 입력해주세요.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Input
+                        type="email"
+                        placeholder="example@email.com"
+                        value={userEmail}
+                        onChange={(e) => setUserEmail(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={handleSlackSetup}
+                        disabled={slackSetupMutation.isPending}
+                        className="bg-purple-600 hover:bg-purple-700 text-white whitespace-nowrap"
+                      >
+                        {slackSetupMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 mr-2" />
+                        )}
+                        Slack 채널 생성
+                      </Button>
+                    </div>
+
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                      <div className="flex items-start">
+                        <AlertTriangle className="text-yellow-500 mt-0.5 mr-3 w-4 h-4" />
+                        <div className="text-sm text-yellow-700">
+                          <p className="font-medium mb-1">중요:</p>
+                          <p>워크스페이스에 가입하지 않은 이메일로는 채널 생성이 불가능합니다.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="ghost" 
+                      onClick={() => setShowEmailInput(false)}
+                      className="w-full text-slate-500"
+                    >
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      이전으로
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
