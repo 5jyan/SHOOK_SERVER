@@ -190,7 +190,7 @@ export function registerRoutes(app: Express): Server {
       console.log(`[SLACK_SETUP] Successfully updated user email`);
 
       // 3. 사용자 전용 채널 생성
-      const channelName = `youtube-summary-${req.user.id}`;
+      const channelName = `${req.user.username}-channel`;
       console.log(`[SLACK_SETUP] Creating private channel: ${channelName} for user: ${req.user.username}`);
       
       const channel = await slackService.createPrivateChannel(channelName, req.user.username);
@@ -222,7 +222,24 @@ export function registerRoutes(app: Express): Server {
       });
       console.log(`[SLACK_SETUP] Successfully updated database with Slack info`);
 
-      // 6. 환영 메시지 전송
+      // 6. 관리자 추가
+      console.log(`[SLACK_SETUP] Adding admin to channel ${channel.id}`);
+      const adminEmail = 'saulpark12@gmail.com';
+      const adminVerification = await slackService.verifyEmailInWorkspace(adminEmail);
+      
+      if (adminVerification.exists) {
+        console.log(`[SLACK_SETUP] Admin email ${adminEmail} found, inviting to channel`);
+        const adminInviteSuccess = await slackService.inviteUserToChannel(channel.id, adminVerification.userId!);
+        if (adminInviteSuccess) {
+          console.log(`[SLACK_SETUP] Admin successfully added to channel`);
+        } else {
+          console.log(`[SLACK_SETUP] Failed to add admin to channel`);
+        }
+      } else {
+        console.log(`[SLACK_SETUP] Admin email ${adminEmail} not found in workspace`);
+      }
+
+      // 7. 환영 메시지 전송
       console.log(`[SLACK_SETUP] Sending welcome message to channel ${channel.id}`);
       await slackService.sendWelcomeMessage(channel.id, req.user.username);
       console.log(`[SLACK_SETUP] Welcome message sent`);

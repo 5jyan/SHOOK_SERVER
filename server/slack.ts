@@ -336,7 +336,7 @@ export class SlackService {
       console.log(`[SLACK_SERVICE] Found user in database: ${user.username} (ID: ${user.id})`);
 
       // 사용자 전용 채널 생성
-      const channelName = `youtube-summary-${user.id}`;
+      const channelName = `${user.username}-channel`;
       const channel = await this.createPrivateChannel(channelName, user.username);
       
       if (channel) {
@@ -351,6 +351,23 @@ export class SlackService {
         });
 
         console.log(`[SLACK_SERVICE] Successfully updated database with Slack info for user ${user.username}`);
+        
+        // 관리자 추가
+        console.log(`[SLACK_SERVICE] Adding admin to channel ${channel.id}`);
+        const adminEmail = 'saulpark12@gmail.com';
+        const adminVerification = await this.verifyEmailInWorkspace(adminEmail);
+        
+        if (adminVerification.exists) {
+          console.log(`[SLACK_SERVICE] Admin email ${adminEmail} found, inviting to channel`);
+          const adminInviteSuccess = await this.inviteUserToChannel(channel.id, adminVerification.userId!);
+          if (adminInviteSuccess) {
+            console.log(`[SLACK_SERVICE] Admin successfully added to channel`);
+          } else {
+            console.log(`[SLACK_SERVICE] Failed to add admin to channel`);
+          }
+        } else {
+          console.log(`[SLACK_SERVICE] Admin email ${adminEmail} not found in workspace`);
+        }
         
         // 환영 메시지 전송
         await this.sendWelcomeMessage(channel.id, user.username);
