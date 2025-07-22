@@ -22,7 +22,7 @@ export class YoutubeCaptionExtractor {
       // Chromium 경로 찾기 - 여러 방법 시도
       let executablePath;
       try {
-        const { execSync } = require('child_process');
+        const { execSync } = await import('child_process');
         
         // 여러 명령어로 Chromium 찾기
         const commands = [
@@ -135,41 +135,71 @@ export class YoutubeCaptionExtractor {
       // 전사본 버튼 찾기 및 클릭
       console.log(`[YOUTUBE_CAPTIONS] Looking for transcript button...`);
       
-      const transcriptSelectors = [
-        'yt-button-renderer[aria-label*="transcript" i]',
-        'yt-button-renderer[aria-label*="전사본" i]',
-        'button[aria-label*="transcript" i]',
-        'button[aria-label*="전사본" i]',
-        '[role="button"]:has-text("transcript")',
-        '[role="button"]:has-text("전사본")',
-        'tp-yt-paper-button:has-text("transcript")',
-        'tp-yt-paper-button:has-text("전사본")'
-      ];
-
       let transcriptFound = false;
-      for (const selector of transcriptSelectors) {
-        try {
-          // 요소가 로드될 때까지 대기
-          await page.waitForSelector(selector, { timeout: 3000 });
+      
+      // 방법 1: 일반적인 전사본 버튼 찾기
+      try {
+        await page.waitForTimeout(2000); // DOM이 완전히 로드될 때까지 대기
+        
+        const transcriptButton = await page.evaluate(() => {
+          // 더 포괄적인 전사본 버튼 찾기
+          const possibleTexts = ['transcript', '전사본', 'Transcript', 'TRANSCRIPT'];
           
-          // 요소가 보이고 클릭 가능한지 확인
-          const isVisible = await page.evaluate(sel => {
-            const element = document.querySelector(sel);
-            if (!element) return false;
-            const rect = element.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          }, selector);
+          // 모든 버튼 요소 검색
+          const buttons = Array.from(document.querySelectorAll('button, [role="button"], yt-button-renderer, tp-yt-paper-button'));
+          
+          for (const button of buttons) {
+            const text = button.textContent?.toLowerCase() || '';
+            const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+            
+            for (const searchText of possibleTexts) {
+              if (text.includes(searchText.toLowerCase()) || ariaLabel.includes(searchText.toLowerCase())) {
+                // 버튼이 보이는지 확인
+                const rect = button.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  return button;
+                }
+              }
+            }
+          }
+          return null;
+        });
 
-          if (isVisible) {
+        if (transcriptButton) {
+          await page.evaluate(button => {
+            button.click();
+          }, transcriptButton);
+          console.log(`[YOUTUBE_CAPTIONS] Found and clicked transcript button via text search`);
+          transcriptFound = true;
+          await page.waitForTimeout(3000);
+        }
+      } catch (error) {
+        console.log(`[YOUTUBE_CAPTIONS] Text-based transcript search failed:`, error.message);
+      }
+
+      // 방법 2: 선택자 기반 탐색 (백업)
+      if (!transcriptFound) {
+        const transcriptSelectors = [
+          'yt-button-renderer[aria-label*="transcript" i]',
+          'yt-button-renderer[aria-label*="전사본" i]',
+          'button[aria-label*="transcript" i]',
+          'button[aria-label*="전사본" i]',
+          'tp-yt-paper-button[aria-label*="transcript" i]',
+          'tp-yt-paper-button[aria-label*="전사본" i]'
+        ];
+
+        for (const selector of transcriptSelectors) {
+          try {
+            await page.waitForSelector(selector, { timeout: 2000 });
             await page.click(selector);
             console.log(`[YOUTUBE_CAPTIONS] Successfully clicked transcript button with selector: ${selector}`);
             transcriptFound = true;
-            await page.waitForTimeout(3000); // 전사본 패널이 로드될 때까지 대기
+            await page.waitForTimeout(3000);
             break;
+          } catch (error) {
+            console.log(`[YOUTUBE_CAPTIONS] Selector ${selector} failed:`, error.message);
+            continue;
           }
-        } catch (error) {
-          console.log(`[YOUTUBE_CAPTIONS] Transcript selector ${selector} failed:`, error.message);
-          continue;
         }
       }
 
@@ -186,16 +216,23 @@ export class YoutubeCaptionExtractor {
       // 전사본 패널에서 텍스트 추출
       console.log(`[YOUTUBE_CAPTIONS] Extracting transcript text...`);
       
+      // 전사본 패널이 로드될 때까지 추가 대기
+      await page.waitForTimeout(2000);
+      
       const captions = await page.evaluate(() => {
-        // 다양한 전사본 selector 시도
+        let segments: any[] = [];
+        
+        // 최신 YouTube DOM 구조에 맞는 전사본 selector들
         const transcriptSelectors = [
-          'ytd-transcript-segment-renderer',
+          'ytd-transcript-segment-renderer', // 표준 전사본 세그먼트
           '.ytd-transcript-segment-renderer',
-          '[role="button"]:has(.segment-timestamp)',
-          '.transcript-segment'
+          '[class*="transcript-segment"]',
+          '[class*="cue-group"]',
+          '.segment-list .segment',
+          '#segments-container .segment'
         ];
         
-        let segments: any[] = [];
+        console.log('Searching for transcript segments...');
         
         for (const selector of transcriptSelectors) {
           const elements = document.querySelectorAll(selector);
@@ -203,44 +240,139 @@ export class YoutubeCaptionExtractor {
           
           if (elements.length > 0) {
             elements.forEach((item, index) => {
-              // 시간 요소 찾기
-              const timeElement = item.querySelector('.segment-timestamp') || 
-                                item.querySelector('[class*="timestamp"]') ||
-                                item.querySelector('span:first-child');
-              
-              // 텍스트 요소 찾기  
-              const textElement = item.querySelector('.segment-text') ||
-                                item.querySelector('[class*="text"]') ||
-                                item.querySelector('span:last-child') ||
-                                item;
-              
-              const timestamp = timeElement?.textContent?.trim() || `${index * 5}초`;
-              const text = textElement?.textContent?.trim();
-              
-              if (text && text !== timestamp) {
-                segments.push({
-                  timestamp: timestamp,
-                  text: text,
-                  start: index * 5,
-                  duration: 5
-                });
+              try {
+                // 더 포괄적인 시간 요소 찾기
+                const timeSelectors = [
+                  '.segment-timestamp',
+                  '[class*="timestamp"]', 
+                  '.cue-group-start-offset',
+                  '.ytd-transcript-segment-renderer [role="button"] span:first-child',
+                  'span[style*="color"]'
+                ];
+                
+                let timeElement = null;
+                for (const timeSelector of timeSelectors) {
+                  timeElement = item.querySelector(timeSelector);
+                  if (timeElement) break;
+                }
+                
+                // 더 포괄적인 텍스트 요소 찾기  
+                const textSelectors = [
+                  '.segment-text',
+                  '[class*="text"]',
+                  '.cue-group span:last-child',
+                  '.ytd-transcript-segment-renderer [role="button"] span:last-child'
+                ];
+                
+                let textElement = null;
+                for (const textSelector of textSelectors) {
+                  textElement = item.querySelector(textSelector);
+                  if (textElement) break;
+                }
+                
+                // 텍스트가 없으면 전체 요소에서 추출 시도
+                if (!textElement) {
+                  textElement = item;
+                }
+                
+                const timestamp = timeElement?.textContent?.trim() || `${index * 5}초`;
+                let text = textElement?.textContent?.trim() || '';
+                
+                // 타임스탬프 제거
+                if (text.includes(timestamp)) {
+                  text = text.replace(timestamp, '').trim();
+                }
+                
+                // 유효한 텍스트인지 확인
+                if (text && text.length > 1 && text !== timestamp && !text.match(/^\d+:\d+$/)) {
+                  // 시간을 숫자로 변환
+                  let startTime = index * 5;
+                  if (timestamp.includes(':')) {
+                    const parts = timestamp.split(':');
+                    if (parts.length === 2) {
+                      startTime = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    }
+                  }
+                  
+                  segments.push({
+                    timestamp: timestamp,
+                    text: text,
+                    start: startTime,
+                    duration: 5
+                  });
+                }
+              } catch (error) {
+                console.error('Error processing segment:', error);
               }
             });
             
             if (segments.length > 0) {
-              console.log(`Successfully extracted ${segments.length} segments`);
+              console.log(`Successfully extracted ${segments.length} segments with selector: ${selector}`);
               break;
             }
           }
         }
         
-        // 전사본이 없는 경우 페이지 제목이라도 추출
+        // 대안 방법: 모든 클릭 가능한 요소에서 타임스탬프 패턴 찾기
         if (segments.length === 0) {
-          const title = document.querySelector('h1.title, h1.style-scope.ytd-video-primary-info-renderer, #title h1')?.textContent?.trim();
+          console.log('Trying alternative method: searching all clickable elements for timestamp patterns...');
+          
+          const clickableElements = document.querySelectorAll('[role="button"]');
+          console.log(`Found ${clickableElements.length} clickable elements`);
+          
+          Array.from(clickableElements).forEach((element, index) => {
+            const text = element.textContent?.trim() || '';
+            
+            // 타임스탬프 패턴 매칭 (예: "1:23", "0:45", "12:34")
+            const timeMatch = text.match(/(\d{1,2}:\d{2})/);
+            if (timeMatch) {
+              const timestamp = timeMatch[1];
+              const remainingText = text.replace(timestamp, '').trim();
+              
+              if (remainingText && remainingText.length > 5) {
+                const parts = timestamp.split(':');
+                const startTime = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                
+                segments.push({
+                  timestamp: timestamp,
+                  text: remainingText,
+                  start: startTime,
+                  duration: 5
+                });
+              }
+            }
+          });
+          
+          if (segments.length > 0) {
+            console.log(`Alternative method found ${segments.length} segments`);
+          }
+        }
+        
+        // 여전히 전사본이 없는 경우 페이지 제목 추출
+        if (segments.length === 0) {
+          console.log('No transcript found, extracting video title...');
+          
+          const titleSelectors = [
+            'h1.title',
+            'h1.style-scope.ytd-video-primary-info-renderer',
+            '#title h1',
+            '.ytd-video-primary-info-renderer h1',
+            'h1[class*="title"]'
+          ];
+          
+          let title = '';
+          for (const titleSelector of titleSelectors) {
+            const titleElement = document.querySelector(titleSelector);
+            if (titleElement) {
+              title = titleElement.textContent?.trim() || '';
+              if (title) break;
+            }
+          }
+          
           if (title) {
             segments.push({
               timestamp: "0:00",
-              text: `제목: ${title} (자막을 찾을 수 없습니다)`,
+              text: `영상 제목: "${title}" - 자막을 추출할 수 없었습니다.`,
               start: 0,
               duration: 0
             });
