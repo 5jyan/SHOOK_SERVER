@@ -9,6 +9,18 @@ export interface CaptionSegment {
 
 export class YoutubeCaptionExtractor {
   private browser: puppeteer.Browser | null = null;
+  private debugMode: boolean = true; // 디버그 모드 활성화
+  
+  private debug(message: string, data?: any) {
+    if (this.debugMode) {
+      const timestamp = new Date().toISOString();
+      if (data) {
+        console.log(`[DEBUG ${timestamp}] ${message}`, data);
+      } else {
+        console.log(`[DEBUG ${timestamp}] ${message}`);
+      }
+    }
+  }
 
   constructor() {}
 
@@ -17,13 +29,18 @@ export class YoutubeCaptionExtractor {
    */
   private async initBrowser(): Promise<puppeteer.Browser> {
     if (!this.browser) {
+      this.debug(`Step 1: Starting browser initialization...`);
       console.log(`[YOUTUBE_CAPTIONS] Step 1: Starting browser initialization...`);
       
       // Chromium 경로 찾기 - 여러 방법 시도
       let executablePath;
       try {
+        this.debug(`Step 2: Searching for Chromium executable...`);
         console.log(`[YOUTUBE_CAPTIONS] Step 2: Searching for Chromium executable...`);
+        
+        this.debug(`Importing child_process module...`);
         const { execSync } = await import('child_process');
+        this.debug(`child_process imported successfully`);
         
         // 여러 명령어로 Chromium 찾기
         const commands = [
@@ -35,14 +52,26 @@ export class YoutubeCaptionExtractor {
         for (const cmd of commands) {
           try {
             console.log(`[YOUTUBE_CAPTIONS] Trying command: ${cmd}`);
-            const result = execSync(cmd).toString().trim();
+            const startTime = Date.now();
+            
+            // 명령어 실행에도 타임아웃 추가
+            const result = execSync(cmd, { 
+              timeout: 10000, // 10초 타임아웃
+              encoding: 'utf8'
+            }).trim();
+            
+            const cmdTime = Date.now() - startTime;
+            console.log(`[YOUTUBE_CAPTIONS] Command completed in ${cmdTime}ms`);
+            
             if (result) {
               executablePath = result;
               console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
               break;
+            } else {
+              console.log(`[YOUTUBE_CAPTIONS] Command returned empty result`);
             }
           } catch (e) {
-            console.log(`[YOUTUBE_CAPTIONS] Command failed: ${cmd}`);
+            console.log(`[YOUTUBE_CAPTIONS] Command failed: ${cmd}, error: ${e.message}`);
             continue;
           }
         }
