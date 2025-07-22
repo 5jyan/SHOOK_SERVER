@@ -95,10 +95,11 @@ export class YoutubeCaptionExtractor {
         console.log(`[YOUTUBE_CAPTIONS] Step 3: Preparing browser launch options...`);
         
         const browserArgs = [
-          '--no-sandbox',
-          '--disable-setuid-sandbox', 
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
+          '--no-sandbox', // 컨테이너 환경에서 샌드박스 비활성화 (필수)
+          '--disable-dev-shm-usage', // /dev/shm 사용 비활성화 (메모리 제한 환경에 유용)
+          '--disable-setuid-sandbox', // setuid 샌드박스 비활성화
+          '--disable-gpu', // GPU 가속 비활성화 (대부분의 서버 환경에서 GPU가 없으므로)
+          '--disable-web-security', // 웹 보안 비활성화 (필요한 경우)
           '--disable-extensions',
           '--disable-default-apps',
           '--disable-sync',
@@ -114,7 +115,9 @@ export class YoutubeCaptionExtractor {
           '--disable-backgrounding-occluded-windows',
           '--disable-features=TranslateUI',
           '--disable-features=BlinkGenPropertyTrees',
-          '--disable-ipc-flooding-protection'
+          '--disable-ipc-flooding-protection',
+          '--single-process', // 단일 프로세스 모드 (메모리 제한 환경)
+          '--no-zygote' // zygote 프로세스 비활성화
         ];
         
         this.debug(`Using ${browserArgs.length} browser arguments`);
@@ -122,11 +125,13 @@ export class YoutubeCaptionExtractor {
         console.log(`[YOUTUBE_CAPTIONS] Using executable: ${executablePath || 'Puppeteer bundled Chrome'}`);
         
         const launchOptions: any = {
-          headless: true,
-          timeout: 25000, // 25초 타임아웃
+          headless: 'new', // 새로운 headless 모드 사용
+          timeout: 60000, // 브라우저 시작 시간 초과를 60초로 늘림 (환경이 느릴 경우)
           args: browserArgs,
           defaultViewport: null,
-          ignoreDefaultArgs: false
+          ignoreDefaultArgs: false,
+          pipe: true, // WebSocket 대신 pipe 사용 (일부 환경에서 더 안정적)
+          dumpio: false // 프로세스 출력 비활성화
         };
         
         if (executablePath) {
@@ -142,10 +147,10 @@ export class YoutubeCaptionExtractor {
           puppeteer.launch(launchOptions),
           new Promise<never>((_, reject) => {
             setTimeout(() => {
-              this.debug(`Browser launch timeout after 25 seconds`);
-              console.log(`[YOUTUBE_CAPTIONS] Browser launch timeout after 25 seconds`);
-              reject(new Error('Browser launch timeout after 25 seconds'));
-            }, 25000);
+              this.debug(`Browser launch timeout after 60 seconds`);
+              console.log(`[YOUTUBE_CAPTIONS] Browser launch timeout after 60 seconds`);
+              reject(new Error('Browser launch timeout after 60 seconds'));
+            }, 60000);
           })
         ]);
         
