@@ -52,9 +52,12 @@ export class YoutubeCaptionExtractor {
       }
       
       try {
-        this.browser = await puppeteer.launch({
+        console.log(`[YOUTUBE_CAPTIONS] Launching browser with timeout...`);
+        
+        const launchPromise = puppeteer.launch({
           headless: true,
           executablePath: executablePath,
+          timeout: 30000, // 30초 타임아웃
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -71,13 +74,29 @@ export class YoutubeCaptionExtractor {
             '--disable-extensions',
             '--disable-plugins',
             '--disable-default-apps',
-            '--disable-translate'
+            '--disable-translate',
+            '--disable-sync',
+            '--disable-default-apps',
+            '--disable-background-networking'
           ]
         });
+        
+        // 타임아웃 추가
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Browser launch timeout after 30 seconds')), 30000);
+        });
+        
+        this.browser = await Promise.race([launchPromise, timeoutPromise]) as puppeteer.Browser;
         console.log(`[YOUTUBE_CAPTIONS] Browser initialized successfully`);
       } catch (error) {
         console.error(`[YOUTUBE_CAPTIONS] Failed to launch browser:`, error);
-        throw error;
+        
+        // 브라우저 초기화 실패 시 간단한 대안 제공
+        if (error.message.includes('timeout')) {
+          throw new Error('브라우저 초기화가 너무 오래 걸립니다. 잠시 후 다시 시도해주세요.');
+        }
+        
+        throw new Error(`브라우저 실행에 실패했습니다: ${error.message}`);
       }
     }
     return this.browser;
