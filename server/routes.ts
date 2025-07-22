@@ -349,37 +349,34 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
       
-      // Replit 환경에서 Puppeteer 문제가 지속되므로 대안 방법 우선 시도
-      console.log(`[CAPTIONS] Due to Replit environment issues, trying fallback method first...`);
+      // 실제 자막 데이터 추출을 위한 새로운 방법 시도
+      console.log(`[CAPTIONS] Trying YouTube transcript extraction method...`);
       
       let captions;
       try {
-        // 대안 방법 먼저 시도
+        // 1. 새로운 자막 추출 방법 시도
+        const { YoutubeTranscriptExtractor } = await import('./youtube-transcript');
+        const transcriptExtractor = new YoutubeTranscriptExtractor();
+        captions = await transcriptExtractor.extractTranscript(videoId, language);
+        
+        console.log(`[CAPTIONS] Transcript method returned ${captions.length} segments`);
+        
+        // 실제 자막이 있는지 확인 (오류 메시지가 아닌)
+        if (captions.length > 0 && !captions[0].text.includes('오류') && !captions[0].text.includes('제공되지 않습니다')) {
+          console.log(`[CAPTIONS] Successfully extracted real captions`);
+        } else {
+          throw new Error('No real captions found');
+        }
+        
+      } catch (transcriptError) {
+        console.log(`[CAPTIONS] Transcript method failed: ${transcriptError.message}, trying fallback...`);
+        
+        // 2. 기본 정보만 제공하는 대안 방법
         const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
         const fallbackExtractor = new YoutubeFallbackExtractor();
         captions = await fallbackExtractor.extractOEmbedInfo(videoId);
         
         console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
-        
-      } catch (fallbackError) {
-        console.log(`[CAPTIONS] Fallback method failed, trying Puppeteer as last resort...`);
-        
-        // 대안 방법 실패 시에만 Puppeteer 시도
-        const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            console.log(`[CAPTIONS] Puppeteer timeout after 10 seconds`);
-            reject(new Error('PUPPETEER_TIMEOUT'));
-          }, 10000);
-        });
-        
-        try {
-          captions = await Promise.race([extractionPromise, timeoutPromise]);
-          console.log(`[CAPTIONS] Puppeteer successfully extracted ${captions.length} caption segments`);
-        } catch (puppeteerError) {
-          console.error(`[CAPTIONS] Both methods failed`);
-          throw new Error(`자막 추출 실패: 대안 방법 실패 (${fallbackError.message}), Puppeteer 실패 (${puppeteerError.message})`);
-        }
       }
       
       res.json({
