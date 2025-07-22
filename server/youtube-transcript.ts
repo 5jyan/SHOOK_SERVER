@@ -80,19 +80,64 @@ export class YoutubeTranscriptExtractor {
     console.log(`[YOUTUBE_TRANSCRIPT] Parsing caption tracks from HTML`);
     
     try {
-      // 자막 정보가 포함된 JSON 데이터 찾기
-      const captionRegex = /"captionTracks":\s*(\[.*?\])/;
-      const match = html.match(captionRegex);
+      let captionTracks = [];
       
-      if (!match) {
-        console.log(`[YOUTUBE_TRANSCRIPT] No captionTracks found in HTML`);
-        return [];
+      // 1. 일반 자막 트랙 찾기
+      const captionRegex = /"captionTracks":\s*(\[.*?\])/;
+      const captionMatch = html.match(captionRegex);
+      
+      if (captionMatch) {
+        const tracks = JSON.parse(captionMatch[1]);
+        captionTracks = captionTracks.concat(tracks);
+        console.log(`[YOUTUBE_TRANSCRIPT] Found ${tracks.length} regular caption tracks`);
       }
       
-      const captionTracks = JSON.parse(match[1]);
-      console.log(`[YOUTUBE_TRANSCRIPT] Parsed ${captionTracks.length} caption tracks`);
+      // 2. 자동 생성 자막 트랙 찾기
+      const autoRegex = /"automaticCaptions":\s*(\{[^}]*\})/;
+      const autoMatch = html.match(autoRegex);
       
+      if (autoMatch) {
+        try {
+          const autoCaptions = JSON.parse(autoMatch[1]);
+          console.log(`[YOUTUBE_TRANSCRIPT] Found automatic captions for languages:`, Object.keys(autoCaptions));
+          
+          // 각 언어의 자동 자막을 트랙으로 변환
+          for (const [lang, tracks] of Object.entries(autoCaptions)) {
+            if (Array.isArray(tracks) && tracks.length > 0) {
+              const autoTrack = tracks[0]; // 첫 번째 트랙 사용
+              captionTracks.push({
+                ...autoTrack,
+                languageCode: lang,
+                name: `${lang} (자동 생성)`,
+                kind: 'asr'
+              });
+            }
+          }
+        } catch (error) {
+          console.log(`[YOUTUBE_TRANSCRIPT] Error parsing automatic captions:`, error);
+        }
+      }
+      
+      // 3. 대안 패턴으로 찾기
+      if (captionTracks.length === 0) {
+        const altRegex = /"timedtext"[^}]*"baseUrl":"([^"]*)"[^}]*"languageCode":"([^"]*)"/g;
+        let altMatch;
+        
+        while ((altMatch = altRegex.exec(html)) !== null) {
+          captionTracks.push({
+            baseUrl: altMatch[1].replace(/\\u0026/g, '&'),
+            languageCode: altMatch[2],
+            name: `${altMatch[2]} (발견됨)`,
+            kind: 'captions'
+          });
+        }
+        
+        console.log(`[YOUTUBE_TRANSCRIPT] Found ${captionTracks.length} tracks using alternative pattern`);
+      }
+      
+      console.log(`[YOUTUBE_TRANSCRIPT] Total tracks found: ${captionTracks.length}`);
       return captionTracks;
+      
     } catch (error) {
       console.error(`[YOUTUBE_TRANSCRIPT] Error parsing caption tracks:`, error);
       return [];
@@ -154,13 +199,43 @@ export class YoutubeTranscriptExtractor {
     console.log(`[YOUTUBE_TRANSCRIPT] Downloading captions from: ${captionUrl}`);
     
     try {
-      const response = await fetch(captionUrl);
+      // URL에 추가 매개변수를 더해서 시도
+      const enhancedUrl = captionUrl + '&fmt=srv3';
+      console.log(`[YOUTUBE_TRANSCRIPT] Trying enhanced URL: ${enhancedUrl}`);
+      
+      const response = await fetch(enhancedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8'
+        }
+      });
+      
       if (!response.ok) {
-        throw new Error(`Failed to download captions: ${response.status}`);
+        console.log(`[YOUTUBE_TRANSCRIPT] Enhanced URL failed with ${response.status}, trying original URL`);
+        
+        // 원본 URL로 다시 시도
+        const fallbackResponse = await fetch(captionUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        
+        if (!fallbackResponse.ok) {
+          throw new Error(`Both URLs failed: ${response.status} and ${fallbackResponse.status}`);
+        }
+        
+        const xmlData = await fallbackResponse.text();
+        console.log(`[YOUTUBE_TRANSCRIPT] Received ${xmlData.length} characters from fallback URL`);
+        return this.parseXMLCaptions(xmlData);
       }
       
       const xmlData = await response.text();
       console.log(`[YOUTUBE_TRANSCRIPT] Received ${xmlData.length} characters of caption data`);
+      
+      if (xmlData.length === 0) {
+        throw new Error('Empty caption data received');
+      }
       
       return this.parseXMLCaptions(xmlData);
       
