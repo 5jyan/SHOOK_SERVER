@@ -32,95 +32,107 @@ export class YoutubeCaptionExtractor {
       this.debug(`Step 1: Starting browser initialization...`);
       console.log(`[YOUTUBE_CAPTIONS] Step 1: Starting browser initialization...`);
       
-      // Chromium 경로 찾기 - 여러 방법 시도
+      // 알려진 Chromium 경로들을 직접 확인 (find 명령어 우회)
       let executablePath;
-      try {
-        this.debug(`Step 2: Searching for Chromium executable...`);
-        console.log(`[YOUTUBE_CAPTIONS] Step 2: Searching for Chromium executable...`);
-        
-        this.debug(`Importing child_process module...`);
-        const { execSync } = await import('child_process');
-        this.debug(`child_process imported successfully`);
-        
-        // 여러 명령어로 Chromium 찾기
-        const commands = [
-          'find /nix/store -name chromium -type f -executable 2>/dev/null | head -1',
-          'which chromium 2>/dev/null',
-          'which chromium-browser 2>/dev/null'
-        ];
+      this.debug(`Step 2: Checking known Chromium paths...`);
+      console.log(`[YOUTUBE_CAPTIONS] Step 2: Checking known Chromium paths...`);
+      
+      const knownPaths = [
+        '/nix/store/*/bin/chromium',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/opt/google/chrome/chrome'
+      ];
 
-        for (const cmd of commands) {
-          try {
-            console.log(`[YOUTUBE_CAPTIONS] Trying command: ${cmd}`);
-            const startTime = Date.now();
-            
-            // 명령어 실행에도 타임아웃 추가
-            const result = execSync(cmd, { 
-              timeout: 10000, // 10초 타임아웃
-              encoding: 'utf8'
-            }).trim();
-            
-            const cmdTime = Date.now() - startTime;
-            console.log(`[YOUTUBE_CAPTIONS] Command completed in ${cmdTime}ms`);
-            
-            if (result) {
-              executablePath = result;
-              console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
-              break;
-            } else {
-              console.log(`[YOUTUBE_CAPTIONS] Command returned empty result`);
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        // Nix store에서 chromium 찾기
+        try {
+          const nixStoreEntries = fs.readdirSync('/nix/store', { withFileTypes: true });
+          for (const entry of nixStoreEntries) {
+            if (entry.isDirectory() && entry.name.includes('chromium')) {
+              const chromiumPath = path.join('/nix/store', entry.name, 'bin', 'chromium');
+              if (fs.existsSync(chromiumPath)) {
+                executablePath = chromiumPath;
+                console.log(`[YOUTUBE_CAPTIONS] Found Chromium in Nix store: ${executablePath}`);
+                break;
+              }
             }
-          } catch (e) {
-            console.log(`[YOUTUBE_CAPTIONS] Command failed: ${cmd}, error: ${e.message}`);
-            continue;
+          }
+        } catch (nixError) {
+          console.log(`[YOUTUBE_CAPTIONS] Could not scan Nix store: ${nixError.message}`);
+        }
+
+        // 알려진 경로들 확인
+        if (!executablePath) {
+          for (const knownPath of knownPaths) {
+            try {
+              if (fs.existsSync(knownPath)) {
+                executablePath = knownPath;
+                console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
+                break;
+              }
+            } catch (checkError) {
+              console.log(`[YOUTUBE_CAPTIONS] Could not check path ${knownPath}: ${checkError.message}`);
+            }
           }
         }
       } catch (error) {
-        console.log(`[YOUTUBE_CAPTIONS] Error finding Chromium:`, error);
+        console.log(`[YOUTUBE_CAPTIONS] Error during path checking:`, error);
       }
 
       if (!executablePath) {
-        console.log(`[YOUTUBE_CAPTIONS] Chromium not found, using default Puppeteer Chrome`);
+        console.log(`[YOUTUBE_CAPTIONS] No Chromium found, will use Puppeteer's bundled Chrome`);
       }
       
       try {
+        this.debug(`Step 3: Preparing browser launch options...`);
         console.log(`[YOUTUBE_CAPTIONS] Step 3: Preparing browser launch options...`);
         
         const browserArgs = [
           '--no-sandbox',
-          '--disable-setuid-sandbox',
+          '--disable-setuid-sandbox', 
           '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
           '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
+          '--disable-extensions',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--disable-translate',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-plugins',
+          '--disable-plugins-discovery',
+          '--disable-preconnect',
+          '--disable-background-networking',
           '--disable-background-timer-throttling',
           '--disable-renderer-backgrounding',
           '--disable-backgrounding-occluded-windows',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-default-apps',
-          '--disable-translate',
-          '--disable-sync',
-          '--disable-background-networking'
+          '--disable-features=TranslateUI',
+          '--disable-features=BlinkGenPropertyTrees',
+          '--disable-ipc-flooding-protection'
         ];
         
+        this.debug(`Using ${browserArgs.length} browser arguments`);
         console.log(`[YOUTUBE_CAPTIONS] Step 4: Launching browser with ${browserArgs.length} arguments...`);
-        console.log(`[YOUTUBE_CAPTIONS] Using executable: ${executablePath || 'default Puppeteer Chrome'}`);
+        console.log(`[YOUTUBE_CAPTIONS] Using executable: ${executablePath || 'Puppeteer bundled Chrome'}`);
         
-        // 더 짧은 타임아웃으로 빠른 실패
         const launchOptions: any = {
           headless: true,
-          timeout: 15000, // 15초로 단축
-          args: browserArgs
+          timeout: 25000, // 25초 타임아웃
+          args: browserArgs,
+          defaultViewport: null,
+          ignoreDefaultArgs: false
         };
         
         if (executablePath) {
           launchOptions.executablePath = executablePath;
+          this.debug(`Using custom executable: ${executablePath}`);
         }
         
+        this.debug(`Step 5: Calling puppeteer.launch()...`);
         console.log(`[YOUTUBE_CAPTIONS] Step 5: Calling puppeteer.launch()...`);
         const startTime = Date.now();
         
@@ -128,18 +140,22 @@ export class YoutubeCaptionExtractor {
           puppeteer.launch(launchOptions),
           new Promise<never>((_, reject) => {
             setTimeout(() => {
-              console.log(`[YOUTUBE_CAPTIONS] Browser launch timeout after 15 seconds`);
-              reject(new Error('Browser launch timeout after 15 seconds'));
-            }, 15000);
+              this.debug(`Browser launch timeout after 25 seconds`);
+              console.log(`[YOUTUBE_CAPTIONS] Browser launch timeout after 25 seconds`);
+              reject(new Error('Browser launch timeout after 25 seconds'));
+            }, 25000);
           })
         ]);
         
         const launchTime = Date.now() - startTime;
+        this.debug(`Browser launched successfully in ${launchTime}ms`);
         console.log(`[YOUTUBE_CAPTIONS] Step 6: Browser launched successfully in ${launchTime}ms`);
         
         // 브라우저 연결 테스트
+        this.debug(`Step 7: Testing browser connection...`);
         console.log(`[YOUTUBE_CAPTIONS] Step 7: Testing browser connection...`);
         const pages = await this.browser.pages();
+        this.debug(`Browser has ${pages.length} pages open`);
         console.log(`[YOUTUBE_CAPTIONS] Browser has ${pages.length} pages open`);
         
       } catch (error) {
