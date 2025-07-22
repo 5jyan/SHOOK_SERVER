@@ -18,8 +18,21 @@ export class YoutubeCaptionExtractor {
   private async initBrowser(): Promise<puppeteer.Browser> {
     if (!this.browser) {
       console.log(`[YOUTUBE_CAPTIONS] Initializing Puppeteer browser...`);
+      
+      // Chromium 경로 찾기
+      let executablePath;
+      try {
+        const { execSync } = require('child_process');
+        executablePath = execSync('which chromium').toString().trim();
+        console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
+      } catch (error) {
+        console.log(`[YOUTUBE_CAPTIONS] Chromium not found in PATH, using default Puppeteer Chrome`);
+        executablePath = undefined;
+      }
+      
       this.browser = await puppeteer.launch({
         headless: true,
+        executablePath: executablePath,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -27,7 +40,12 @@ export class YoutubeCaptionExtractor {
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-zygote',
-          '--disable-gpu'
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-background-timer-throttling',
+          '--disable-renderer-backgrounding',
+          '--disable-backgrounding-occluded-windows'
         ]
       });
       console.log(`[YOUTUBE_CAPTIONS] Browser initialized successfully`);
@@ -58,150 +76,161 @@ export class YoutubeCaptionExtractor {
       console.log(`[YOUTUBE_CAPTIONS] Navigating to video: ${videoUrl}`);
       
       // User Agent 설정으로 봇 탐지 우회 시도
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
       
       // 페이지 로드
       await page.goto(videoUrl, { 
-        waitUntil: 'networkidle0',
+        waitUntil: 'domcontentloaded',
         timeout: 30000 
       });
 
       console.log(`[YOUTUBE_CAPTIONS] Page loaded successfully`);
 
       // 페이지가 완전히 로드될 때까지 대기
-      await page.waitForSelector('video', { timeout: 10000 });
+      await page.waitForSelector('#movie_player', { timeout: 15000 });
+      console.log(`[YOUTUBE_CAPTIONS] Video player found`);
       
-      // 자막 버튼 클릭 시도
-      console.log(`[YOUTUBE_CAPTIONS] Attempting to enable captions...`);
+      // 페이지에서 더보기 버튼 클릭하여 description 확장
+      try {
+        const expandButton = await page.waitForSelector('#expand', { timeout: 5000 });
+        if (expandButton) {
+          await expandButton.click();
+          console.log(`[YOUTUBE_CAPTIONS] Clicked expand button`);
+          await page.waitForTimeout(2000);
+        }
+      } catch (e) {
+        console.log(`[YOUTUBE_CAPTIONS] Expand button not found or not clickable`);
+      }
+
+      // 전사본 버튼 찾기 및 클릭
+      console.log(`[YOUTUBE_CAPTIONS] Looking for transcript button...`);
       
-      // 자막 활성화를 위한 여러 선택자 시도
-      const captionSelectors = [
-        'button[data-title-no-tooltip="자막"]',
-        'button[data-title-no-tooltip="Subtitles"]',
-        'button.ytp-subtitles-button',
-        '.ytp-subtitles-button',
-        '[aria-label*="자막"]',
-        '[aria-label*="Subtitles"]'
+      const transcriptSelectors = [
+        'yt-button-renderer[aria-label*="transcript" i]',
+        'yt-button-renderer[aria-label*="전사본" i]',
+        'button[aria-label*="transcript" i]',
+        'button[aria-label*="전사본" i]',
+        '[role="button"]:has-text("transcript")',
+        '[role="button"]:has-text("전사본")',
+        'tp-yt-paper-button:has-text("transcript")',
+        'tp-yt-paper-button:has-text("전사본")'
       ];
 
-      let captionsEnabled = false;
-      for (const selector of captionSelectors) {
+      let transcriptFound = false;
+      for (const selector of transcriptSelectors) {
         try {
+          // 요소가 로드될 때까지 대기
           await page.waitForSelector(selector, { timeout: 3000 });
-          await page.click(selector);
-          console.log(`[YOUTUBE_CAPTIONS] Clicked captions button with selector: ${selector}`);
-          captionsEnabled = true;
-          break;
+          
+          // 요소가 보이고 클릭 가능한지 확인
+          const isVisible = await page.evaluate(sel => {
+            const element = document.querySelector(sel);
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }, selector);
+
+          if (isVisible) {
+            await page.click(selector);
+            console.log(`[YOUTUBE_CAPTIONS] Successfully clicked transcript button with selector: ${selector}`);
+            transcriptFound = true;
+            await page.waitForTimeout(3000); // 전사본 패널이 로드될 때까지 대기
+            break;
+          }
         } catch (error) {
-          console.log(`[YOUTUBE_CAPTIONS] Selector ${selector} not found, trying next...`);
+          console.log(`[YOUTUBE_CAPTIONS] Transcript selector ${selector} failed:`, error.message);
           continue;
         }
       }
 
-      if (!captionsEnabled) {
-        console.log(`[YOUTUBE_CAPTIONS] Could not find captions button, trying alternative method...`);
-        
-        // 키보드 단축키로 자막 활성화 시도 (c 키)
-        await page.click('video');
-        await page.keyboard.press('c');
-        console.log(`[YOUTUBE_CAPTIONS] Tried keyboard shortcut 'c' for captions`);
+      if (!transcriptFound) {
+        console.log(`[YOUTUBE_CAPTIONS] No transcript button found. This video may not have captions.`);
+        return [{
+          timestamp: "0:00",
+          text: "이 영상에는 자막이 없거나 자막 추출에 실패했습니다.",
+          start: 0,
+          duration: 0
+        }];
       }
 
-      // 자막이 나타날 때까지 대기
-      await page.waitForTimeout(2000);
-
-      // 자막 텍스트 추출
-      console.log(`[YOUTUBE_CAPTIONS] Extracting caption text...`);
+      // 전사본 패널에서 텍스트 추출
+      console.log(`[YOUTUBE_CAPTIONS] Extracting transcript text...`);
       
       const captions = await page.evaluate(() => {
-        const captionElements = document.querySelectorAll('.caption-window');
-        const segments: CaptionSegment[] = [];
+        // 다양한 전사본 selector 시도
+        const transcriptSelectors = [
+          'ytd-transcript-segment-renderer',
+          '.ytd-transcript-segment-renderer',
+          '[role="button"]:has(.segment-timestamp)',
+          '.transcript-segment'
+        ];
         
-        captionElements.forEach((element, index) => {
-          const text = element.textContent?.trim();
-          if (text) {
+        let segments: any[] = [];
+        
+        for (const selector of transcriptSelectors) {
+          const elements = document.querySelectorAll(selector);
+          console.log(`Found ${elements.length} elements with selector: ${selector}`);
+          
+          if (elements.length > 0) {
+            elements.forEach((item, index) => {
+              // 시간 요소 찾기
+              const timeElement = item.querySelector('.segment-timestamp') || 
+                                item.querySelector('[class*="timestamp"]') ||
+                                item.querySelector('span:first-child');
+              
+              // 텍스트 요소 찾기  
+              const textElement = item.querySelector('.segment-text') ||
+                                item.querySelector('[class*="text"]') ||
+                                item.querySelector('span:last-child') ||
+                                item;
+              
+              const timestamp = timeElement?.textContent?.trim() || `${index * 5}초`;
+              const text = textElement?.textContent?.trim();
+              
+              if (text && text !== timestamp) {
+                segments.push({
+                  timestamp: timestamp,
+                  text: text,
+                  start: index * 5,
+                  duration: 5
+                });
+              }
+            });
+            
+            if (segments.length > 0) {
+              console.log(`Successfully extracted ${segments.length} segments`);
+              break;
+            }
+          }
+        }
+        
+        // 전사본이 없는 경우 페이지 제목이라도 추출
+        if (segments.length === 0) {
+          const title = document.querySelector('h1.title, h1.style-scope.ytd-video-primary-info-renderer, #title h1')?.textContent?.trim();
+          if (title) {
             segments.push({
-              timestamp: `${index * 2}s`, // 임시 타임스탬프
-              text: text,
-              start: index * 2,
-              duration: 2
+              timestamp: "0:00",
+              text: `제목: ${title} (자막을 찾을 수 없습니다)`,
+              start: 0,
+              duration: 0
             });
           }
-        });
+        }
         
         return segments;
       });
 
-      // 대안: 영상의 전사본(transcript) 패널에서 추출 시도
+      console.log(`[YOUTUBE_CAPTIONS] Extracted ${captions.length} caption segments`);
+      
       if (captions.length === 0) {
-        console.log(`[YOUTUBE_CAPTIONS] No captions found in video player, trying transcript panel...`);
-        
-        // 더보기 버튼 클릭
-        try {
-          await page.click('#expand');
-          await page.waitForTimeout(1000);
-        } catch (e) {
-          console.log(`[YOUTUBE_CAPTIONS] Could not click expand button`);
-        }
-
-        // 전사본 버튼 클릭 시도
-        try {
-          const transcriptSelectors = [
-            'button[aria-label*="전사본"]',
-            'button[aria-label*="transcript"]',
-            'yt-button-renderer:has-text("전사본")',
-            'yt-button-renderer:has-text("Transcript")'
-          ];
-
-          for (const selector of transcriptSelectors) {
-            try {
-              await page.waitForSelector(selector, { timeout: 3000 });
-              await page.click(selector);
-              console.log(`[YOUTUBE_CAPTIONS] Clicked transcript button`);
-              await page.waitForTimeout(2000);
-              break;
-            } catch (e) {
-              continue;
-            }
-          }
-
-          // 전사본 패널에서 텍스트 추출
-          const transcriptCaptions = await page.evaluate(() => {
-            const transcriptItems = document.querySelectorAll('ytd-transcript-segment-renderer');
-            const segments: CaptionSegment[] = [];
-            
-            transcriptItems.forEach((item, index) => {
-              const timeElement = item.querySelector('.ytd-transcript-segment-renderer[role="button"] .segment-timestamp');
-              const textElement = item.querySelector('.ytd-transcript-segment-renderer .segment-text');
-              
-              if (timeElement && textElement) {
-                const timestamp = timeElement.textContent?.trim() || `${index * 2}s`;
-                const text = textElement.textContent?.trim();
-                
-                if (text) {
-                  segments.push({
-                    timestamp: timestamp,
-                    text: text,
-                    start: index * 2,
-                    duration: 2
-                  });
-                }
-              }
-            });
-            
-            return segments;
-          });
-
-          if (transcriptCaptions.length > 0) {
-            console.log(`[YOUTUBE_CAPTIONS] Found ${transcriptCaptions.length} transcript segments`);
-            return transcriptCaptions;
-          }
-        } catch (error) {
-          console.log(`[YOUTUBE_CAPTIONS] Could not extract from transcript panel:`, error);
-        }
+        return [{
+          timestamp: "0:00",
+          text: "이 영상에는 자막이 없거나 자막 추출에 실패했습니다.",
+          start: 0,
+          duration: 0
+        }];
       }
 
-      console.log(`[YOUTUBE_CAPTIONS] Extracted ${captions.length} caption segments`);
       return captions;
 
     } catch (error) {
