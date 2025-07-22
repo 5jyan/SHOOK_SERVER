@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser, Page } from 'puppeteer';
 
 export interface CaptionSegment {
   timestamp: string;
@@ -8,7 +8,7 @@ export interface CaptionSegment {
 }
 
 export class YoutubeCaptionExtractor {
-  private browser: puppeteer.Browser | null = null;
+  private browser: Browser | null = null;
   private debugMode: boolean = true; // 디버그 모드 활성화
   
   private debug(message: string, data?: any) {
@@ -27,7 +27,7 @@ export class YoutubeCaptionExtractor {
   /**
    * 브라우저 인스턴스를 초기화합니다
    */
-  private async initBrowser(): Promise<puppeteer.Browser> {
+  private async initBrowser(): Promise<Browser> {
     if (!this.browser) {
       this.debug(`Step 1: Starting browser initialization...`);
       console.log(`[YOUTUBE_CAPTIONS] Step 1: Starting browser initialization...`);
@@ -62,8 +62,9 @@ export class YoutubeCaptionExtractor {
               }
             }
           }
-        } catch (nixError) {
-          console.log(`[YOUTUBE_CAPTIONS] Could not scan Nix store: ${nixError.message}`);
+        } catch (nixError: unknown) {
+          const errorMessage = nixError instanceof Error ? nixError.message : String(nixError);
+          console.log(`[YOUTUBE_CAPTIONS] Could not scan Nix store: ${errorMessage}`);
         }
 
         // 알려진 경로들 확인
@@ -75,8 +76,9 @@ export class YoutubeCaptionExtractor {
                 console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
                 break;
               }
-            } catch (checkError) {
-              console.log(`[YOUTUBE_CAPTIONS] Could not check path ${knownPath}: ${checkError.message}`);
+            } catch (checkError: unknown) {
+              const errorMessage = checkError instanceof Error ? checkError.message : String(checkError);
+              console.log(`[YOUTUBE_CAPTIONS] Could not check path ${knownPath}: ${errorMessage}`);
             }
           }
         }
@@ -158,7 +160,7 @@ export class YoutubeCaptionExtractor {
         this.debug(`Browser has ${pages.length} pages open`);
         console.log(`[YOUTUBE_CAPTIONS] Browser has ${pages.length} pages open`);
         
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(`[YOUTUBE_CAPTIONS] Browser launch failed:`, error);
         
         // 브라우저 초기화 실패 시 정리
@@ -171,11 +173,12 @@ export class YoutubeCaptionExtractor {
           this.browser = null;
         }
         
-        if (error.message.includes('timeout')) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('timeout')) {
           throw new Error('브라우저 초기화 시간 초과. Replit 환경에서 리소스 부족일 수 있습니다.');
         }
         
-        throw new Error(`브라우저 실행 실패: ${error.message}`);
+        throw new Error(`브라우저 실행 실패: ${errorMessage}`);
       }
     }
     
@@ -237,7 +240,7 @@ export class YoutubeCaptionExtractor {
         if (expandButton) {
           await expandButton.click();
           console.log(`[YOUTUBE_CAPTIONS] Clicked expand button`);
-          await page.waitForTimeout(2000);
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       } catch (e) {
         console.log(`[YOUTUBE_CAPTIONS] Expand button not found or not clickable`);
@@ -250,7 +253,7 @@ export class YoutubeCaptionExtractor {
       
       // 방법 1: 일반적인 전사본 버튼 찾기
       try {
-        await page.waitForTimeout(2000); // DOM이 완전히 로드될 때까지 대기
+        await new Promise(resolve => setTimeout(resolve, 2000)); // DOM이 완전히 로드될 때까지 대기
         
         const transcriptButton = await page.evaluate(() => {
           // 더 포괄적인 전사본 버튼 찾기
@@ -277,15 +280,16 @@ export class YoutubeCaptionExtractor {
         });
 
         if (transcriptButton) {
-          await page.evaluate(button => {
-            button.click();
+          await page.evaluate((button: Element) => {
+            (button as HTMLElement).click();
           }, transcriptButton);
           console.log(`[YOUTUBE_CAPTIONS] Found and clicked transcript button via text search`);
           transcriptFound = true;
-          await page.waitForTimeout(3000);
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
-      } catch (error) {
-        console.log(`[YOUTUBE_CAPTIONS] Text-based transcript search failed:`, error.message);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.log(`[YOUTUBE_CAPTIONS] Text-based transcript search failed:`, errorMessage);
       }
 
       // 방법 2: 선택자 기반 탐색 (백업)
@@ -305,10 +309,11 @@ export class YoutubeCaptionExtractor {
             await page.click(selector);
             console.log(`[YOUTUBE_CAPTIONS] Successfully clicked transcript button with selector: ${selector}`);
             transcriptFound = true;
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             break;
-          } catch (error) {
-            console.log(`[YOUTUBE_CAPTIONS] Selector ${selector} failed:`, error.message);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.log(`[YOUTUBE_CAPTIONS] Selector ${selector} failed:`, errorMessage);
             continue;
           }
         }
@@ -328,7 +333,7 @@ export class YoutubeCaptionExtractor {
       console.log(`[YOUTUBE_CAPTIONS] Extracting transcript text...`);
       
       // 전사본 패널이 로드될 때까지 추가 대기
-      await page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       const captions = await page.evaluate(() => {
         let segments: any[] = [];
@@ -506,9 +511,10 @@ export class YoutubeCaptionExtractor {
 
       return captions;
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[YOUTUBE_CAPTIONS] Error extracting captions:`, error);
-      throw new Error(`자막 추출 중 오류가 발생했습니다: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`자막 추출 중 오류가 발생했습니다: ${errorMessage}`);
     } finally {
       await page.close();
     }
