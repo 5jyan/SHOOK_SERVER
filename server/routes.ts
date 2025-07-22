@@ -349,31 +349,36 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
       
-      // 타임아웃을 추가하여 Puppeteer가 무한 대기하지 않도록 함
-      const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          console.log(`[CAPTIONS] Extraction timeout after 45 seconds, trying fallback...`);
-          reject(new Error('EXTRACTION_TIMEOUT'));
-        }, 45000); // 45초 타임아웃
-      });
+      // Replit 환경에서 Puppeteer 문제가 지속되므로 대안 방법 우선 시도
+      console.log(`[CAPTIONS] Due to Replit environment issues, trying fallback method first...`);
       
       let captions;
       try {
-        captions = await Promise.race([extractionPromise, timeoutPromise]);
-        console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments`);
-      } catch (error) {
-        if (error.message === 'EXTRACTION_TIMEOUT' || error.message.includes('browser') || error.message.includes('timeout')) {
-          console.log(`[CAPTIONS] Puppeteer failed, trying fallback method...`);
-          
-          // 대안 방법 시도
-          const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
-          const fallbackExtractor = new YoutubeFallbackExtractor();
-          captions = await fallbackExtractor.extractOEmbedInfo(videoId);
-          
-          console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
-        } else {
-          throw error;
+        // 대안 방법 먼저 시도
+        const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
+        const fallbackExtractor = new YoutubeFallbackExtractor();
+        captions = await fallbackExtractor.extractOEmbedInfo(videoId);
+        
+        console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
+        
+      } catch (fallbackError) {
+        console.log(`[CAPTIONS] Fallback method failed, trying Puppeteer as last resort...`);
+        
+        // 대안 방법 실패 시에만 Puppeteer 시도
+        const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            console.log(`[CAPTIONS] Puppeteer timeout after 10 seconds`);
+            reject(new Error('PUPPETEER_TIMEOUT'));
+          }, 10000);
+        });
+        
+        try {
+          captions = await Promise.race([extractionPromise, timeoutPromise]);
+          console.log(`[CAPTIONS] Puppeteer successfully extracted ${captions.length} caption segments`);
+        } catch (puppeteerError) {
+          console.error(`[CAPTIONS] Both methods failed`);
+          throw new Error(`자막 추출 실패: 대안 방법 실패 (${fallbackError.message}), Puppeteer 실패 (${puppeteerError.message})`);
         }
       }
       
