@@ -396,6 +396,68 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Puppeteer 환경 진단 API
+  app.get("/api/debug/puppeteer", async (req, res) => {
+    console.log(`[DEBUG] Puppeteer diagnosis request received`);
+    
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const { PuppeteerDebugger } = await import('./debug-puppeteer');
+      const debugTool = new PuppeteerDebugger();
+      
+      const diagnosis = await debugTool.diagnoseEnvironment();
+      console.log(`[DEBUG] Diagnosis completed:`, diagnosis);
+      
+      res.json({
+        success: true,
+        diagnosis
+      });
+      
+    } catch (error) {
+      console.error(`[DEBUG] Diagnosis failed:`, error);
+      res.status(500).json({
+        error: error.message || "진단 중 오류가 발생했습니다."
+      });
+    }
+  });
+
+  // YouTube 접근 테스트 API
+  app.post("/api/debug/youtube-access", async (req, res) => {
+    console.log(`[DEBUG] YouTube access test request received`);
+    
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { videoId } = req.body;
+    
+    if (!videoId) {
+      return res.status(400).json({ error: "Video ID is required" });
+    }
+
+    try {
+      const { PuppeteerDebugger } = await import('./debug-puppeteer');
+      const debugTool = new PuppeteerDebugger();
+      
+      const testResult = await debugTool.testYouTubeAccess(videoId);
+      console.log(`[DEBUG] YouTube access test completed:`, testResult);
+      
+      res.json({
+        success: true,
+        testResult
+      });
+      
+    } catch (error) {
+      console.error(`[DEBUG] YouTube access test failed:`, error);
+      res.status(500).json({
+        error: error.message || "테스트 중 오류가 발생했습니다."
+      });
+    }
+  });
+
   // URL에서 영상 ID 추출 API
   app.post("/api/captions/extract-video-id", async (req, res) => {
     console.log(`[CAPTIONS] Video ID extraction request received`);
