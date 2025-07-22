@@ -669,78 +669,18 @@ export default function HomePage() {
               {/* 자막 추출 */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-slate-900">2. 자막 추출</h3>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Button
-                    onClick={handleExtractCaptions}
-                    disabled={extractCaptionsMutation.isPending || !captionVideoId}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    {extractCaptionsMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Video className="w-4 h-4 mr-2" />
-                    )}
-                    자막 추출 시작
-                  </Button>
-                  
-                  <Button
-                    onClick={async () => {
-                      console.log('[FRONTEND] Starting Puppeteer diagnosis...');
-                      try {
-                        const response = await fetch('/api/debug/puppeteer');
-                        const data = await response.json();
-                        console.log('[FRONTEND] Puppeteer diagnosis result:', data);
-                        toast({
-                          title: "진단 완료",
-                          description: "Puppeteer 진단 결과를 브라우저 콘솔에서 확인하세요.",
-                        });
-                      } catch (error) {
-                        console.error('[FRONTEND] Puppeteer diagnosis failed:', error);
-                        toast({
-                          title: "진단 실패",
-                          description: error.message,
-                          variant: "destructive",
-                        });
-                      }
-                    }}
-                    variant="outline"
-                    className="border-orange-400 text-orange-600 hover:bg-orange-50"
-                  >
-                    Puppeteer 진단
-                  </Button>
-                  
-                  {captionVideoId && (
-                    <Button
-                      onClick={async () => {
-                        console.log(`[FRONTEND] Testing YouTube access for video: ${captionVideoId}`);
-                        try {
-                          const response = await fetch('/api/debug/youtube-access', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ videoId: captionVideoId })
-                          });
-                          const data = await response.json();
-                          console.log('[FRONTEND] YouTube access test result:', data);
-                          toast({
-                            title: "테스트 완료",
-                            description: "YouTube 접근 테스트 결과를 브라우저 콘솔에서 확인하세요.",
-                          });
-                        } catch (error) {
-                          console.error('[FRONTEND] YouTube access test failed:', error);
-                          toast({
-                            title: "테스트 실패",
-                            description: error.message,
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                      variant="outline"
-                      className="border-blue-400 text-blue-600 hover:bg-blue-50"
-                    >
-                      YouTube 접근 테스트
-                    </Button>
+                <Button
+                  onClick={handleExtractCaptions}
+                  disabled={extractCaptionsMutation.isPending || !captionVideoId}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {extractCaptionsMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Video className="w-4 h-4 mr-2" />
                   )}
-                </div>
+                  자막 추출 시작
+                </Button>
                 
                 {extractCaptionsMutation.isPending && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

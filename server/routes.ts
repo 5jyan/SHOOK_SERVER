@@ -3,9 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
-import { YouTubeCaptionExtractor } from "./youtube-captions";
-
-const youtubeCaptionExtractor = new YouTubeCaptionExtractor();
+import { youtubeCaptionExtractor } from "./youtube-captions";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -351,11 +349,33 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
       
-      // Puppeteer를 통한 자막 추출
-      console.log(`[CAPTIONS] Using Puppeteer method for caption extraction...`);
+      // 타임아웃을 추가하여 Puppeteer가 무한 대기하지 않도록 함
+      const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.log(`[CAPTIONS] Extraction timeout after 45 seconds, trying fallback...`);
+          reject(new Error('EXTRACTION_TIMEOUT'));
+        }, 45000); // 45초 타임아웃
+      });
       
-      const captions = await youtubeCaptionExtractor.extractCaptions(videoId, language);
-      console.log(`[CAPTIONS] Puppeteer method returned ${captions.length} segments`);
+      let captions;
+      try {
+        captions = await Promise.race([extractionPromise, timeoutPromise]);
+        console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments`);
+      } catch (error) {
+        if (error.message === 'EXTRACTION_TIMEOUT' || error.message.includes('browser') || error.message.includes('timeout')) {
+          console.log(`[CAPTIONS] Puppeteer failed, trying fallback method...`);
+          
+          // 대안 방법 시도
+          const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
+          const fallbackExtractor = new YoutubeFallbackExtractor();
+          captions = await fallbackExtractor.extractOEmbedInfo(videoId);
+          
+          console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
+        } else {
+          throw error;
+        }
+      }
       
       res.json({
         success: true,
@@ -370,68 +390,6 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ 
         error: error.message || "자막 추출 중 오류가 발생했습니다.",
         videoId 
-      });
-    }
-  });
-
-  // Puppeteer 환경 진단 API
-  app.get("/api/debug/puppeteer", async (req, res) => {
-    console.log(`[DEBUG] Puppeteer diagnosis request received`);
-    
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    try {
-      const { PuppeteerDebugger } = await import('./debug-puppeteer');
-      const debugTool = new PuppeteerDebugger();
-      
-      const diagnosis = await debugTool.diagnoseEnvironment();
-      console.log(`[DEBUG] Diagnosis completed:`, diagnosis);
-      
-      res.json({
-        success: true,
-        diagnosis
-      });
-      
-    } catch (error) {
-      console.error(`[DEBUG] Diagnosis failed:`, error);
-      res.status(500).json({
-        error: error.message || "진단 중 오류가 발생했습니다."
-      });
-    }
-  });
-
-  // YouTube 접근 테스트 API
-  app.post("/api/debug/youtube-access", async (req, res) => {
-    console.log(`[DEBUG] YouTube access test request received`);
-    
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { videoId } = req.body;
-    
-    if (!videoId) {
-      return res.status(400).json({ error: "Video ID is required" });
-    }
-
-    try {
-      const { PuppeteerDebugger } = await import('./debug-puppeteer');
-      const debugTool = new PuppeteerDebugger();
-      
-      const testResult = await debugTool.testYouTubeAccess(videoId);
-      console.log(`[DEBUG] YouTube access test completed:`, testResult);
-      
-      res.json({
-        success: true,
-        testResult
-      });
-      
-    } catch (error) {
-      console.error(`[DEBUG] YouTube access test failed:`, error);
-      res.status(500).json({
-        error: error.message || "테스트 중 오류가 발생했습니다."
       });
     }
   });
