@@ -3,7 +3,9 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
-import { youtubeCaptionExtractor } from "./youtube-captions";
+import { YouTubeCaptionExtractor } from "./youtube-captions";
+
+const youtubeCaptionExtractor = new YouTubeCaptionExtractor();
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -349,35 +351,11 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
       
-      // 실제 자막 데이터 추출을 위한 새로운 방법 시도
-      console.log(`[CAPTIONS] Trying YouTube transcript extraction method...`);
+      // Puppeteer를 통한 자막 추출
+      console.log(`[CAPTIONS] Using Puppeteer method for caption extraction...`);
       
-      let captions;
-      try {
-        // 1. 새로운 자막 추출 방법 시도
-        const { YoutubeTranscriptExtractor } = await import('./youtube-transcript');
-        const transcriptExtractor = new YoutubeTranscriptExtractor();
-        captions = await transcriptExtractor.extractTranscript(videoId, language);
-        
-        console.log(`[CAPTIONS] Transcript method returned ${captions.length} segments`);
-        
-        // 실제 자막이 있는지 확인 (오류 메시지가 아닌)
-        if (captions.length > 0 && !captions[0].text.includes('오류') && !captions[0].text.includes('제공되지 않습니다')) {
-          console.log(`[CAPTIONS] Successfully extracted real captions`);
-        } else {
-          throw new Error('No real captions found');
-        }
-        
-      } catch (transcriptError) {
-        console.log(`[CAPTIONS] Transcript method failed: ${transcriptError.message}, trying fallback...`);
-        
-        // 2. 기본 정보만 제공하는 대안 방법
-        const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
-        const fallbackExtractor = new YoutubeFallbackExtractor();
-        captions = await fallbackExtractor.extractOEmbedInfo(videoId);
-        
-        console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
-      }
+      const captions = await youtubeCaptionExtractor.extractCaptions(videoId, language);
+      console.log(`[CAPTIONS] Puppeteer method returned ${captions.length} segments`);
       
       res.json({
         success: true,
