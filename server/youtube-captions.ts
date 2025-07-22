@@ -10,6 +10,7 @@ export interface CaptionSegment {
 export class YoutubeCaptionExtractor {
   private browser: Browser | null = null;
   private debugMode: boolean = true; // 디버그 모드 활성화
+  private isExtracting: boolean = false; // 동시 실행 방지
   
   private debug(message: string, data?: any) {
     if (this.debugMode) {
@@ -95,29 +96,38 @@ export class YoutubeCaptionExtractor {
         console.log(`[YOUTUBE_CAPTIONS] Step 3: Preparing browser launch options...`);
         
         const browserArgs = [
-          '--no-sandbox', // 컨테이너 환경에서 샌드박스 비활성화 (필수)
-          '--disable-dev-shm-usage', // /dev/shm 사용 비활성화 (메모리 제한 환경에 유용)
+          '--no-sandbox', // 컨테이너 환경에서 필수
           '--disable-setuid-sandbox', // setuid 샌드박스 비활성화
+          '--disable-dev-shm-usage', // /dev/shm 사용 비활성화 (메모리 제한 환경에 중요)
           '--disable-gpu', // GPU 가속 비활성화 (대부분의 서버 환경에서 GPU가 없으므로)
-          '--disable-web-security', // 웹 보안 비활성화 (필요한 경우)
+          '--no-zygote', // 일부 환경에서 시작 문제 해결에 도움
+          '--single-process', // 모든 Chromium 프로세스를 단일 프로세스로 실행 (메모리 절약에 도움)
+          '--disable-background-networking', // 백그라운드 네트워크 활동 비활성화
+          '--disable-background-timer-throttling', // 백그라운드 타이머 스로틀링 비활성화
+          '--disable-backgrounding-occluded-windows', // 가려진 창 백그라운드 처리 비활성화
+          '--disable-breakpad', // 충돌 보고 비활성화
+          '--disable-client-side-phishing-detection', // 클라이언트 측 피싱 감지 비활성화
+          '--disable-features=site-per-process', // 사이트 격리 비활성화
+          '--disable-features=IsolateOrigins',
+          '--disable-site-isolation-trials', // 사이트 격리 실험 비활성화
+          '--disable-speech-api', // 음성 API 비활성화
+          '--disable-sync', // 동기화 비활성화
+          '--disable-web-security', // 웹 보안 비활성화 (필요한 경우에만)
+          '--hide-scrollbars', // 스크롤바 숨기기
+          '--metrics-recording-only', // 메트릭 기록만
+          '--mute-audio', // 오디오 음소거
+          '--no-first-run', // 첫 실행 설정 건너뛰기
+          '--no-default-browser-check', // 기본 브라우저 확인 건너뛰기
+          '--no-pings', // 핑 비활성화
+          '--no-sandbox-and-elevated-privileges', // 샌드박스 및 권한 상승 비활성화
+          '--no-startup-window', // 시작 창 비활성화
+          '--disable-features=HttpsFirstMode', // HTTPS 우선 모드 비활성화
           '--disable-extensions',
           '--disable-default-apps',
-          '--disable-sync',
           '--disable-translate',
-          '--no-first-run',
-          '--no-default-browser-check',
           '--disable-plugins',
           '--disable-plugins-discovery',
-          '--disable-preconnect',
-          '--disable-background-networking',
-          '--disable-background-timer-throttling',
-          '--disable-renderer-backgrounding',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-features=TranslateUI',
-          '--disable-features=BlinkGenPropertyTrees',
-          '--disable-ipc-flooding-protection',
-          '--single-process', // 단일 프로세스 모드 (메모리 제한 환경)
-          '--no-zygote' // zygote 프로세스 비활성화
+          '--disable-preconnect'
         ];
         
         this.debug(`Using ${browserArgs.length} browser arguments`);
@@ -126,12 +136,12 @@ export class YoutubeCaptionExtractor {
         
         const launchOptions: any = {
           headless: 'new', // 새로운 headless 모드 사용
-          timeout: 60000, // 브라우저 시작 시간 초과를 60초로 늘림 (환경이 느릴 경우)
+          timeout: 60000, // 브라우저 시작 시간 초과를 60초로 늘림
           args: browserArgs,
           defaultViewport: null,
           ignoreDefaultArgs: false,
           pipe: true, // WebSocket 대신 pipe 사용 (일부 환경에서 더 안정적)
-          dumpio: false // 프로세스 출력 비활성화
+          dumpio: true // 디버깅을 위해 Chromium 출력 활성화
         };
         
         if (executablePath) {
@@ -206,15 +216,34 @@ export class YoutubeCaptionExtractor {
    * 유튜브 영상 ID에서 자막을 추출합니다
    */
   async extractCaptions(videoId: string, language: string = 'ko'): Promise<CaptionSegment[]> {
+    // 동시 실행 방지
+    if (this.isExtracting) {
+      throw new Error('다른 자막 추출 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.');
+    }
+    
+    this.isExtracting = true;
     console.log(`[YOUTUBE_CAPTIONS] === Starting caption extraction for video: ${videoId} ===`);
     
-    const browser = await this.initBrowser();
-    console.log(`[YOUTUBE_CAPTIONS] Browser ready, creating new page...`);
+    try {
+      const browser = await this.initBrowser();
+      console.log(`[YOUTUBE_CAPTIONS] Browser ready, creating new page...`);
     
     const page = await browser.newPage();
     console.log(`[YOUTUBE_CAPTIONS] New page created successfully`);
     
     try {
+      // 리소스 최적화: 자막 추출에 불필요한 리소스 차단
+      console.log(`[YOUTUBE_CAPTIONS] Setting up resource interception...`);
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        const resourceType = request.resourceType();
+        if (['image', 'stylesheet', 'font', 'media', 'websocket'].includes(resourceType)) {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      });
+      
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
       console.log(`[YOUTUBE_CAPTIONS] Step A: Navigating to video: ${videoUrl}`);
       
@@ -522,6 +551,12 @@ export class YoutubeCaptionExtractor {
       throw new Error(`자막 추출 중 오류가 발생했습니다: ${errorMessage}`);
     } finally {
       await page.close();
+    }
+    } catch (error: unknown) {
+      console.error(`[YOUTUBE_CAPTIONS] Global error in extractCaptions:`, error);
+      throw error;
+    } finally {
+      this.isExtracting = false; // 최종적으로 플래그 재설정
     }
   }
 

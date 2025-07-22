@@ -1,0 +1,106 @@
+Puppeteer 실행 인자 재확인 및 추가:
+이전 답변에서 제안된 인자들을 포함하여, 특히 리소스가 제한된 환경에서 Puppeteer의 안정성을 높이는 데 도움이 되는 인자들을 puppeteer.launch() 호출에 추가하세요.
+
+JavaScript
+
+const browser = await puppeteer.launch({
+  headless: 'new', // 또는 true (새로운 헤드리스 모드 사용) [11]
+  args: [
+    '--no-sandbox', // 컨테이너 환경에서 필수 [2, 8, 12, 13]
+    '--disable-setuid-sandbox', // setuid 샌드박스 비활성화 [12, 13]
+    '--disable-dev-shm-usage', // /dev/shm 사용 비활성화 (메모리 제한 환경에 중요) [7, 3, 12, 14]
+    '--disable-gpu', // GPU 가속 비활성화 (대부분의 서버 환경에서 GPU가 없으므로) [12, 13]
+    '--no-zygote', // 일부 환경에서 시작 문제 해결에 도움 [13]
+    '--single-process', // 모든 Chromium 프로세스를 단일 프로세스로 실행 (메모리 절약에 도움) [10]
+    '--disable-background-networking', // 백그라운드 네트워크 활동 비활성화 [15]
+    '--disable-background-timer-throttling', // 백그라운드 타이머 스로틀링 비활성화 [3, 15]
+    '--disable-backgrounding-occluded-windows', // 가려진 창 백그라운드 처리 비활성화 [15]
+    '--disable-breakpad', // 충돌 보고 비활성화 [15]
+    '--disable-client-side-phishing-detection', // 클라이언트 측 피싱 감지 비활성화 [15]
+    '--disable-features=site-per-process', // 사이트 격리 비활성화 (일부 경우 안정성 향상)
+    '--disable-features=IsolateOrigins',
+    '--disable-site-isolation-trials', // 사이트 격리 실험 비활성화 [2]
+    '--disable-speech-api', // 음성 API 비활성화
+    '--disable-sync', // 동기화 비활성화
+    '--disable-web-security', // 웹 보안 비활성화 (필요한 경우에만) [12]
+    '--hide-scrollbars', // 스크롤바 숨기기
+    '--metrics-recording-only', // 메트릭 기록만
+    '--mute-audio', // 오디오 음소거
+    '--no-first-run', // 첫 실행 설정 건너뛰기
+    '--no-default-browser-check', // 기본 브라우저 확인 건너뛰기
+    '--no-pings', // 핑 비활성화
+    '--no-sandbox-and-elevated-privileges', // 샌드박스 및 권한 상승 비활성화
+    '--no-startup-window', // 시작 창 비활성화
+    '--disable-features=HttpsFirstMode' // HTTPS 우선 모드 비활성화,
+  timeout: 60000 // 브라우저 시작 시간 초과를 60초로 늘림 [9, 10]
+});
+누락된 시스템 종속성 추가 설치 (더 포괄적):
+이전 libxkbcommon.so.0 오류를 해결했더라도, Chromium이 완전히 작동하는 데 필요한 다른 라이브러리가 있을 수 있습니다. 애플리케이션이 실행되는 Linux 환경(예: Replit의 Nix 환경 또는 Dockerfile)에 다음 패키지들이 모두 설치되어 있는지 확인하세요.
+
+Bash
+
+sudo apt-get update
+sudo apt-get install -y \
+  gconf-service \
+  libasound2 \
+  libatk1.0-0 \
+  libatk-bridge2.0-0 \
+  libc6 \
+  libcairo2 \
+  libcups2 \
+  libdbus-1-3 \
+  libexpat1 \
+  libfontconfig1 \
+  libgcc1 \
+  libgconf-2-4 \
+  libgdk-pixbuf2.0-0 \
+  libglib2.0-0 \
+  libgtk-3-0 \
+  libnspr4 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
+  libstdc++6 \
+  libx11-6 \
+  libx11-xcb1 \
+  libxcomposite1 \
+  libxcursor1 \
+  libxdamage1 \
+  libxi6 \
+  libxtst6 \
+  libnss3 \
+  libxss1 \
+  libxrandr2 \
+  libgbm-dev \
+  libxkbcommon-x11-0 # 이전에 설치했더라도 다시 확인
+어떤 라이브러리가 정확히 누락되었는지 확인하려면, Puppeteer가 설치된 Chromium 바이너리 경로로 이동하여 ldd chrome | grep not 명령어를 실행하세요.    
+
+리소스 최적화 (매우 중요):
+Puppeteer는 메모리를 많이 사용하므로, 자막 추출에 불필요한 리소스 로딩을 차단하여 메모리 사용량을 줄이는 것이 중요합니다.
+
+요청 가로채기(Request Interception): page.setRequestInterception(true)를 사용하여 이미지, CSS, 폰트 등 자막 추출에 필요 없는 리소스 요청을 차단하세요.
+
+JavaScript
+
+await page.setRequestInterception(true);
+page.on('request', (request) => {
+  if (['image', 'stylesheet', 'font', 'media'].indexOf(request.resourceType())!== -1) {
+    request.abort();
+  } else {
+    request.continue();
+  }
+});
+   
+
+동시성 제한: 여러 개의 Puppeteer 인스턴스를 동시에 실행하는 경우, 리소스 고갈의 주요 원인이 될 수 있습니다. puppeteer-cluster와 같은 라이브러리를 사용하거나 직접 큐를 구현하여 동시에 실행되는 브라우저 인스턴스 수를 제한하세요.    
+
+브라우저 및 페이지 인스턴스 정리: 작업이 완료된 후에는 await page.close() 및 await browser.close()를 반드시 호출하여 리소스를 해제하세요.    
+
+디버깅을 위한 추가 로깅 활성화:
+Puppeteer의 내부 동작을 더 자세히 확인하기 위해 환경 변수를 설정하고 dumpio 옵션을 사용하세요.
+
+Node.js 애플리케이션을 실행할 때 DEBUG=puppeteer:* 환경 변수를 추가합니다. (예: DEBUG=puppeteer:* node your-app.js)    
+
+puppeteer.launch() 옵션에 dumpio: true를 추가하여 Chromium의 표준 출력/오류를 Node.js 프로세스에 파이프합니다.    
+
+Replit 환경 고려사항:
+Replit의 무료 플랜은 1GB RAM과 0.5 vCPU로 제한됩니다.  Puppeteer는 이보다 더 많은 리소스를 요구할 수 있습니다. 만약 위의 해결책으로도 문제가 지속된다면, Replit의 유료 플랜(Hacker 또는 Boosted)으로 업그레이드하여 더 많은 RAM과 CPU를 확보하는 것을 고려해 보세요. 
