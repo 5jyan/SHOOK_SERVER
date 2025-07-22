@@ -19,36 +19,66 @@ export class YoutubeCaptionExtractor {
     if (!this.browser) {
       console.log(`[YOUTUBE_CAPTIONS] Initializing Puppeteer browser...`);
       
-      // Chromium 경로 찾기
+      // Chromium 경로 찾기 - 여러 방법 시도
       let executablePath;
       try {
         const { execSync } = require('child_process');
-        executablePath = execSync('which chromium').toString().trim();
-        console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
+        
+        // 여러 명령어로 Chromium 찾기
+        const commands = [
+          'find /nix/store -name chromium -type f -executable 2>/dev/null | head -1',
+          'which chromium 2>/dev/null',
+          'which chromium-browser 2>/dev/null'
+        ];
+
+        for (const cmd of commands) {
+          try {
+            const result = execSync(cmd).toString().trim();
+            if (result) {
+              executablePath = result;
+              console.log(`[YOUTUBE_CAPTIONS] Found Chromium at: ${executablePath}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
       } catch (error) {
-        console.log(`[YOUTUBE_CAPTIONS] Chromium not found in PATH, using default Puppeteer Chrome`);
-        executablePath = undefined;
+        console.log(`[YOUTUBE_CAPTIONS] Error finding Chromium:`, error);
+      }
+
+      if (!executablePath) {
+        console.log(`[YOUTUBE_CAPTIONS] Chromium not found, using default Puppeteer Chrome`);
       }
       
-      this.browser = await puppeteer.launch({
-        headless: true,
-        executablePath: executablePath,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-background-timer-throttling',
-          '--disable-renderer-backgrounding',
-          '--disable-backgrounding-occluded-windows'
-        ]
-      });
-      console.log(`[YOUTUBE_CAPTIONS] Browser initialized successfully`);
+      try {
+        this.browser = await puppeteer.launch({
+          headless: true,
+          executablePath: executablePath,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-default-apps',
+            '--disable-translate'
+          ]
+        });
+        console.log(`[YOUTUBE_CAPTIONS] Browser initialized successfully`);
+      } catch (error) {
+        console.error(`[YOUTUBE_CAPTIONS] Failed to launch browser:`, error);
+        throw error;
+      }
     }
     return this.browser;
   }
