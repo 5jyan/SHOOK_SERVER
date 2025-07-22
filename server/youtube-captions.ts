@@ -17,11 +17,12 @@ export class YoutubeCaptionExtractor {
    */
   private async initBrowser(): Promise<puppeteer.Browser> {
     if (!this.browser) {
-      console.log(`[YOUTUBE_CAPTIONS] Initializing Puppeteer browser...`);
+      console.log(`[YOUTUBE_CAPTIONS] Step 1: Starting browser initialization...`);
       
       // Chromium 경로 찾기 - 여러 방법 시도
       let executablePath;
       try {
+        console.log(`[YOUTUBE_CAPTIONS] Step 2: Searching for Chromium executable...`);
         const { execSync } = await import('child_process');
         
         // 여러 명령어로 Chromium 찾기
@@ -33,6 +34,7 @@ export class YoutubeCaptionExtractor {
 
         for (const cmd of commands) {
           try {
+            console.log(`[YOUTUBE_CAPTIONS] Trying command: ${cmd}`);
             const result = execSync(cmd).toString().trim();
             if (result) {
               executablePath = result;
@@ -40,6 +42,7 @@ export class YoutubeCaptionExtractor {
               break;
             }
           } catch (e) {
+            console.log(`[YOUTUBE_CAPTIONS] Command failed: ${cmd}`);
             continue;
           }
         }
@@ -52,53 +55,86 @@ export class YoutubeCaptionExtractor {
       }
       
       try {
-        console.log(`[YOUTUBE_CAPTIONS] Launching browser with timeout...`);
+        console.log(`[YOUTUBE_CAPTIONS] Step 3: Preparing browser launch options...`);
         
-        const launchPromise = puppeteer.launch({
+        const browserArgs = [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-background-timer-throttling',
+          '--disable-renderer-backgrounding',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-default-apps',
+          '--disable-translate',
+          '--disable-sync',
+          '--disable-background-networking'
+        ];
+        
+        console.log(`[YOUTUBE_CAPTIONS] Step 4: Launching browser with ${browserArgs.length} arguments...`);
+        console.log(`[YOUTUBE_CAPTIONS] Using executable: ${executablePath || 'default Puppeteer Chrome'}`);
+        
+        // 더 짧은 타임아웃으로 빠른 실패
+        const launchOptions: any = {
           headless: true,
-          executablePath: executablePath,
-          timeout: 30000, // 30초 타임아웃
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-background-timer-throttling',
-            '--disable-renderer-backgrounding',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--disable-default-apps',
-            '--disable-translate',
-            '--disable-sync',
-            '--disable-default-apps',
-            '--disable-background-networking'
-          ]
-        });
+          timeout: 15000, // 15초로 단축
+          args: browserArgs
+        };
         
-        // 타임아웃 추가
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Browser launch timeout after 30 seconds')), 30000);
-        });
-        
-        this.browser = await Promise.race([launchPromise, timeoutPromise]) as puppeteer.Browser;
-        console.log(`[YOUTUBE_CAPTIONS] Browser initialized successfully`);
-      } catch (error) {
-        console.error(`[YOUTUBE_CAPTIONS] Failed to launch browser:`, error);
-        
-        // 브라우저 초기화 실패 시 간단한 대안 제공
-        if (error.message.includes('timeout')) {
-          throw new Error('브라우저 초기화가 너무 오래 걸립니다. 잠시 후 다시 시도해주세요.');
+        if (executablePath) {
+          launchOptions.executablePath = executablePath;
         }
         
-        throw new Error(`브라우저 실행에 실패했습니다: ${error.message}`);
+        console.log(`[YOUTUBE_CAPTIONS] Step 5: Calling puppeteer.launch()...`);
+        const startTime = Date.now();
+        
+        this.browser = await Promise.race([
+          puppeteer.launch(launchOptions),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              console.log(`[YOUTUBE_CAPTIONS] Browser launch timeout after 15 seconds`);
+              reject(new Error('Browser launch timeout after 15 seconds'));
+            }, 15000);
+          })
+        ]);
+        
+        const launchTime = Date.now() - startTime;
+        console.log(`[YOUTUBE_CAPTIONS] Step 6: Browser launched successfully in ${launchTime}ms`);
+        
+        // 브라우저 연결 테스트
+        console.log(`[YOUTUBE_CAPTIONS] Step 7: Testing browser connection...`);
+        const pages = await this.browser.pages();
+        console.log(`[YOUTUBE_CAPTIONS] Browser has ${pages.length} pages open`);
+        
+      } catch (error) {
+        console.error(`[YOUTUBE_CAPTIONS] Browser launch failed:`, error);
+        
+        // 브라우저 초기화 실패 시 정리
+        if (this.browser) {
+          try {
+            await this.browser.close();
+          } catch (e) {
+            console.log(`[YOUTUBE_CAPTIONS] Error closing failed browser:`, e);
+          }
+          this.browser = null;
+        }
+        
+        if (error.message.includes('timeout')) {
+          throw new Error('브라우저 초기화 시간 초과. Replit 환경에서 리소스 부족일 수 있습니다.');
+        }
+        
+        throw new Error(`브라우저 실행 실패: ${error.message}`);
       }
     }
+    
+    console.log(`[YOUTUBE_CAPTIONS] Browser ready for use`);
     return this.browser;
   }
 
@@ -117,27 +153,38 @@ export class YoutubeCaptionExtractor {
    * 유튜브 영상 ID에서 자막을 추출합니다
    */
   async extractCaptions(videoId: string, language: string = 'ko'): Promise<CaptionSegment[]> {
+    console.log(`[YOUTUBE_CAPTIONS] === Starting caption extraction for video: ${videoId} ===`);
+    
     const browser = await this.initBrowser();
+    console.log(`[YOUTUBE_CAPTIONS] Browser ready, creating new page...`);
+    
     const page = await browser.newPage();
+    console.log(`[YOUTUBE_CAPTIONS] New page created successfully`);
     
     try {
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      console.log(`[YOUTUBE_CAPTIONS] Navigating to video: ${videoUrl}`);
+      console.log(`[YOUTUBE_CAPTIONS] Step A: Navigating to video: ${videoUrl}`);
       
       // User Agent 설정으로 봇 탐지 우회 시도
+      console.log(`[YOUTUBE_CAPTIONS] Step B: Setting user agent...`);
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
       
       // 페이지 로드
+      console.log(`[YOUTUBE_CAPTIONS] Step C: Loading page with 30s timeout...`);
+      const loadStartTime = Date.now();
+      
       await page.goto(videoUrl, { 
         waitUntil: 'domcontentloaded',
         timeout: 30000 
       });
-
-      console.log(`[YOUTUBE_CAPTIONS] Page loaded successfully`);
+      
+      const loadTime = Date.now() - loadStartTime;
+      console.log(`[YOUTUBE_CAPTIONS] Step D: Page loaded successfully in ${loadTime}ms`);
 
       // 페이지가 완전히 로드될 때까지 대기
+      console.log(`[YOUTUBE_CAPTIONS] Step E: Waiting for video player...`);
       await page.waitForSelector('#movie_player', { timeout: 15000 });
-      console.log(`[YOUTUBE_CAPTIONS] Video player found`);
+      console.log(`[YOUTUBE_CAPTIONS] Step F: Video player found successfully`);
       
       // 페이지에서 더보기 버튼 클릭하여 description 확장
       try {

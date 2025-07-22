@@ -349,10 +349,33 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
       
-      // 자막 추출 실행
-      const captions = await youtubeCaptionExtractor.extractCaptions(videoId, language);
+      // 타임아웃을 추가하여 Puppeteer가 무한 대기하지 않도록 함
+      const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.log(`[CAPTIONS] Extraction timeout after 45 seconds, trying fallback...`);
+          reject(new Error('EXTRACTION_TIMEOUT'));
+        }, 45000); // 45초 타임아웃
+      });
       
-      console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments`);
+      let captions;
+      try {
+        captions = await Promise.race([extractionPromise, timeoutPromise]);
+        console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments`);
+      } catch (error) {
+        if (error.message === 'EXTRACTION_TIMEOUT' || error.message.includes('browser') || error.message.includes('timeout')) {
+          console.log(`[CAPTIONS] Puppeteer failed, trying fallback method...`);
+          
+          // 대안 방법 시도
+          const { YoutubeFallbackExtractor } = await import('./youtube-fallback');
+          const fallbackExtractor = new YoutubeFallbackExtractor();
+          captions = await fallbackExtractor.extractOEmbedInfo(videoId);
+          
+          console.log(`[CAPTIONS] Fallback method returned ${captions.length} segments`);
+        } else {
+          throw error;
+        }
+      }
       
       res.json({
         success: true,
