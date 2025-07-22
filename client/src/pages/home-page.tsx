@@ -34,6 +34,11 @@ export default function HomePage() {
   const [slackSetupCompleted, setSlackSetupCompleted] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [workspaceJoined, setWorkspaceJoined] = useState(false);
+  
+  // YouTube 자막 추출 관련 state
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [extractedCaptions, setExtractedCaptions] = useState(null);
+  const [captionVideoId, setCaptionVideoId] = useState("");
 
   // 사용자의 Slack 연동 상태를 확인
   const isSlackConnected = user?.slackChannelId;
@@ -167,6 +172,56 @@ export default function HomePage() {
     },
   });
 
+  // YouTube URL에서 영상 ID 추출 Mutation
+  const extractVideoIdMutation = useMutation({
+    mutationFn: async (url: string) => {
+      console.log(`[FRONTEND] Extracting video ID from URL: ${url}`);
+      const res = await apiRequest("POST", "/api/captions/extract-video-id", { url });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Video ID extracted successfully:`, data);
+      setCaptionVideoId(data.videoId);
+      toast({
+        title: "성공",
+        description: `영상 ID가 추출되었습니다: ${data.videoId}`,
+      });
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error extracting video ID:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // YouTube 자막 추출 Mutation
+  const extractCaptionsMutation = useMutation({
+    mutationFn: async (videoId: string) => {
+      console.log(`[FRONTEND] Extracting captions for video ID: ${videoId}`);
+      const res = await apiRequest("GET", `/api/captions/${videoId}?lang=ko`);
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Captions extracted successfully:`, data);
+      setExtractedCaptions(data);
+      toast({
+        title: "성공",
+        description: `${data.captionsCount}개의 자막 세그먼트가 추출되었습니다.`,
+      });
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error extracting captions:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleLogout = () => {
     logoutMutation.mutate();
   };
@@ -198,6 +253,30 @@ export default function HomePage() {
       return;
     }
     slackSetupMutation.mutate(userEmail);
+  };
+
+  const handleExtractVideoId = () => {
+    if (!youtubeUrl) {
+      toast({
+        title: "오류",
+        description: "YouTube URL을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    extractVideoIdMutation.mutate(youtubeUrl);
+  };
+
+  const handleExtractCaptions = () => {
+    if (!captionVideoId) {
+      toast({
+        title: "오류",
+        description: "먼저 영상 ID를 추출해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    extractCaptionsMutation.mutate(captionVideoId);
   };
 
   const getThumbnailIcon = (type: string) => {
@@ -538,6 +617,142 @@ export default function HomePage() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* YouTube Caption Extraction */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Video className="w-5 h-5 text-red-600" />
+              YouTube 자막 추출
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {/* URL 입력 및 영상 ID 추출 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-slate-900">1. YouTube URL 입력</h3>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Input
+                    type="url"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleExtractVideoId}
+                    disabled={extractVideoIdMutation.isPending}
+                    variant="outline"
+                    className="whitespace-nowrap"
+                  >
+                    {extractVideoIdMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Youtube className="w-4 h-4 mr-2" />
+                    )}
+                    영상 ID 추출
+                  </Button>
+                </div>
+                
+                {captionVideoId && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-green-800 text-sm">
+                      <CheckCircle className="w-4 h-4 inline mr-2" />
+                      영상 ID: <span className="font-mono font-semibold">{captionVideoId}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* 자막 추출 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-slate-900">2. 자막 추출</h3>
+                <Button
+                  onClick={handleExtractCaptions}
+                  disabled={extractCaptionsMutation.isPending || !captionVideoId}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {extractCaptionsMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Video className="w-4 h-4 mr-2" />
+                  )}
+                  자막 추출 시작
+                </Button>
+                
+                {extractCaptionsMutation.isPending && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin mr-3" />
+                      <div>
+                        <p className="font-medium text-blue-800">자막 추출 중...</p>
+                        <p className="text-blue-600 text-sm">
+                          YouTube 페이지에서 자막을 스크래핑하고 있습니다. 잠시만 기다려주세요.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 추출된 자막 표시 */}
+              {extractedCaptions && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-slate-900">3. 추출된 자막</h3>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="font-medium text-slate-900">
+                        영상 ID: {extractedCaptions.videoId}
+                      </p>
+                      <Badge variant="secondary">
+                        {extractedCaptions.captionsCount}개 세그먼트
+                      </Badge>
+                    </div>
+                    
+                    {extractedCaptions.captions && extractedCaptions.captions.length > 0 ? (
+                      <div className="max-h-64 overflow-y-auto space-y-2">
+                        {extractedCaptions.captions.map((caption, index) => (
+                          <div key={index} className="bg-white border rounded-lg p-3">
+                            <div className="flex items-start gap-3">
+                              <Badge variant="outline" className="text-xs">
+                                {caption.timestamp}
+                              </Badge>
+                              <p className="text-sm text-slate-700 flex-1">
+                                {caption.text}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-500">
+                        <AlertTriangle className="w-8 h-8 mx-auto mb-2" />
+                        <p>자막을 찾을 수 없습니다.</p>
+                        <p className="text-sm">영상에 자막이 없거나 추출에 실패했을 수 있습니다.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 사용법 안내 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <Video className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium mb-2">사용 안내:</p>
+                    <ul className="space-y-1">
+                      <li>• YouTube 영상 URL을 입력하고 영상 ID를 추출하세요</li>
+                      <li>• 자막 추출을 시작하면 Puppeteer가 YouTube 페이지에서 자막을 스크래핑합니다</li>
+                      <li>• 자막이 없는 영상이거나 비공개 영상의 경우 추출이 실패할 수 있습니다</li>
+                      <li>• 추출 과정은 최대 1-2분 정도 소요될 수 있습니다</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
