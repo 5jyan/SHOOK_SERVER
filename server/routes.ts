@@ -357,32 +357,59 @@ export function registerRoutes(app: Express): Server {
       const videoId = videoData.id;
       console.log(`[TRANSCRIPT] Step 2: Starting transcript fetch for video ID: ${videoId}`);
 
-      // Try different language options
-      const languages = ['ko', 'en', undefined]; // 한국어 -> 영어 -> 자동 감지
+      // Try multiple approaches to fetch transcript
       let transcriptData = null;
       let usedLang = null;
+      let method = null;
 
-      for (const lang of languages) {
-        try {
-          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1}: Attempting to fetch transcript with lang: ${lang || 'auto'}`);
-          
-          const options = lang ? { lang } : {};
-          console.log(`[TRANSCRIPT] Fetch options:`, JSON.stringify(options, null, 2));
-          
-          transcriptData = await YoutubeTranscript.fetchTranscript(videoId, options);
-          usedLang = lang || 'auto';
-          
-          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1} Success - Fetched ${transcriptData.length} segments with lang: ${usedLang}`);
-          console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
-          
-          if (transcriptData && transcriptData.length > 0) {
-            break; // 성공적으로 자막을 가져왔으면 중단
+      // Method 1: Try without any options first (auto-detect)
+      try {
+        console.log(`[TRANSCRIPT] Method 1: Attempting to fetch transcript without options (auto-detect)`);
+        transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+        usedLang = 'auto-detect';
+        method = 'no-options';
+        console.log(`[TRANSCRIPT] Method 1 Success - Fetched ${transcriptData.length} segments`);
+        console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
+      } catch (error1) {
+        console.log(`[TRANSCRIPT] Method 1 Failed:`, error1.message);
+        
+        // Method 2: Try with specific language codes
+        const languages = ['ko', 'en', 'es', 'fr', 'de', 'ja', 'zh'];
+        for (const lang of languages) {
+          try {
+            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1}: Attempting with lang: ${lang}`);
+            transcriptData = await YoutubeTranscript.fetchTranscript(videoId, { lang });
+            usedLang = lang;
+            method = `lang-${lang}`;
+            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1} Success - Fetched ${transcriptData.length} segments with lang: ${lang}`);
+            console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
+            
+            if (transcriptData && transcriptData.length > 0) {
+              break;
+            }
+          } catch (langError) {
+            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1} Failed - Language ${lang} failed:`, langError.message);
           }
-        } catch (langError) {
-          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1} Failed - Language ${lang || 'auto'} failed:`, langError.message);
-          if (lang === languages[languages.length - 1]) {
-            // 마지막 언어 옵션도 실패한 경우
-            throw langError;
+        }
+        
+        // Method 3: Try with country codes
+        if (!transcriptData || transcriptData.length === 0) {
+          const countries = ['US', 'KR', 'GB', 'CA'];
+          for (const country of countries) {
+            try {
+              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1}: Attempting with country: ${country}`);
+              transcriptData = await YoutubeTranscript.fetchTranscript(videoId, { country });
+              usedLang = `country-${country}`;
+              method = `country-${country}`;
+              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1} Success - Fetched ${transcriptData.length} segments with country: ${country}`);
+              console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
+              
+              if (transcriptData && transcriptData.length > 0) {
+                break;
+              }
+            } catch (countryError) {
+              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1} Failed - Country ${country} failed:`, countryError.message);
+            }
           }
         }
       }
@@ -419,7 +446,9 @@ export function registerRoutes(app: Express): Server {
         fullText,
         totalDuration,
         language: usedLang,
-        segmentCount: transcriptData.length
+        method: method,
+        segmentCount: transcriptData.length,
+        extractedAt: new Date().toISOString()
       };
 
       console.log(`[TRANSCRIPT] Step 4: Final formatted transcript:`, JSON.stringify({
