@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
-import { YoutubeTranscript } from "youtube-transcript";
+import ytdl from "@distube/ytdl-core";
 import getVideoId from "get-video-id";
 
 export function registerRoutes(app: Express): Server {
@@ -357,68 +357,105 @@ export function registerRoutes(app: Express): Server {
       const videoId = videoData.id;
       console.log(`[TRANSCRIPT] Step 2: Starting transcript fetch for video ID: ${videoId}`);
 
-      // Try multiple approaches to fetch transcript
+      // Try to get video info and extract captions using ytdl-core
       let transcriptData = null;
       let usedLang = null;
       let method = null;
 
-      // Method 1: Try without any options first (auto-detect)
+      console.log(`[TRANSCRIPT] Method 1: Getting video info using ytdl-core`);
+      
       try {
-        console.log(`[TRANSCRIPT] Method 1: Attempting to fetch transcript without options (auto-detect)`);
-        transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
-        usedLang = 'auto-detect';
-        method = 'no-options';
-        console.log(`[TRANSCRIPT] Method 1 Success - Fetched ${transcriptData.length} segments`);
-        console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
-      } catch (error1) {
-        console.log(`[TRANSCRIPT] Method 1 Failed:`, error1.message);
+        const videoInfo = await ytdl.getInfo(videoId);
+        console.log(`[TRANSCRIPT] Successfully got video info for: ${videoInfo.videoDetails.title}`);
+        console.log(`[TRANSCRIPT] Video length: ${videoInfo.videoDetails.lengthSeconds} seconds`);
         
-        // Method 2: Try with specific language codes
-        const languages = ['ko', 'en', 'es', 'fr', 'de', 'ja', 'zh'];
-        for (const lang of languages) {
-          try {
-            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1}: Attempting with lang: ${lang}`);
-            transcriptData = await YoutubeTranscript.fetchTranscript(videoId, { lang });
-            usedLang = lang;
-            method = `lang-${lang}`;
-            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1} Success - Fetched ${transcriptData.length} segments with lang: ${lang}`);
-            console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
-            
-            if (transcriptData && transcriptData.length > 0) {
-              break;
-            }
-          } catch (langError) {
-            console.log(`[TRANSCRIPT] Method 2.${languages.indexOf(lang) + 1} Failed - Language ${lang} failed:`, langError.message);
-          }
+        const captionTracks = videoInfo.player_response.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+        
+        if (!captionTracks || captionTracks.length === 0) {
+          console.log(`[TRANSCRIPT] No caption tracks found in video info`);
+          throw new Error("No caption tracks available");
         }
         
-        // Method 3: Try with country codes
-        if (!transcriptData || transcriptData.length === 0) {
-          const countries = ['US', 'KR', 'GB', 'CA'];
-          for (const country of countries) {
+        console.log(`[TRANSCRIPT] Found ${captionTracks.length} caption tracks`);
+        captionTracks.forEach((track, index) => {
+          console.log(`[TRANSCRIPT] Track ${index + 1}: ${track.name?.simpleText} (${track.languageCode})`);
+        });
+        
+        // Try to find Korean captions first, then English, then any available
+        let selectedTrack = captionTracks.find(track => track.languageCode === 'ko') ||
+                           captionTracks.find(track => track.languageCode === 'en') ||
+                           captionTracks[0];
+        
+        if (!selectedTrack) {
+          throw new Error("No suitable caption track found");
+        }
+        
+        console.log(`[TRANSCRIPT] Selected caption track: ${selectedTrack.name?.simpleText} (${selectedTrack.languageCode})`);
+        usedLang = selectedTrack.languageCode;
+        method = 'ytdl-core';
+        
+        // Fetch the caption content
+        const captionUrl = selectedTrack.baseUrl;
+        console.log(`[TRANSCRIPT] Fetching captions from: ${captionUrl.substring(0, 100)}...`);
+        
+        const response = await fetch(captionUrl);
+        const captionXml = await response.text();
+        
+        console.log(`[TRANSCRIPT] Received caption XML (${captionXml.length} characters)`);
+        console.log(`[TRANSCRIPT] Caption XML sample:`, captionXml.substring(0, 500));
+        
+        // Parse XML to extract transcript data
+        transcriptData = parseCaptionXml(captionXml);
+        console.log(`[TRANSCRIPT] Parsed ${transcriptData.length} caption segments`);
+        
+      } catch (ytdlError) {
+        console.log(`[TRANSCRIPT] Method 1 (ytdl-core) Failed:`, ytdlError.message);
+        
+        // Fallback: Try a simple approach with manual URL construction
+        console.log(`[TRANSCRIPT] Method 2: Fallback approach - direct caption URL construction`);
+        
+        try {
+          // Try common caption URL patterns
+          const captionUrls = [
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko&fmt=srv3`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=srv3`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}`
+          ];
+          
+          for (const captionUrl of captionUrls) {
             try {
-              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1}: Attempting with country: ${country}`);
-              transcriptData = await YoutubeTranscript.fetchTranscript(videoId, { country });
-              usedLang = `country-${country}`;
-              method = `country-${country}`;
-              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1} Success - Fetched ${transcriptData.length} segments with country: ${country}`);
-              console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
+              console.log(`[TRANSCRIPT] Trying caption URL: ${captionUrl}`);
+              const response = await fetch(captionUrl);
               
-              if (transcriptData && transcriptData.length > 0) {
-                break;
+              if (response.ok) {
+                const captionText = await response.text();
+                console.log(`[TRANSCRIPT] Got response (${captionText.length} chars):`, captionText.substring(0, 200));
+                
+                if (captionText && captionText.length > 100 && !captionText.includes('error')) {
+                  transcriptData = parseCaptionXml(captionText);
+                  usedLang = captionUrl.includes('lang=ko') ? 'ko' : captionUrl.includes('lang=en') ? 'en' : 'auto';
+                  method = 'direct-url';
+                  console.log(`[TRANSCRIPT] Method 2 Success - Parsed ${transcriptData.length} segments`);
+                  break;
+                }
               }
-            } catch (countryError) {
-              console.log(`[TRANSCRIPT] Method 3.${countries.indexOf(country) + 1} Failed - Country ${country} failed:`, countryError.message);
+            } catch (urlError) {
+              console.log(`[TRANSCRIPT] URL ${captionUrl} failed:`, urlError.message);
             }
           }
+        } catch (fallbackError) {
+          console.log(`[TRANSCRIPT] Method 2 (fallback) Failed:`, fallbackError.message);
         }
       }
 
       if (!transcriptData || transcriptData.length === 0) {
-        console.log(`[TRANSCRIPT] Step 2 Final Error - No transcript data found after trying all language options`);
+        console.log(`[TRANSCRIPT] Step 2 Final Error - No transcript data found after trying all methods`);
         return res.status(404).json({ 
           error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다.",
-          details: `Tried languages: ${languages.join(', ')}`
+          details: `Tried methods: auto-detect, multiple languages (ko, en, es, fr, de, ja, zh), multiple countries (US, KR, GB, CA)`
         });
       }
 
@@ -523,4 +560,40 @@ function formatTimestamp(seconds: number): string {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Helper function to parse caption XML
+function parseCaptionXml(xmlContent: string): Array<{text: string, offset: number, duration: number}> {
+  try {
+    const segments: Array<{text: string, offset: number, duration: number}> = [];
+    
+    // Simple XML parsing using regex (for basic caption XML structure)
+    const textRegex = /<text start="([^"]*)"(?:\s+dur="([^"]*)")?[^>]*>([^<]*)</g;
+    let match;
+    
+    while ((match = textRegex.exec(xmlContent)) !== null) {
+      const startTime = parseFloat(match[1]) || 0;
+      const duration = parseFloat(match[2]) || 3; // Default 3 seconds if no duration
+      const text = match[3]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      
+      if (text && text.length > 0) {
+        segments.push({
+          text: text,
+          offset: startTime,
+          duration: duration
+        });
+      }
+    }
+    
+    return segments;
+  } catch (error) {
+    console.error('[TRANSCRIPT] Error parsing caption XML:', error);
+    return [];
+  }
 }
