@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
+import { YoutubeTranscript } from "youtube-transcript";
+import getVideoId from "get-video-id";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -324,7 +326,95 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // YouTube Transcript Extraction Route
+  app.post("/api/youtube/transcript", async (req, res) => {
+    console.log(`[TRANSCRIPT] Received POST /api/youtube/transcript request`);
+    
+    if (!req.isAuthenticated()) {
+      console.log(`[TRANSCRIPT] Request rejected - user not authenticated`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { url } = req.body;
+    console.log(`[TRANSCRIPT] Processing URL: ${url} for user ${req.user.username}`);
+
+    if (!url || typeof url !== "string") {
+      console.log(`[TRANSCRIPT] Invalid URL provided: ${url}`);
+      return res.status(400).json({ error: "유튜브 URL이 필요합니다." });
+    }
+
+    try {
+      // Extract video ID from URL
+      const videoData = getVideoId(url);
+      console.log(`[TRANSCRIPT] Extracted video data:`, videoData);
+      
+      if (!videoData || !videoData.id) {
+        console.log(`[TRANSCRIPT] Invalid YouTube URL: ${url}`);
+        return res.status(400).json({ error: "올바른 유튜브 URL을 입력해주세요." });
+      }
+
+      const videoId = videoData.id;
+      console.log(`[TRANSCRIPT] Fetching transcript for video ID: ${videoId}`);
+
+      // Fetch transcript
+      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId, {
+        lang: 'ko' // 한국어 우선, 없으면 자동으로 다른 언어 시도
+      });
+
+      console.log(`[TRANSCRIPT] Successfully fetched transcript with ${transcriptData.length} segments`);
+
+      // Format transcript data
+      const formattedTranscript = {
+        videoId,
+        videoUrl: url,
+        segments: transcriptData.map(item => ({
+          text: item.text,
+          timestamp: item.offset,
+          duration: item.duration,
+          formattedTime: formatTimestamp(item.offset)
+        })),
+        fullText: transcriptData.map(item => item.text).join(' '),
+        totalDuration: transcriptData[transcriptData.length - 1]?.offset || 0
+      };
+
+      console.log(`[TRANSCRIPT] Returning formatted transcript data`);
+      res.json(formattedTranscript);
+
+    } catch (error) {
+      console.error("[TRANSCRIPT] Error extracting transcript:", error);
+      
+      // Handle specific errors
+      if (error.message?.includes('Could not retrieve a transcript')) {
+        return res.status(404).json({ 
+          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다." 
+        });
+      }
+      
+      if (error.message?.includes('Too Many Requests')) {
+        return res.status(429).json({ 
+          error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." 
+        });
+      }
+
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "자막 추출에 실패했습니다." 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
+}
+
+// Helper function to format timestamp
+function formatTimestamp(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }

@@ -19,6 +19,7 @@ import {
   ExternalLink,
   AlertTriangle,
   ArrowLeft,
+  Copy,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +35,8 @@ export default function HomePage() {
   const [slackSetupCompleted, setSlackSetupCompleted] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [workspaceJoined, setWorkspaceJoined] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [transcript, setTranscript] = useState<any>(null);
 
   // 사용자의 Slack 연동 상태를 확인
   const isSlackConnected = user?.slackChannelId;
@@ -167,6 +170,31 @@ export default function HomePage() {
     },
   });
 
+  // Mutation to extract YouTube transcript
+  const transcriptMutation = useMutation({
+    mutationFn: async (url: string) => {
+      console.log(`[FRONTEND] Extracting transcript for URL: ${url}`);
+      const res = await apiRequest("POST", "/api/youtube/transcript", { url });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Transcript extraction successful:`, data);
+      setTranscript(data);
+      toast({
+        title: "성공",
+        description: "유튜브 자막을 성공적으로 추출했습니다!",
+      });
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error extracting transcript:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleLogout = () => {
     logoutMutation.mutate();
   };
@@ -198,6 +226,18 @@ export default function HomePage() {
       return;
     }
     slackSetupMutation.mutate(userEmail);
+  };
+
+  const handleTranscriptExtraction = () => {
+    if (!youtubeUrl || !youtubeUrl.includes('youtube.com') && !youtubeUrl.includes('youtu.be')) {
+      toast({
+        title: "오류",
+        description: "올바른 유튜브 URL을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    transcriptMutation.mutate(youtubeUrl);
   };
 
   const getThumbnailIcon = (type: string) => {
@@ -538,6 +578,133 @@ export default function HomePage() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* YouTube Transcript Extraction */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <div className="w-5 h-5 bg-red-600 rounded flex items-center justify-center">
+                <Youtube className="w-3 h-3 text-white" />
+              </div>
+              유튜브 자막 추출
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-slate-600">
+                유튜브 영상 URL을 입력하여 자막을 추출하고 요약을 생성하세요.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleTranscriptExtraction}
+                  disabled={transcriptMutation.isPending}
+                  className="bg-red-600 hover:bg-red-700 text-white whitespace-nowrap"
+                >
+                  {transcriptMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Youtube className="w-4 h-4 mr-2" />
+                  )}
+                  자막 추출
+                </Button>
+              </div>
+
+              {transcript && (
+                <div className="mt-6 space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-slate-900">추출된 자막</h3>
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <span>총 {transcript.segments?.length || 0}개 구간</span>
+                        <span>길이: {Math.floor((transcript.totalDuration || 0) / 60)}분 {Math.floor((transcript.totalDuration || 0) % 60)}초</span>
+                      </div>
+                    </div>
+                    
+                    <div className="max-h-96 overflow-y-auto bg-white rounded border p-4">
+                      {transcript.segments && transcript.segments.length > 0 ? (
+                        <div className="space-y-2">
+                          {transcript.segments.map((segment: any, index: number) => (
+                            <div key={index} className="flex gap-3 text-sm">
+                              <span className="text-blue-600 font-mono shrink-0 w-16">
+                                {segment.formattedTime}
+                              </span>
+                              <span className="text-slate-700 leading-relaxed">
+                                {segment.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500 text-center py-4">
+                          자막 데이터가 없습니다.
+                        </p>
+                      )}
+                    </div>
+
+                    {transcript.fullText && (
+                      <div className="mt-4">
+                        <h4 className="font-medium text-slate-900 mb-2">전체 텍스트</h4>
+                        <div className="bg-white border rounded p-3 max-h-32 overflow-y-auto">
+                          <p className="text-sm text-slate-700 leading-relaxed">
+                            {transcript.fullText}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(transcript.fullText || '');
+                          toast({
+                            title: "복사됨",
+                            description: "전체 텍스트가 클립보드에 복사되었습니다.",
+                          });
+                        }}
+                      >
+                        <Copy className="w-4 h-4 mr-1" />
+                        텍스트 복사
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTranscript(null)}
+                      >
+                        <ArrowLeft className="w-4 h-4 mr-1" />
+                        초기화
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
+                  <div className="text-sm text-blue-700">
+                    <p className="font-medium mb-2">사용 안내:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>자막이 있는 유튜브 영상만 추출 가능합니다</li>
+                      <li>한국어 자막을 우선적으로 추출하며, 없을 경우 다른 언어를 시도합니다</li>
+                      <li>자동 생성 자막도 추출 가능합니다</li>
+                      <li>비공개 영상이나 자막이 비활성화된 영상은 추출할 수 없습니다</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
