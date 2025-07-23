@@ -3,7 +3,6 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
-import { youtubeCaptionExtractor } from "./youtube-captions";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -322,102 +321,6 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("[SLACK_EVENTS] Error processing event:", error);
       res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // YouTube Caption Extraction API
-  app.get("/api/captions/:videoId", async (req, res) => {
-    console.log(`[CAPTIONS] Received request for video ID: ${req.params.videoId}`);
-    
-    if (!req.isAuthenticated()) {
-      console.log(`[CAPTIONS] Unauthorized request`);
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const videoId = req.params.videoId;
-    const language = req.query.lang as string || 'ko';
-
-    try {
-      // 영상 ID 유효성 검사
-      if (!youtubeCaptionExtractor.validateVideoId(videoId)) {
-        console.log(`[CAPTIONS] Invalid video ID: ${videoId}`);
-        return res.status(400).json({ 
-          error: "유효하지 않은 YouTube 영상 ID입니다.",
-          videoId 
-        });
-      }
-
-      console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
-      
-      // Puppeteer로 직접 시도
-      const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          console.log(`[CAPTIONS] Puppeteer timeout after 30 seconds`);
-          reject(new Error('EXTRACTION_TIMEOUT'));
-        }, 30000); // 30초 타임아웃
-      });
-      
-      const captions = await Promise.race([extractionPromise, timeoutPromise]);
-      console.log(`[CAPTIONS] Puppeteer succeeded with ${captions.length} caption segments`);
-      
-      res.json({
-        success: true,
-        videoId,
-        language,
-        extractionMethod: 'puppeteer',
-        captionsCount: captions.length,
-        captions
-      });
-
-    } catch (error: any) {
-      console.error(`[CAPTIONS] Error extracting captions for video ${videoId}:`, error);
-      res.status(500).json({ 
-        error: error.message || "자막 추출 중 오류가 발생했습니다.",
-        videoId 
-      });
-    }
-  });
-
-  // URL에서 영상 ID 추출 API
-  app.post("/api/captions/extract-video-id", async (req, res) => {
-    console.log(`[CAPTIONS] Video ID extraction request received`);
-    
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { url } = req.body;
-    
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ 
-        error: "유효한 YouTube URL을 입력해주세요." 
-      });
-    }
-
-    try {
-      const videoId = youtubeCaptionExtractor.extractVideoIdFromUrl(url);
-      
-      if (!videoId) {
-        console.log(`[CAPTIONS] Could not extract video ID from URL: ${url}`);
-        return res.status(400).json({ 
-          error: "URL에서 YouTube 영상 ID를 찾을 수 없습니다." 
-        });
-      }
-
-      console.log(`[CAPTIONS] Successfully extracted video ID: ${videoId} from URL: ${url}`);
-      
-      res.json({
-        success: true,
-        url,
-        videoId
-      });
-
-    } catch (error) {
-      console.error(`[CAPTIONS] Error extracting video ID from URL:`, error);
-      res.status(500).json({ 
-        error: "URL 처리 중 오류가 발생했습니다." 
-      });
     }
   });
 
