@@ -512,18 +512,167 @@ export function registerRoutes(app: Express): Server {
           console.log(`[TRANSCRIPT] Method 2 (fallback) Failed:`, fallbackError.message);
         }
         
-        // Method 3: Puppeteer-based scraping as last resort
+        // Method 3: Try alternative approaches before Puppeteer
         if (!transcriptData || transcriptData.length === 0) {
-          console.log(`[TRANSCRIPT] Method 3: Using Puppeteer to scrape captions`);
+          console.log(`[TRANSCRIPT] Method 3: Trying YouTube embed approach`);
           try {
-            transcriptData = await extractTranscriptWithPuppeteer(videoId);
-            if (transcriptData && transcriptData.length > 0) {
-              usedLang = 'puppeteer';
-              method = 'puppeteer';
-              console.log(`[TRANSCRIPT] Method 3 Success - Scraped ${transcriptData.length} segments`);
+            const embedResponse = await fetch(`https://www.youtube.com/embed/${videoId}`, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            
+            if (embedResponse.ok) {
+              const embedHtml = await embedResponse.text();
+              console.log(`[TRANSCRIPT] Got embed HTML (${embedHtml.length} chars)`);
+              
+              // Look for caption track URLs in embed HTML
+              const captionUrlRegex = /"captionTracks":\[([^\]]+)\]/;
+              const match = embedHtml.match(captionUrlRegex);
+              
+              if (match) {
+                console.log(`[TRANSCRIPT] Found captionTracks in embed HTML`);
+                const captionTracksText = match[1];
+                const baseUrlMatch = captionTracksText.match(/"baseUrl":"([^"]+)"/);
+                
+                if (baseUrlMatch) {
+                  const captionUrl = baseUrlMatch[1].replace(/\\u0026/g, '&');
+                  console.log(`[TRANSCRIPT] Extracted caption URL: ${captionUrl.substring(0, 100)}...`);
+                  
+                  const captionResponse = await fetch(captionUrl);
+                  const captionXml = await captionResponse.text();
+                  
+                  if (captionXml && captionXml.length > 50) {
+                    transcriptData = parseCaptionXml(captionXml);
+                    usedLang = 'embed-extracted';
+                    method = 'embed';
+                    console.log(`[TRANSCRIPT] Method 3 Success - Parsed ${transcriptData.length} segments from embed`);
+                  }
+                }
+              }
             }
-          } catch (puppeteerError) {
-            console.log(`[TRANSCRIPT] Method 3 (Puppeteer) Failed:`, puppeteerError.message);
+          } catch (embedError) {
+            console.log(`[TRANSCRIPT] Method 3 (embed) Failed:`, embedError.message);
+          }
+        }
+        
+        // Method 4: Try different API endpoints
+        if (!transcriptData || transcriptData.length === 0) {
+          console.log(`[TRANSCRIPT] Method 4: Trying alternative API endpoints`);
+          try {
+            const alternativeUrls = [
+              `https://video.google.com/timedtext?v=${videoId}&lang=ko`,
+              `https://video.google.com/timedtext?v=${videoId}&lang=en`,
+              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=ko&fmt=srv1`,
+              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=en&fmt=srv1`,
+              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=ko&fmt=vtt`,
+              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=en&fmt=vtt`
+            ];
+            
+            for (const altUrl of alternativeUrls) {
+              try {
+                console.log(`[TRANSCRIPT] Trying alternative URL: ${altUrl}`);
+                const response = await fetch(altUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; GoogleBot/2.1)',
+                    'Accept': '*/*',
+                    'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8'
+                  }
+                });
+                
+                if (response.ok) {
+                  const content = await response.text();
+                  console.log(`[TRANSCRIPT] Alternative URL response (${content.length} chars):`, content.substring(0, 200));
+                  
+                  if (content && content.length > 50 && !content.includes('error')) {
+                    transcriptData = parseCaptionXml(content);
+                    usedLang = altUrl.includes('lang=ko') ? 'ko' : 'en';
+                    method = 'alternative-api';
+                    console.log(`[TRANSCRIPT] Method 4 Success - Parsed ${transcriptData.length} segments`);
+                    
+                    if (transcriptData && transcriptData.length > 0) {
+                      break;
+                    }
+                  }
+                }
+              } catch (altError) {
+                console.log(`[TRANSCRIPT] Alternative URL ${altUrl} failed:`, altError.message);
+              }
+            }
+          } catch (methodError) {
+            console.log(`[TRANSCRIPT] Method 4 Failed:`, methodError.message);
+          }
+        }
+        
+        // Method 5: Try to extract from player response data more thoroughly
+        if (!transcriptData || transcriptData.length === 0) {
+          console.log(`[TRANSCRIPT] Method 5: Deep parsing of ytdl player response`);
+          try {
+            const videoInfo = await ytdl.getInfo(videoId);
+            const playerResponse = videoInfo.player_response;
+            
+            // Look more thoroughly in the player response
+            if (playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+              const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+              
+              for (const track of tracks) {
+                console.log(`[TRANSCRIPT] Deep parsing track: ${track.name?.simpleText} (${track.languageCode})`);
+                
+                if (track.baseUrl) {
+                  // Try multiple variations of the base URL
+                  const urlVariations = [
+                    track.baseUrl,
+                    track.baseUrl.replace('&fmt=srv3', ''),
+                    track.baseUrl + '&fmt=srv1',
+                    track.baseUrl + '&fmt=vtt',
+                    track.baseUrl + '&fmt=ttml',
+                    track.baseUrl.replace(/&tlang=[^&]*/, ''), // Remove translation language
+                    track.baseUrl.replace(/&caps=[^&]*/, '&caps=asr'), // Force ASR captions
+                  ];
+                  
+                  for (const variation of urlVariations) {
+                    try {
+                      console.log(`[TRANSCRIPT] Trying URL variation: ${variation.substring(0, 100)}...`);
+                      
+                      const response = await fetch(variation, {
+                        headers: {
+                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                          'Accept': 'text/xml,application/xml,text/vtt,text/plain,*/*',
+                          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+                          'Cache-Control': 'no-cache',
+                          'Pragma': 'no-cache'
+                        }
+                      });
+                      
+                      if (response.ok) {
+                        const content = await response.text();
+                        console.log(`[TRANSCRIPT] URL variation response: ${response.status} - ${content.length} chars`);
+                        console.log(`[TRANSCRIPT] Content sample:`, content.substring(0, 300));
+                        
+                        if (content && content.length > 50 && !content.toLowerCase().includes('not found')) {
+                          const parsed = parseCaptionXml(content);
+                          if (parsed && parsed.length > 0) {
+                            transcriptData = parsed;
+                            usedLang = track.languageCode;
+                            method = 'deep-ytdl';
+                            console.log(`[TRANSCRIPT] Method 5 Success - Found ${transcriptData.length} segments`);
+                            break;
+                          }
+                        }
+                      }
+                    } catch (varError) {
+                      console.log(`[TRANSCRIPT] URL variation failed: ${varError.message}`);
+                    }
+                  }
+                  
+                  if (transcriptData && transcriptData.length > 0) {
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (deepError) {
+            console.log(`[TRANSCRIPT] Method 5 Failed:`, deepError.message);
           }
         }
       }
@@ -644,13 +793,13 @@ function parseCaptionXml(xmlContent: string): Array<{text: string, offset: numbe
   try {
     const segments: Array<{text: string, offset: number, duration: number}> = [];
     
-    // Simple XML parsing using regex (for basic caption XML structure)
+    // Method 1: Try standard XML format first
     const textRegex = /<text start="([^"]*)"(?:\s+dur="([^"]*)")?[^>]*>([^<]*)</g;
     let match;
     
     while ((match = textRegex.exec(xmlContent)) !== null) {
       const startTime = parseFloat(match[1]) || 0;
-      const duration = parseFloat(match[2]) || 3; // Default 3 seconds if no duration
+      const duration = parseFloat(match[2]) || 3;
       const text = match[3]
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
@@ -668,11 +817,107 @@ function parseCaptionXml(xmlContent: string): Array<{text: string, offset: numbe
       }
     }
     
+    // Method 2: If no segments found, try alternative formats
+    if (segments.length === 0) {
+      console.log('[TRANSCRIPT] Trying alternative XML parsing methods');
+      
+      // Try with different XML structures
+      const altRegex1 = /<p t="([^"]*)"(?:\s+d="([^"]*)")?[^>]*>([^<]*)</g;
+      while ((match = altRegex1.exec(xmlContent)) !== null) {
+        const startTime = parseFloat(match[1]) / 1000 || 0; // Convert milliseconds to seconds
+        const duration = parseFloat(match[2]) / 1000 || 3;
+        const text = match[3]
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .trim();
+        
+        if (text && text.length > 0) {
+          segments.push({
+            text: text,
+            offset: startTime,
+            duration: duration
+          });
+        }
+      }
+    }
+    
+    // Method 3: Try JSON format (sometimes returned instead of XML)
+    if (segments.length === 0 && xmlContent.includes('{')) {
+      console.log('[TRANSCRIPT] Trying JSON parsing');
+      try {
+        const jsonData = JSON.parse(xmlContent);
+        if (jsonData.events) {
+          jsonData.events.forEach((event: any) => {
+            if (event.segs) {
+              event.segs.forEach((seg: any) => {
+                if (seg.utf8) {
+                  segments.push({
+                    text: seg.utf8.trim(),
+                    offset: (event.tStartMs || 0) / 1000,
+                    duration: (event.dDurationMs || 3000) / 1000
+                  });
+                }
+              });
+            }
+          });
+        }
+      } catch (jsonError) {
+        console.log('[TRANSCRIPT] JSON parsing failed:', jsonError.message);
+      }
+    }
+    
+    // Method 4: Try VTT format
+    if (segments.length === 0 && xmlContent.includes('WEBVTT')) {
+      console.log('[TRANSCRIPT] Trying VTT parsing');
+      const vttLines = xmlContent.split('\n');
+      let currentTime = 0;
+      
+      for (let i = 0; i < vttLines.length; i++) {
+        const line = vttLines[i].trim();
+        if (line.includes('-->')) {
+          const timeMatch = line.match(/(\d+:\d+:\d+\.?\d*) --> (\d+:\d+:\d+\.?\d*)/);
+          if (timeMatch) {
+            const startTime = parseTimeToSeconds(timeMatch[1]);
+            const endTime = parseTimeToSeconds(timeMatch[2]);
+            const duration = endTime - startTime;
+            
+            // Get the text from the next non-empty line
+            for (let j = i + 1; j < vttLines.length; j++) {
+              const textLine = vttLines[j].trim();
+              if (textLine && !textLine.includes('-->')) {
+                segments.push({
+                  text: textLine,
+                  offset: startTime,
+                  duration: duration
+                });
+                break;
+              } else if (textLine === '') {
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`[TRANSCRIPT] Parsed ${segments.length} segments using XML parser`);
     return segments;
   } catch (error) {
-    console.error('[TRANSCRIPT] Error parsing caption XML:', error);
+    console.error('[TRANSCRIPT] Error parsing caption content:', error);
     return [];
   }
+}
+
+// Helper function to convert time string to seconds
+function parseTimeToSeconds(timeStr: string): number {
+  const parts = timeStr.split(':');
+  const hours = parseInt(parts[0]) || 0;
+  const minutes = parseInt(parts[1]) || 0;
+  const seconds = parseFloat(parts[2]) || 0;
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 // Puppeteer-based transcript extraction as last resort
