@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { slackService } from "./slack";
 import ytdl from "@distube/ytdl-core";
 import getVideoId from "get-video-id";
+import puppeteer from 'puppeteer';
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -394,19 +395,68 @@ export function registerRoutes(app: Express): Server {
         usedLang = selectedTrack.languageCode;
         method = 'ytdl-core';
         
-        // Fetch the caption content
-        const captionUrl = selectedTrack.baseUrl;
-        console.log(`[TRANSCRIPT] Fetching captions from: ${captionUrl.substring(0, 100)}...`);
+        // Try multiple methods to fetch captions
+        let captionXml = '';
         
-        const response = await fetch(captionUrl);
-        const captionXml = await response.text();
+        // Method 1: Original baseUrl
+        try {
+          console.log(`[TRANSCRIPT] Method 1A: Fetching from baseUrl: ${selectedTrack.baseUrl.substring(0, 100)}...`);
+          const response1 = await fetch(selectedTrack.baseUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+          });
+          captionXml = await response1.text();
+          console.log(`[TRANSCRIPT] Method 1A Response: ${response1.status} - ${captionXml.length} chars`);
+        } catch (error) {
+          console.log(`[TRANSCRIPT] Method 1A Failed:`, error.message);
+        }
         
-        console.log(`[TRANSCRIPT] Received caption XML (${captionXml.length} characters)`);
+        // Method 2: Modified baseUrl with format
+        if (!captionXml || captionXml.length < 50) {
+          try {
+            const modifiedUrl = selectedTrack.baseUrl + '&fmt=srv3';
+            console.log(`[TRANSCRIPT] Method 1B: Trying with srv3 format: ${modifiedUrl.substring(0, 100)}...`);
+            const response2 = await fetch(modifiedUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            captionXml = await response2.text();
+            console.log(`[TRANSCRIPT] Method 1B Response: ${response2.status} - ${captionXml.length} chars`);
+          } catch (error) {
+            console.log(`[TRANSCRIPT] Method 1B Failed:`, error.message);
+          }
+        }
+        
+        // Method 3: Direct timedtext API
+        if (!captionXml || captionXml.length < 50) {
+          try {
+            const directUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${selectedTrack.languageCode}&name=${encodeURIComponent(selectedTrack.name?.simpleText || '')}`;
+            console.log(`[TRANSCRIPT] Method 1C: Direct API call: ${directUrl}`);
+            const response3 = await fetch(directUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            captionXml = await response3.text();
+            console.log(`[TRANSCRIPT] Method 1C Response: ${response3.status} - ${captionXml.length} chars`);
+          } catch (error) {
+            console.log(`[TRANSCRIPT] Method 1C Failed:`, error.message);
+          }
+        }
+        
+        console.log(`[TRANSCRIPT] Final caption XML (${captionXml.length} characters)`);
         console.log(`[TRANSCRIPT] Caption XML sample:`, captionXml.substring(0, 500));
         
-        // Parse XML to extract transcript data
-        transcriptData = parseCaptionXml(captionXml);
-        console.log(`[TRANSCRIPT] Parsed ${transcriptData.length} caption segments`);
+        if (captionXml && captionXml.length > 50) {
+          // Parse XML to extract transcript data
+          transcriptData = parseCaptionXml(captionXml);
+          console.log(`[TRANSCRIPT] Parsed ${transcriptData.length} caption segments`);
+        } else {
+          console.log(`[TRANSCRIPT] Caption XML too short or empty, trying fallback methods`);
+          throw new Error("Failed to fetch valid caption content");
+        }
         
       } catch (ytdlError) {
         console.log(`[TRANSCRIPT] Method 1 (ytdl-core) Failed:`, ytdlError.message);
@@ -422,13 +472,22 @@ export function registerRoutes(app: Express): Server {
             `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=srv3`,
             `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko`,
             `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}`
+            `https://www.youtube.com/api/timedtext?v=${videoId}`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko&fmt=json3`,
+            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=json3`
           ];
           
           for (const captionUrl of captionUrls) {
             try {
               console.log(`[TRANSCRIPT] Trying caption URL: ${captionUrl}`);
-              const response = await fetch(captionUrl);
+              const response = await fetch(captionUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
+                  'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+                  'Referer': `https://www.youtube.com/watch?v=${videoId}`
+                }
+              });
               
               if (response.ok) {
                 const captionText = await response.text();
@@ -439,7 +498,10 @@ export function registerRoutes(app: Express): Server {
                   usedLang = captionUrl.includes('lang=ko') ? 'ko' : captionUrl.includes('lang=en') ? 'en' : 'auto';
                   method = 'direct-url';
                   console.log(`[TRANSCRIPT] Method 2 Success - Parsed ${transcriptData.length} segments`);
-                  break;
+                  
+                  if (transcriptData && transcriptData.length > 0) {
+                    break;
+                  }
                 }
               }
             } catch (urlError) {
@@ -448,6 +510,21 @@ export function registerRoutes(app: Express): Server {
           }
         } catch (fallbackError) {
           console.log(`[TRANSCRIPT] Method 2 (fallback) Failed:`, fallbackError.message);
+        }
+        
+        // Method 3: Puppeteer-based scraping as last resort
+        if (!transcriptData || transcriptData.length === 0) {
+          console.log(`[TRANSCRIPT] Method 3: Using Puppeteer to scrape captions`);
+          try {
+            transcriptData = await extractTranscriptWithPuppeteer(videoId);
+            if (transcriptData && transcriptData.length > 0) {
+              usedLang = 'puppeteer';
+              method = 'puppeteer';
+              console.log(`[TRANSCRIPT] Method 3 Success - Scraped ${transcriptData.length} segments`);
+            }
+          } catch (puppeteerError) {
+            console.log(`[TRANSCRIPT] Method 3 (Puppeteer) Failed:`, puppeteerError.message);
+          }
         }
       }
 
@@ -595,5 +672,112 @@ function parseCaptionXml(xmlContent: string): Array<{text: string, offset: numbe
   } catch (error) {
     console.error('[TRANSCRIPT] Error parsing caption XML:', error);
     return [];
+  }
+}
+
+// Puppeteer-based transcript extraction as last resort
+async function extractTranscriptWithPuppeteer(videoId: string): Promise<Array<{text: string, offset: number, duration: number}>> {
+  let browser;
+  try {
+    console.log(`[TRANSCRIPT] Starting Puppeteer for video: ${videoId}`);
+    
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
+      ]
+    });
+    
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Navigate to YouTube video
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    console.log(`[TRANSCRIPT] Navigating to: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    
+    // Wait for video to load
+    await page.waitForSelector('video', { timeout: 15000 });
+    
+    // Try to find and click the CC button
+    try {
+      await page.waitForSelector('.ytp-subtitles-button', { timeout: 5000 });
+      await page.click('.ytp-subtitles-button');
+      console.log(`[TRANSCRIPT] Clicked CC button`);
+      await page.waitForTimeout(2000);
+    } catch (ccError) {
+      console.log(`[TRANSCRIPT] Could not find or click CC button:`, ccError.message);
+    }
+    
+    // Look for caption/transcript data in the page
+    const transcriptData = await page.evaluate(() => {
+      // Try to find any caption elements or transcript data
+      const captionElements = document.querySelectorAll('.caption-window, .ytp-caption-segment, .captions-text');
+      if (captionElements.length > 0) {
+        console.log('Found caption elements:', captionElements.length);
+        return Array.from(captionElements).map((el, index) => ({
+          text: el.textContent?.trim() || '',
+          offset: index * 3,
+          duration: 3
+        })).filter(item => item.text.length > 0);
+      }
+      
+      // Try to find transcript in player response
+      const scripts = document.querySelectorAll('script');
+      for (const script of scripts) {
+        const content = script.textContent || '';
+        if (content.includes('captionTracks') || content.includes('timedtext')) {
+          console.log('Found potential caption data in script');
+          // Try to extract caption URLs from the script
+          const captionMatches = content.match(/"baseUrl":"([^"]*timedtext[^"]*)"/g);
+          if (captionMatches) {
+            console.log('Found caption URLs:', captionMatches.length);
+            return [{ text: 'Found caption URLs via Puppeteer', offset: 0, duration: 1 }];
+          }
+        }
+      }
+      
+      return [];
+    });
+    
+    if (transcriptData && transcriptData.length > 0) {
+      console.log(`[TRANSCRIPT] Puppeteer extracted ${transcriptData.length} segments`);
+      return transcriptData;
+    }
+    
+    // If no direct captions found, try to extract script data for manual processing
+    const pageContent = await page.content();
+    const captionUrlMatch = pageContent.match(/"baseUrl":"([^"]*timedtext[^"]*)"/);
+    
+    if (captionUrlMatch) {
+      const captionUrl = captionUrlMatch[1].replace(/\\u0026/g, '&');
+      console.log(`[TRANSCRIPT] Found caption URL via Puppeteer: ${captionUrl.substring(0, 100)}...`);
+      
+      // Fetch the caption content
+      try {
+        const response = await fetch(captionUrl);
+        const captionXml = await response.text();
+        console.log(`[TRANSCRIPT] Fetched caption XML via Puppeteer (${captionXml.length} chars)`);
+        
+        if (captionXml && captionXml.length > 50) {
+          return parseCaptionXml(captionXml);
+        }
+      } catch (fetchError) {
+        console.log(`[TRANSCRIPT] Failed to fetch caption URL found by Puppeteer:`, fetchError.message);
+      }
+    }
+    
+    return [];
+    
+  } catch (error) {
+    console.error(`[TRANSCRIPT] Puppeteer error:`, error);
+    return [];
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
