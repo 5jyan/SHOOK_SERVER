@@ -187,9 +187,31 @@ export default function HomePage() {
     },
     onError: (error: Error) => {
       console.error(`[FRONTEND] Error extracting transcript:`, error);
+      console.error(`[FRONTEND] Error details:`, {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      
+      let errorMessage = error.message;
+      
+      // Parse error response if it's a JSON error
+      try {
+        const errorData = JSON.parse(error.message);
+        if (errorData.error) {
+          errorMessage = errorData.error;
+          if (errorData.details) {
+            console.error(`[FRONTEND] Additional error details:`, errorData.details);
+          }
+        }
+      } catch (parseError) {
+        // error.message is not JSON, use as is
+        console.log(`[FRONTEND] Error message is not JSON, using as-is:`, error.message);
+      }
+      
       toast({
-        title: "오류",
-        description: error.message,
+        title: "자막 추출 실패",
+        description: errorMessage,
         variant: "destructive",
       });
     },

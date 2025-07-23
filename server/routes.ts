@@ -345,59 +345,136 @@ export function registerRoutes(app: Express): Server {
 
     try {
       // Extract video ID from URL
+      console.log(`[TRANSCRIPT] Step 1: Extracting video ID from URL: ${url}`);
       const videoData = getVideoId(url);
-      console.log(`[TRANSCRIPT] Extracted video data:`, videoData);
+      console.log(`[TRANSCRIPT] Step 1 Result - Extracted video data:`, JSON.stringify(videoData, null, 2));
       
       if (!videoData || !videoData.id) {
-        console.log(`[TRANSCRIPT] Invalid YouTube URL: ${url}`);
+        console.log(`[TRANSCRIPT] Step 1 Error - Invalid YouTube URL: ${url}`);
         return res.status(400).json({ error: "올바른 유튜브 URL을 입력해주세요." });
       }
 
       const videoId = videoData.id;
-      console.log(`[TRANSCRIPT] Fetching transcript for video ID: ${videoId}`);
+      console.log(`[TRANSCRIPT] Step 2: Starting transcript fetch for video ID: ${videoId}`);
 
-      // Fetch transcript
-      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId, {
-        lang: 'ko' // 한국어 우선, 없으면 자동으로 다른 언어 시도
-      });
+      // Try different language options
+      const languages = ['ko', 'en', undefined]; // 한국어 -> 영어 -> 자동 감지
+      let transcriptData = null;
+      let usedLang = null;
 
-      console.log(`[TRANSCRIPT] Successfully fetched transcript with ${transcriptData.length} segments`);
+      for (const lang of languages) {
+        try {
+          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1}: Attempting to fetch transcript with lang: ${lang || 'auto'}`);
+          
+          const options = lang ? { lang } : {};
+          console.log(`[TRANSCRIPT] Fetch options:`, JSON.stringify(options, null, 2));
+          
+          transcriptData = await YoutubeTranscript.fetchTranscript(videoId, options);
+          usedLang = lang || 'auto';
+          
+          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1} Success - Fetched ${transcriptData.length} segments with lang: ${usedLang}`);
+          console.log(`[TRANSCRIPT] Raw transcript data sample (first 3 items):`, JSON.stringify(transcriptData.slice(0, 3), null, 2));
+          
+          if (transcriptData && transcriptData.length > 0) {
+            break; // 성공적으로 자막을 가져왔으면 중단
+          }
+        } catch (langError) {
+          console.log(`[TRANSCRIPT] Step 2.${languages.indexOf(lang) + 1} Failed - Language ${lang || 'auto'} failed:`, langError.message);
+          if (lang === languages[languages.length - 1]) {
+            // 마지막 언어 옵션도 실패한 경우
+            throw langError;
+          }
+        }
+      }
+
+      if (!transcriptData || transcriptData.length === 0) {
+        console.log(`[TRANSCRIPT] Step 2 Final Error - No transcript data found after trying all language options`);
+        return res.status(404).json({ 
+          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다.",
+          details: `Tried languages: ${languages.join(', ')}`
+        });
+      }
+
+      console.log(`[TRANSCRIPT] Step 3: Processing ${transcriptData.length} transcript segments`);
+      console.log(`[TRANSCRIPT] Full raw transcript data:`, JSON.stringify(transcriptData, null, 2));
 
       // Format transcript data
-      const formattedTranscript = {
-        videoId,
-        videoUrl: url,
-        segments: transcriptData.map(item => ({
+      const segments = transcriptData.map((item, index) => {
+        console.log(`[TRANSCRIPT] Processing segment ${index + 1}:`, JSON.stringify(item, null, 2));
+        return {
           text: item.text,
           timestamp: item.offset,
           duration: item.duration,
           formattedTime: formatTimestamp(item.offset)
-        })),
-        fullText: transcriptData.map(item => item.text).join(' '),
-        totalDuration: transcriptData[transcriptData.length - 1]?.offset || 0
+        };
+      });
+
+      const fullText = transcriptData.map(item => item.text).join(' ');
+      const totalDuration = transcriptData[transcriptData.length - 1]?.offset || 0;
+
+      const formattedTranscript = {
+        videoId,
+        videoUrl: url,
+        segments,
+        fullText,
+        totalDuration,
+        language: usedLang,
+        segmentCount: transcriptData.length
       };
 
-      console.log(`[TRANSCRIPT] Returning formatted transcript data`);
+      console.log(`[TRANSCRIPT] Step 4: Final formatted transcript:`, JSON.stringify({
+        videoId: formattedTranscript.videoId,
+        segmentCount: formattedTranscript.segmentCount,
+        language: formattedTranscript.language,
+        fullTextLength: formattedTranscript.fullText.length,
+        totalDuration: formattedTranscript.totalDuration,
+        firstSegment: formattedTranscript.segments[0],
+        lastSegment: formattedTranscript.segments[formattedTranscript.segments.length - 1]
+      }, null, 2));
+
+      console.log(`[TRANSCRIPT] Step 5: Sending response to client`);
       res.json(formattedTranscript);
 
     } catch (error) {
-      console.error("[TRANSCRIPT] Error extracting transcript:", error);
+      console.error("[TRANSCRIPT] Step ERROR - Error extracting transcript:", error);
+      console.error("[TRANSCRIPT] Error details:", {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+        code: error?.code
+      });
       
       // Handle specific errors
       if (error.message?.includes('Could not retrieve a transcript')) {
+        console.log("[TRANSCRIPT] Error Type: No transcript available");
         return res.status(404).json({ 
-          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다." 
+          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다.",
+          errorType: "NO_TRANSCRIPT",
+          details: error.message
         });
       }
       
       if (error.message?.includes('Too Many Requests')) {
+        console.log("[TRANSCRIPT] Error Type: Rate limited");
         return res.status(429).json({ 
-          error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." 
+          error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+          errorType: "RATE_LIMIT"
         });
       }
 
+      if (error.message?.includes('Video unavailable')) {
+        console.log("[TRANSCRIPT] Error Type: Video unavailable");
+        return res.status(404).json({ 
+          error: "영상을 찾을 수 없거나 비공개 상태입니다.",
+          errorType: "VIDEO_UNAVAILABLE"
+        });
+      }
+
+      console.log("[TRANSCRIPT] Error Type: Unknown error");
       res.status(500).json({ 
-        error: error instanceof Error ? error.message : "자막 추출에 실패했습니다." 
+        error: error instanceof Error ? error.message : "자막 추출에 실패했습니다.",
+        errorType: "UNKNOWN",
+        details: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
