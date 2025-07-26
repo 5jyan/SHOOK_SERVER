@@ -3,9 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
-import ytdl from "@distube/ytdl-core";
-import getVideoId from "get-video-id";
-import puppeteer from 'puppeteer';
+import { youtubeCaptionExtractor } from "./youtube-captions";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -327,446 +325,98 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // YouTube Transcript Extraction Route
-  app.post("/api/youtube/transcript", async (req, res) => {
-    console.log(`[TRANSCRIPT] Received POST /api/youtube/transcript request`);
+  // YouTube Caption Extraction API
+  app.get("/api/captions/:videoId", async (req, res) => {
+    console.log(`[CAPTIONS] Received request for video ID: ${req.params.videoId}`);
     
     if (!req.isAuthenticated()) {
-      console.log(`[TRANSCRIPT] Request rejected - user not authenticated`);
+      console.log(`[CAPTIONS] Unauthorized request`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const videoId = req.params.videoId;
+    const language = req.query.lang as string || 'ko';
+
+    try {
+      // 영상 ID 유효성 검사
+      if (!youtubeCaptionExtractor.validateVideoId(videoId)) {
+        console.log(`[CAPTIONS] Invalid video ID: ${videoId}`);
+        return res.status(400).json({ 
+          error: "유효하지 않은 YouTube 영상 ID입니다.",
+          videoId 
+        });
+      }
+
+      console.log(`[CAPTIONS] Starting caption extraction for video: ${videoId}, language: ${language}`);
+      
+      // Puppeteer로 직접 시도
+      const extractionPromise = youtubeCaptionExtractor.extractCaptions(videoId, language);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.log(`[CAPTIONS] Puppeteer timeout after 30 seconds`);
+          reject(new Error('EXTRACTION_TIMEOUT'));
+        }, 30000); // 30초 타임아웃
+      });
+      
+      const captions = await Promise.race([extractionPromise, timeoutPromise]);
+      console.log(`[CAPTIONS] Puppeteer succeeded with ${captions.length} caption segments`);
+      
+      res.json({
+        success: true,
+        videoId,
+        language,
+        extractionMethod: 'puppeteer',
+        captionsCount: captions.length,
+        captions
+      });
+
+    } catch (error: any) {
+      console.error(`[CAPTIONS] Error extracting captions for video ${videoId}:`, error);
+      res.status(500).json({ 
+        error: error.message || "자막 추출 중 오류가 발생했습니다.",
+        videoId 
+      });
+    }
+  });
+
+  // URL에서 영상 ID 추출 API
+  app.post("/api/captions/extract-video-id", async (req, res) => {
+    console.log(`[CAPTIONS] Video ID extraction request received`);
+    
+    if (!req.isAuthenticated()) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     const { url } = req.body;
-    console.log(`[TRANSCRIPT] Processing URL: ${url} for user ${req.user.username}`);
-
-    if (!url || typeof url !== "string") {
-      console.log(`[TRANSCRIPT] Invalid URL provided: ${url}`);
-      return res.status(400).json({ error: "유튜브 URL이 필요합니다." });
+    
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ 
+        error: "유효한 YouTube URL을 입력해주세요." 
+      });
     }
 
     try {
-      // Extract video ID from URL
-      console.log(`[TRANSCRIPT] Step 1: Extracting video ID from URL: ${url}`);
-      const videoData = getVideoId(url);
-      console.log(`[TRANSCRIPT] Step 1 Result - Extracted video data:`, JSON.stringify(videoData, null, 2));
+      const videoId = youtubeCaptionExtractor.extractVideoIdFromUrl(url);
       
-      if (!videoData || !videoData.id) {
-        console.log(`[TRANSCRIPT] Step 1 Error - Invalid YouTube URL: ${url}`);
-        return res.status(400).json({ error: "올바른 유튜브 URL을 입력해주세요." });
-      }
-
-      const videoId = videoData.id;
-      console.log(`[TRANSCRIPT] Step 2: Starting transcript fetch for video ID: ${videoId}`);
-
-      // Try to get video info and extract captions using ytdl-core
-      let transcriptData = null;
-      let usedLang = null;
-      let method = null;
-
-      console.log(`[TRANSCRIPT] Method 1: Getting video info using ytdl-core`);
-      
-      try {
-        const videoInfo = await ytdl.getInfo(videoId);
-        console.log(`[TRANSCRIPT] Successfully got video info for: ${videoInfo.videoDetails.title}`);
-        console.log(`[TRANSCRIPT] Video length: ${videoInfo.videoDetails.lengthSeconds} seconds`);
-        
-        const captionTracks = videoInfo.player_response.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-        
-        if (!captionTracks || captionTracks.length === 0) {
-          console.log(`[TRANSCRIPT] No caption tracks found in video info`);
-          throw new Error("No caption tracks available");
-        }
-        
-        console.log(`[TRANSCRIPT] Found ${captionTracks.length} caption tracks`);
-        captionTracks.forEach((track, index) => {
-          console.log(`[TRANSCRIPT] Track ${index + 1}: ${track.name?.simpleText} (${track.languageCode})`);
-        });
-        
-        // Try to find Korean captions first, then English, then any available
-        let selectedTrack = captionTracks.find(track => track.languageCode === 'ko') ||
-                           captionTracks.find(track => track.languageCode === 'en') ||
-                           captionTracks[0];
-        
-        if (!selectedTrack) {
-          throw new Error("No suitable caption track found");
-        }
-        
-        console.log(`[TRANSCRIPT] Selected caption track: ${selectedTrack.name?.simpleText} (${selectedTrack.languageCode})`);
-        usedLang = selectedTrack.languageCode;
-        method = 'ytdl-core';
-        
-        // Try multiple methods to fetch captions
-        let captionXml = '';
-        
-        // Method 1: Original baseUrl
-        try {
-          console.log(`[TRANSCRIPT] Method 1A: Fetching from baseUrl: ${selectedTrack.baseUrl.substring(0, 100)}...`);
-          const response1 = await fetch(selectedTrack.baseUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-          });
-          captionXml = await response1.text();
-          console.log(`[TRANSCRIPT] Method 1A Response: ${response1.status} - ${captionXml.length} chars`);
-        } catch (error) {
-          console.log(`[TRANSCRIPT] Method 1A Failed:`, error.message);
-        }
-        
-        // Method 2: Modified baseUrl with format
-        if (!captionXml || captionXml.length < 50) {
-          try {
-            const modifiedUrl = selectedTrack.baseUrl + '&fmt=srv3';
-            console.log(`[TRANSCRIPT] Method 1B: Trying with srv3 format: ${modifiedUrl.substring(0, 100)}...`);
-            const response2 = await fetch(modifiedUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              }
-            });
-            captionXml = await response2.text();
-            console.log(`[TRANSCRIPT] Method 1B Response: ${response2.status} - ${captionXml.length} chars`);
-          } catch (error) {
-            console.log(`[TRANSCRIPT] Method 1B Failed:`, error.message);
-          }
-        }
-        
-        // Method 3: Direct timedtext API
-        if (!captionXml || captionXml.length < 50) {
-          try {
-            const directUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${selectedTrack.languageCode}&name=${encodeURIComponent(selectedTrack.name?.simpleText || '')}`;
-            console.log(`[TRANSCRIPT] Method 1C: Direct API call: ${directUrl}`);
-            const response3 = await fetch(directUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              }
-            });
-            captionXml = await response3.text();
-            console.log(`[TRANSCRIPT] Method 1C Response: ${response3.status} - ${captionXml.length} chars`);
-          } catch (error) {
-            console.log(`[TRANSCRIPT] Method 1C Failed:`, error.message);
-          }
-        }
-        
-        console.log(`[TRANSCRIPT] Final caption XML (${captionXml.length} characters)`);
-        console.log(`[TRANSCRIPT] Caption XML sample:`, captionXml.substring(0, 500));
-        
-        if (captionXml && captionXml.length > 50) {
-          // Parse XML to extract transcript data
-          transcriptData = parseCaptionXml(captionXml);
-          console.log(`[TRANSCRIPT] Parsed ${transcriptData.length} caption segments`);
-        } else {
-          console.log(`[TRANSCRIPT] Caption XML too short or empty, trying fallback methods`);
-          throw new Error("Failed to fetch valid caption content");
-        }
-        
-      } catch (ytdlError) {
-        console.log(`[TRANSCRIPT] Method 1 (ytdl-core) Failed:`, ytdlError.message);
-        
-        // Fallback: Try a simple approach with manual URL construction
-        console.log(`[TRANSCRIPT] Method 2: Fallback approach - direct caption URL construction`);
-        
-        try {
-          // Try common caption URL patterns
-          const captionUrls = [
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko&fmt=srv3`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=srv3`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ko&fmt=json3`,
-            `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=json3`
-          ];
-          
-          for (const captionUrl of captionUrls) {
-            try {
-              console.log(`[TRANSCRIPT] Trying caption URL: ${captionUrl}`);
-              const response = await fetch(captionUrl, {
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                  'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
-                  'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-                  'Referer': `https://www.youtube.com/watch?v=${videoId}`
-                }
-              });
-              
-              if (response.ok) {
-                const captionText = await response.text();
-                console.log(`[TRANSCRIPT] Got response (${captionText.length} chars):`, captionText.substring(0, 200));
-                
-                if (captionText && captionText.length > 100 && !captionText.includes('error')) {
-                  transcriptData = parseCaptionXml(captionText);
-                  usedLang = captionUrl.includes('lang=ko') ? 'ko' : captionUrl.includes('lang=en') ? 'en' : 'auto';
-                  method = 'direct-url';
-                  console.log(`[TRANSCRIPT] Method 2 Success - Parsed ${transcriptData.length} segments`);
-                  
-                  if (transcriptData && transcriptData.length > 0) {
-                    break;
-                  }
-                }
-              }
-            } catch (urlError) {
-              console.log(`[TRANSCRIPT] URL ${captionUrl} failed:`, urlError.message);
-            }
-          }
-        } catch (fallbackError) {
-          console.log(`[TRANSCRIPT] Method 2 (fallback) Failed:`, fallbackError.message);
-        }
-        
-        // Method 3: Try alternative approaches before Puppeteer
-        if (!transcriptData || transcriptData.length === 0) {
-          console.log(`[TRANSCRIPT] Method 3: Trying YouTube embed approach`);
-          try {
-            const embedResponse = await fetch(`https://www.youtube.com/embed/${videoId}`, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              }
-            });
-            
-            if (embedResponse.ok) {
-              const embedHtml = await embedResponse.text();
-              console.log(`[TRANSCRIPT] Got embed HTML (${embedHtml.length} chars)`);
-              
-              // Look for caption track URLs in embed HTML
-              const captionUrlRegex = /"captionTracks":\[([^\]]+)\]/;
-              const match = embedHtml.match(captionUrlRegex);
-              
-              if (match) {
-                console.log(`[TRANSCRIPT] Found captionTracks in embed HTML`);
-                const captionTracksText = match[1];
-                const baseUrlMatch = captionTracksText.match(/"baseUrl":"([^"]+)"/);
-                
-                if (baseUrlMatch) {
-                  const captionUrl = baseUrlMatch[1].replace(/\\u0026/g, '&');
-                  console.log(`[TRANSCRIPT] Extracted caption URL: ${captionUrl.substring(0, 100)}...`);
-                  
-                  const captionResponse = await fetch(captionUrl);
-                  const captionXml = await captionResponse.text();
-                  
-                  if (captionXml && captionXml.length > 50) {
-                    transcriptData = parseCaptionXml(captionXml);
-                    usedLang = 'embed-extracted';
-                    method = 'embed';
-                    console.log(`[TRANSCRIPT] Method 3 Success - Parsed ${transcriptData.length} segments from embed`);
-                  }
-                }
-              }
-            }
-          } catch (embedError) {
-            console.log(`[TRANSCRIPT] Method 3 (embed) Failed:`, embedError.message);
-          }
-        }
-        
-        // Method 4: Try different API endpoints
-        if (!transcriptData || transcriptData.length === 0) {
-          console.log(`[TRANSCRIPT] Method 4: Trying alternative API endpoints`);
-          try {
-            const alternativeUrls = [
-              `https://video.google.com/timedtext?v=${videoId}&lang=ko`,
-              `https://video.google.com/timedtext?v=${videoId}&lang=en`,
-              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=ko&fmt=srv1`,
-              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=en&fmt=srv1`,
-              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=ko&fmt=vtt`,
-              `https://www.youtube.com/api/timedtext?v=${videoId}&caps=asr&lang=en&fmt=vtt`
-            ];
-            
-            for (const altUrl of alternativeUrls) {
-              try {
-                console.log(`[TRANSCRIPT] Trying alternative URL: ${altUrl}`);
-                const response = await fetch(altUrl, {
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; GoogleBot/2.1)',
-                    'Accept': '*/*',
-                    'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8'
-                  }
-                });
-                
-                if (response.ok) {
-                  const content = await response.text();
-                  console.log(`[TRANSCRIPT] Alternative URL response (${content.length} chars):`, content.substring(0, 200));
-                  
-                  if (content && content.length > 50 && !content.includes('error')) {
-                    transcriptData = parseCaptionXml(content);
-                    usedLang = altUrl.includes('lang=ko') ? 'ko' : 'en';
-                    method = 'alternative-api';
-                    console.log(`[TRANSCRIPT] Method 4 Success - Parsed ${transcriptData.length} segments`);
-                    
-                    if (transcriptData && transcriptData.length > 0) {
-                      break;
-                    }
-                  }
-                }
-              } catch (altError) {
-                console.log(`[TRANSCRIPT] Alternative URL ${altUrl} failed:`, altError.message);
-              }
-            }
-          } catch (methodError) {
-            console.log(`[TRANSCRIPT] Method 4 Failed:`, methodError.message);
-          }
-        }
-        
-        // Method 5: Try to extract from player response data more thoroughly
-        if (!transcriptData || transcriptData.length === 0) {
-          console.log(`[TRANSCRIPT] Method 5: Deep parsing of ytdl player response`);
-          try {
-            const videoInfo = await ytdl.getInfo(videoId);
-            const playerResponse = videoInfo.player_response;
-            
-            // Look more thoroughly in the player response
-            if (playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
-              const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
-              
-              for (const track of tracks) {
-                console.log(`[TRANSCRIPT] Deep parsing track: ${track.name?.simpleText} (${track.languageCode})`);
-                
-                if (track.baseUrl) {
-                  // Try multiple variations of the base URL
-                  const urlVariations = [
-                    track.baseUrl,
-                    track.baseUrl.replace('&fmt=srv3', ''),
-                    track.baseUrl + '&fmt=srv1',
-                    track.baseUrl + '&fmt=vtt',
-                    track.baseUrl + '&fmt=ttml',
-                    track.baseUrl.replace(/&tlang=[^&]*/, ''), // Remove translation language
-                    track.baseUrl.replace(/&caps=[^&]*/, '&caps=asr'), // Force ASR captions
-                  ];
-                  
-                  for (const variation of urlVariations) {
-                    try {
-                      console.log(`[TRANSCRIPT] Trying URL variation: ${variation.substring(0, 100)}...`);
-                      
-                      const response = await fetch(variation, {
-                        headers: {
-                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                          'Accept': 'text/xml,application/xml,text/vtt,text/plain,*/*',
-                          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-                          'Cache-Control': 'no-cache',
-                          'Pragma': 'no-cache'
-                        }
-                      });
-                      
-                      if (response.ok) {
-                        const content = await response.text();
-                        console.log(`[TRANSCRIPT] URL variation response: ${response.status} - ${content.length} chars`);
-                        console.log(`[TRANSCRIPT] Content sample:`, content.substring(0, 300));
-                        
-                        if (content && content.length > 50 && !content.toLowerCase().includes('not found')) {
-                          const parsed = parseCaptionXml(content);
-                          if (parsed && parsed.length > 0) {
-                            transcriptData = parsed;
-                            usedLang = track.languageCode;
-                            method = 'deep-ytdl';
-                            console.log(`[TRANSCRIPT] Method 5 Success - Found ${transcriptData.length} segments`);
-                            break;
-                          }
-                        }
-                      }
-                    } catch (varError) {
-                      console.log(`[TRANSCRIPT] URL variation failed: ${varError.message}`);
-                    }
-                  }
-                  
-                  if (transcriptData && transcriptData.length > 0) {
-                    break;
-                  }
-                }
-              }
-            }
-          } catch (deepError) {
-            console.log(`[TRANSCRIPT] Method 5 Failed:`, deepError.message);
-          }
-        }
-      }
-
-      if (!transcriptData || transcriptData.length === 0) {
-        console.log(`[TRANSCRIPT] Step 2 Final Error - No transcript data found after trying all methods`);
-        return res.status(404).json({ 
-          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다.",
-          details: `Tried methods: auto-detect, multiple languages (ko, en, es, fr, de, ja, zh), multiple countries (US, KR, GB, CA)`
+      if (!videoId) {
+        console.log(`[CAPTIONS] Could not extract video ID from URL: ${url}`);
+        return res.status(400).json({ 
+          error: "URL에서 YouTube 영상 ID를 찾을 수 없습니다." 
         });
       }
 
-      console.log(`[TRANSCRIPT] Step 3: Processing ${transcriptData.length} transcript segments`);
-      console.log(`[TRANSCRIPT] Full raw transcript data:`, JSON.stringify(transcriptData, null, 2));
-
-      // Format transcript data
-      const segments = transcriptData.map((item, index) => {
-        console.log(`[TRANSCRIPT] Processing segment ${index + 1}:`, JSON.stringify(item, null, 2));
-        return {
-          text: item.text,
-          timestamp: item.offset,
-          duration: item.duration,
-          formattedTime: formatTimestamp(item.offset)
-        };
+      console.log(`[CAPTIONS] Successfully extracted video ID: ${videoId} from URL: ${url}`);
+      
+      res.json({
+        success: true,
+        url,
+        videoId
       });
-
-      const fullText = transcriptData.map(item => item.text).join(' ');
-      const totalDuration = transcriptData[transcriptData.length - 1]?.offset || 0;
-
-      const formattedTranscript = {
-        videoId,
-        videoUrl: url,
-        segments,
-        fullText,
-        totalDuration,
-        language: usedLang,
-        method: method,
-        segmentCount: transcriptData.length,
-        extractedAt: new Date().toISOString()
-      };
-
-      console.log(`[TRANSCRIPT] Step 4: Final formatted transcript:`, JSON.stringify({
-        videoId: formattedTranscript.videoId,
-        segmentCount: formattedTranscript.segmentCount,
-        language: formattedTranscript.language,
-        fullTextLength: formattedTranscript.fullText.length,
-        totalDuration: formattedTranscript.totalDuration,
-        firstSegment: formattedTranscript.segments[0],
-        lastSegment: formattedTranscript.segments[formattedTranscript.segments.length - 1]
-      }, null, 2));
-
-      console.log(`[TRANSCRIPT] Step 5: Sending response to client`);
-      res.json(formattedTranscript);
 
     } catch (error) {
-      console.error("[TRANSCRIPT] Step ERROR - Error extracting transcript:", error);
-      console.error("[TRANSCRIPT] Error details:", {
-        message: error?.message,
-        stack: error?.stack,
-        name: error?.name,
-        code: error?.code
-      });
-      
-      // Handle specific errors
-      if (error.message?.includes('Could not retrieve a transcript')) {
-        console.log("[TRANSCRIPT] Error Type: No transcript available");
-        return res.status(404).json({ 
-          error: "이 영상에는 자막이 없거나 비공개 설정되어 있습니다.",
-          errorType: "NO_TRANSCRIPT",
-          details: error.message
-        });
-      }
-      
-      if (error.message?.includes('Too Many Requests')) {
-        console.log("[TRANSCRIPT] Error Type: Rate limited");
-        return res.status(429).json({ 
-          error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
-          errorType: "RATE_LIMIT"
-        });
-      }
-
-      if (error.message?.includes('Video unavailable')) {
-        console.log("[TRANSCRIPT] Error Type: Video unavailable");
-        return res.status(404).json({ 
-          error: "영상을 찾을 수 없거나 비공개 상태입니다.",
-          errorType: "VIDEO_UNAVAILABLE"
-        });
-      }
-
-      console.log("[TRANSCRIPT] Error Type: Unknown error");
+      console.error(`[CAPTIONS] Error extracting video ID from URL:`, error);
       res.status(500).json({ 
-        error: error instanceof Error ? error.message : "자막 추출에 실패했습니다.",
-        errorType: "UNKNOWN",
-        details: error instanceof Error ? error.message : "Unknown error"
+        error: "URL 처리 중 오류가 발생했습니다." 
       });
     }
   });
@@ -774,255 +424,4 @@ export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
   return httpServer;
-}
-
-// Helper function to format timestamp
-function formatTimestamp(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
-}
-
-// Helper function to parse caption XML
-function parseCaptionXml(xmlContent: string): Array<{text: string, offset: number, duration: number}> {
-  try {
-    const segments: Array<{text: string, offset: number, duration: number}> = [];
-    
-    // Method 1: Try standard XML format first
-    const textRegex = /<text start="([^"]*)"(?:\s+dur="([^"]*)")?[^>]*>([^<]*)</g;
-    let match;
-    
-    while ((match = textRegex.exec(xmlContent)) !== null) {
-      const startTime = parseFloat(match[1]) || 0;
-      const duration = parseFloat(match[2]) || 3;
-      const text = match[3]
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-      
-      if (text && text.length > 0) {
-        segments.push({
-          text: text,
-          offset: startTime,
-          duration: duration
-        });
-      }
-    }
-    
-    // Method 2: If no segments found, try alternative formats
-    if (segments.length === 0) {
-      console.log('[TRANSCRIPT] Trying alternative XML parsing methods');
-      
-      // Try with different XML structures
-      const altRegex1 = /<p t="([^"]*)"(?:\s+d="([^"]*)")?[^>]*>([^<]*)</g;
-      while ((match = altRegex1.exec(xmlContent)) !== null) {
-        const startTime = parseFloat(match[1]) / 1000 || 0; // Convert milliseconds to seconds
-        const duration = parseFloat(match[2]) / 1000 || 3;
-        const text = match[3]
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .trim();
-        
-        if (text && text.length > 0) {
-          segments.push({
-            text: text,
-            offset: startTime,
-            duration: duration
-          });
-        }
-      }
-    }
-    
-    // Method 3: Try JSON format (sometimes returned instead of XML)
-    if (segments.length === 0 && xmlContent.includes('{')) {
-      console.log('[TRANSCRIPT] Trying JSON parsing');
-      try {
-        const jsonData = JSON.parse(xmlContent);
-        if (jsonData.events) {
-          jsonData.events.forEach((event: any) => {
-            if (event.segs) {
-              event.segs.forEach((seg: any) => {
-                if (seg.utf8) {
-                  segments.push({
-                    text: seg.utf8.trim(),
-                    offset: (event.tStartMs || 0) / 1000,
-                    duration: (event.dDurationMs || 3000) / 1000
-                  });
-                }
-              });
-            }
-          });
-        }
-      } catch (jsonError) {
-        console.log('[TRANSCRIPT] JSON parsing failed:', jsonError.message);
-      }
-    }
-    
-    // Method 4: Try VTT format
-    if (segments.length === 0 && xmlContent.includes('WEBVTT')) {
-      console.log('[TRANSCRIPT] Trying VTT parsing');
-      const vttLines = xmlContent.split('\n');
-      let currentTime = 0;
-      
-      for (let i = 0; i < vttLines.length; i++) {
-        const line = vttLines[i].trim();
-        if (line.includes('-->')) {
-          const timeMatch = line.match(/(\d+:\d+:\d+\.?\d*) --> (\d+:\d+:\d+\.?\d*)/);
-          if (timeMatch) {
-            const startTime = parseTimeToSeconds(timeMatch[1]);
-            const endTime = parseTimeToSeconds(timeMatch[2]);
-            const duration = endTime - startTime;
-            
-            // Get the text from the next non-empty line
-            for (let j = i + 1; j < vttLines.length; j++) {
-              const textLine = vttLines[j].trim();
-              if (textLine && !textLine.includes('-->')) {
-                segments.push({
-                  text: textLine,
-                  offset: startTime,
-                  duration: duration
-                });
-                break;
-              } else if (textLine === '') {
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-    
-    console.log(`[TRANSCRIPT] Parsed ${segments.length} segments using XML parser`);
-    return segments;
-  } catch (error) {
-    console.error('[TRANSCRIPT] Error parsing caption content:', error);
-    return [];
-  }
-}
-
-// Helper function to convert time string to seconds
-function parseTimeToSeconds(timeStr: string): number {
-  const parts = timeStr.split(':');
-  const hours = parseInt(parts[0]) || 0;
-  const minutes = parseInt(parts[1]) || 0;
-  const seconds = parseFloat(parts[2]) || 0;
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-// Puppeteer-based transcript extraction as last resort
-async function extractTranscriptWithPuppeteer(videoId: string): Promise<Array<{text: string, offset: number, duration: number}>> {
-  let browser;
-  try {
-    console.log(`[TRANSCRIPT] Starting Puppeteer for video: ${videoId}`);
-    
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ]
-    });
-    
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    
-    // Navigate to YouTube video
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    console.log(`[TRANSCRIPT] Navigating to: ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
-    
-    // Wait for video to load
-    await page.waitForSelector('video', { timeout: 15000 });
-    
-    // Try to find and click the CC button
-    try {
-      await page.waitForSelector('.ytp-subtitles-button', { timeout: 5000 });
-      await page.click('.ytp-subtitles-button');
-      console.log(`[TRANSCRIPT] Clicked CC button`);
-      await page.waitForTimeout(2000);
-    } catch (ccError) {
-      console.log(`[TRANSCRIPT] Could not find or click CC button:`, ccError.message);
-    }
-    
-    // Look for caption/transcript data in the page
-    const transcriptData = await page.evaluate(() => {
-      // Try to find any caption elements or transcript data
-      const captionElements = document.querySelectorAll('.caption-window, .ytp-caption-segment, .captions-text');
-      if (captionElements.length > 0) {
-        console.log('Found caption elements:', captionElements.length);
-        return Array.from(captionElements).map((el, index) => ({
-          text: el.textContent?.trim() || '',
-          offset: index * 3,
-          duration: 3
-        })).filter(item => item.text.length > 0);
-      }
-      
-      // Try to find transcript in player response
-      const scripts = document.querySelectorAll('script');
-      for (const script of scripts) {
-        const content = script.textContent || '';
-        if (content.includes('captionTracks') || content.includes('timedtext')) {
-          console.log('Found potential caption data in script');
-          // Try to extract caption URLs from the script
-          const captionMatches = content.match(/"baseUrl":"([^"]*timedtext[^"]*)"/g);
-          if (captionMatches) {
-            console.log('Found caption URLs:', captionMatches.length);
-            return [{ text: 'Found caption URLs via Puppeteer', offset: 0, duration: 1 }];
-          }
-        }
-      }
-      
-      return [];
-    });
-    
-    if (transcriptData && transcriptData.length > 0) {
-      console.log(`[TRANSCRIPT] Puppeteer extracted ${transcriptData.length} segments`);
-      return transcriptData;
-    }
-    
-    // If no direct captions found, try to extract script data for manual processing
-    const pageContent = await page.content();
-    const captionUrlMatch = pageContent.match(/"baseUrl":"([^"]*timedtext[^"]*)"/);
-    
-    if (captionUrlMatch) {
-      const captionUrl = captionUrlMatch[1].replace(/\\u0026/g, '&');
-      console.log(`[TRANSCRIPT] Found caption URL via Puppeteer: ${captionUrl.substring(0, 100)}...`);
-      
-      // Fetch the caption content
-      try {
-        const response = await fetch(captionUrl);
-        const captionXml = await response.text();
-        console.log(`[TRANSCRIPT] Fetched caption XML via Puppeteer (${captionXml.length} chars)`);
-        
-        if (captionXml && captionXml.length > 50) {
-          return parseCaptionXml(captionXml);
-        }
-      } catch (fetchError) {
-        console.log(`[TRANSCRIPT] Failed to fetch caption URL found by Puppeteer:`, fetchError.message);
-      }
-    }
-    
-    return [];
-    
-  } catch (error) {
-    console.error(`[TRANSCRIPT] Puppeteer error:`, error);
-    return [];
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
-  }
 }
