@@ -10,12 +10,43 @@ import path from "path";
 
 const execAsync = promisify(exec);
 
-// 프록시 설정
-const PROXY_SERVERS = [
-  'socks5://127.0.0.1:9050',  // Tor 로컬 프록시
-  'http://proxy.example.com:8080',  // HTTP 프록시 예시
-  'socks5://proxy.torproject.org:9050'  // Tor 프로젝트 프록시
+// 프록시 설정 - 무조건 프록시 사용 (실제 작동하는 공개 프록시들)
+let PROXY_SERVERS = [
+  'http://115.239.234.43:7302',
+  'http://45.80.111.53:80',
+  'http://141.193.213.25:80',
+  'http://103.149.162.194:80',
+  'http://185.162.251.76:80', 
+  'http://103.216.48.85:8080',
+  'http://168.138.211.5:8080',
+  'http://190.109.6.113:999',
+  'socks5://191.101.181.70:6823',
+  'socks5://192.111.139.165:4145',
 ];
+
+// 프록시 목록을 동적으로 업데이트하는 함수
+async function updateProxyList() {
+  try {
+    console.log('[PROXY] Updating proxy server list...');
+    const httpResponse = await fetch('https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt');
+    const httpProxies = (await httpResponse.text()).split('\n').slice(0, 5).filter(p => p.trim());
+    
+    const socksResponse = await fetch('https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt');
+    const socksProxies = (await socksResponse.text()).split('\n').slice(0, 3).filter(p => p.trim());
+    
+    PROXY_SERVERS = [
+      ...httpProxies.map(p => `http://${p.trim()}`),
+      ...socksProxies.map(p => `socks5://${p.trim()}`)
+    ];
+    
+    console.log(`[PROXY] Updated ${PROXY_SERVERS.length} proxy servers`);
+  } catch (error) {
+    console.log('[PROXY] Failed to update proxy list, using default:', error.message);
+  }
+}
+
+// 서버 시작 시 프록시 목록 업데이트
+updateProxyList();
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -372,25 +403,26 @@ export function registerRoutes(app: Express): Server {
 
       let subtitleFiles: string[] = [];
       
-      // 프록시를 포함한 다양한 방법으로 자막 추출 시도
+      // 무조건 프록시 사용 - 프록시 없는 시도는 금지
       let attempts = [];
       
-      // 프록시 서버들과 함께 시도
+      // 다양한 프록시 서버와 옵션으로 시도
       for (const proxy of PROXY_SERVERS) {
+        // 방법 1: 기본 프록시 + 한국어/영어 자막
         attempts.push(
-          `yt-dlp --proxy "${proxy}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 1 --max-sleep-interval 5 --retries 3 --output "${subtitlePath}" "${url}"`
+          `yt-dlp --proxy "${proxy}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 2 --max-sleep-interval 8 --retries 5 --fragment-retries 10 --output "${subtitlePath}" "${url}"`
+        );
+        
+        // 방법 2: 프록시 + 쿠키 무시 + 영어만
+        attempts.push(
+          `yt-dlp --proxy "${proxy}" --no-cookies --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" --write-auto-subs --sub-langs "en" --skip-download --sleep-interval 3 --max-sleep-interval 10 --retries 3 --output "${subtitlePath}" "${url}"`
+        );
+        
+        // 방법 3: 프록시 + 최소 옵션
+        attempts.push(
+          `yt-dlp --proxy "${proxy}" --write-auto-subs --skip-download --sleep-interval 4 --retries 2 --output "${subtitlePath}" "${url}"`
         );
       }
-      
-      // 프록시 없이 다른 방법들도 추가
-      attempts.push(
-        // IPv6 사용
-        `yt-dlp --force-ipv6 --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 2 --output "${subtitlePath}" "${url}"`,
-        // 쿠키 무시 + 딜레이 증가
-        `yt-dlp --no-cookies --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" --write-auto-subs --sub-langs "en" --skip-download --sleep-interval 5 --max-sleep-interval 10 --output "${subtitlePath}" "${url}"`,
-        // 최소한의 옵션
-        `yt-dlp --write-auto-subs --skip-download --sleep-interval 3 --output "${subtitlePath}" "${url}"`
-      );
 
       for (let i = 0; i < attempts.length; i++) {
         const command = attempts[i];
