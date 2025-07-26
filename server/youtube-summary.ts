@@ -100,6 +100,8 @@ export class YouTubeSummaryService {
       console.log(`[YOUTUBE_SUMMARY] Transcript data analysis:`, {
         hasData: !!transcriptData,
         hasText: !!transcriptData?.text,
+        hasSegments: !!transcriptData?.segments,
+        segmentsLength: transcriptData?.segments?.length || 0,
         textLength: transcriptData?.text?.length || 0,
         dataKeys: Object.keys(transcriptData || {}),
         error: transcriptData?.error || null
@@ -110,13 +112,33 @@ export class YouTubeSummaryService {
         throw new Error(`SupaData API 오류: ${transcriptData.error}`);
       }
 
-      if (!transcriptData.text || transcriptData.text.trim() === '') {
+      // 자막 텍스트 추출 - segments 배열에서 text 필드들을 모아서 합치기
+      let transcriptText = '';
+      
+      if (transcriptData.text && transcriptData.text.trim() !== '') {
+        // 기존 방식: text 필드가 있는 경우
+        transcriptText = transcriptData.text;
+        console.log(`[YOUTUBE_SUMMARY] Using direct text field: ${transcriptText.length} characters`);
+      } else if (transcriptData.segments && Array.isArray(transcriptData.segments) && transcriptData.segments.length > 0) {
+        // 새로운 방식: segments 배열에서 text들을 합치기
+        console.log(`[YOUTUBE_SUMMARY] Extracting text from ${transcriptData.segments.length} segments`);
+        transcriptText = transcriptData.segments
+          .map(segment => segment.text || '')
+          .filter(text => text.trim() !== '')
+          .join(' ');
+        console.log(`[YOUTUBE_SUMMARY] Combined segments into text: ${transcriptText.length} characters`);
+      } else {
         console.error(`[YOUTUBE_SUMMARY] No transcript text found. Full response:`, transcriptData);
         throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
       }
 
-      console.log(`[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptData.text.length} characters`);
-      return transcriptData.text;
+      if (!transcriptText || transcriptText.trim() === '') {
+        console.error(`[YOUTUBE_SUMMARY] Empty transcript text after processing`);
+        throw new Error("자막 텍스트가 비어있습니다.");
+      }
+
+      console.log(`[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`);
+      return transcriptText;
     } catch (error) {
       console.error(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
       throw error;
