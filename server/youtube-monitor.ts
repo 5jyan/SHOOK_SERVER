@@ -21,8 +21,8 @@ export class YouTubeMonitor {
     this.slackService = new SlackService();
   }
 
-  // RSS 피드에서 YouTube 영상 정보 파싱
-  private async fetchChannelRSS(channelId: string): Promise<RSSVideo[]> {
+  // RSS 피드에서 YouTube 영상 정보 파싱 (가장 최신 영상만 가져오기)
+  private async fetchLatestVideoFromRSS(channelId: string): Promise<RSSVideo | null> {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     
     try {
@@ -36,42 +36,41 @@ export class YouTubeMonitor {
       const xmlText = await response.text();
       console.log(`[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`);
       
-      // XML 파싱 (간단한 regex 사용)
-      const videos: RSSVideo[] = [];
-      const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-      let match;
-
-      while ((match = entryRegex.exec(xmlText)) !== null) {
-        const entryXml = match[1];
-        
-        // 비디오 ID 추출
-        const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
-        const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
-        const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
-        
-        if (videoIdMatch && titleMatch && publishedMatch) {
-          const videoId = videoIdMatch[1];
-          const title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
-          const publishedAt = new Date(publishedMatch[1]);
-          
-          // 24시간 이내 영상만 처리
-          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          if (publishedAt > oneDayAgo) {
-            videos.push({
-              videoId,
-              channelId,
-              title,
-              publishedAt
-            });
-          }
-        }
+      // XML 파싱 (첫 번째 entry만 추출)
+      const entryMatch = xmlText.match(/<entry>([\s\S]*?)<\/entry>/);
+      
+      if (!entryMatch) {
+        console.log(`[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`);
+        return null;
       }
 
-      console.log(`[YOUTUBE_MONITOR] Found ${videos.length} recent videos from channel ${channelId}`);
-      return videos;
+      const entryXml = entryMatch[1];
+      
+      // 비디오 ID, 제목, 게시 날짜 추출
+      const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
+      const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
+      const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
+      
+      if (videoIdMatch && titleMatch && publishedMatch) {
+        const videoId = videoIdMatch[1];
+        const title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
+        const publishedAt = new Date(publishedMatch[1]);
+        
+        console.log(`[YOUTUBE_MONITOR] Latest video from channel ${channelId}: ${title} (${videoId})`);
+        
+        return {
+          videoId,
+          channelId,
+          title,
+          publishedAt
+        };
+      }
+
+      console.log(`[YOUTUBE_MONITOR] Failed to parse video data from RSS feed for channel ${channelId}`);
+      return null;
     } catch (error) {
       console.error(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
-      return [];
+      return null;
     }
   }
 
@@ -207,16 +206,13 @@ export class YouTubeMonitor {
       for (const channel of channels) {
         try {
           // RSS에서 최신 영상 가져오기
-          const rssVideos = await this.fetchChannelRSS(channel.channelId);
+          const latestVideo = await this.fetchLatestVideoFromRSS(channel.channelId);
           
-          if (rssVideos.length === 0) {
-            console.log(`[YOUTUBE_MONITOR] No recent videos found for channel: ${channel.title}`);
+          if (!latestVideo) {
+            console.log(`[YOUTUBE_MONITOR] No videos found for channel: ${channel.title}`);
             continue;
           }
 
-          // 가장 최신 영상 (첫 번째 영상)
-          const latestVideo = rssVideos[0];
-          
           // 현재 저장된 영상 ID와 비교
           if (channel.recentVideoId === latestVideo.videoId) {
             console.log(`[YOUTUBE_MONITOR] No new video for channel ${channel.title} (latest: ${latestVideo.videoId})`);

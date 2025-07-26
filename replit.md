@@ -106,7 +106,8 @@ Preferred communication style: Simple, everyday language.
 - PostgreSQL database with appropriate connection credentials
 
 ### Monitoring & Automation
-- 10-minute interval RSS feed checking
-- Automatic error handling and retry logic
-- Session-based user state persistence
+- 5-minute interval RSS feed checking with streamlined video detection
+- RSS-based new video detection (compares latest video ID with stored recent_video_id)
+- Consolidated video tracking in youtube_channels table (removed monitored_videos table)
+- Automatic transcript extraction, AI summarization, and Slack delivery
 - Real-time UI updates via React Query
