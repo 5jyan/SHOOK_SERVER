@@ -54,18 +54,6 @@ export default function HomePage() {
     queryKey: ["/api/channels", user?.id?.toString()],
     enabled: !!user,
     staleTime: 0, // 캐시를 즉시 만료시켜 항상 최신 데이터 가져오기
-    onSuccess: (data) => {
-      console.log(
-        `[FRONTEND] Successfully fetched ${data.length} channels for user ${user?.id}:`,
-        data,
-      );
-    },
-    onError: (error: Error) => {
-      console.error(
-        `[FRONTEND] Error fetching channels for user ${user?.id}:`,
-        error.message,
-      );
-    },
   });
 
   // Query to get channel videos
