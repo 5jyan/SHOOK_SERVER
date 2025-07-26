@@ -100,9 +100,8 @@ export class YouTubeSummaryService {
       console.log(`[YOUTUBE_SUMMARY] Transcript data analysis:`, {
         hasData: !!transcriptData,
         hasText: !!transcriptData?.text,
-        hasSegments: !!transcriptData?.segments,
-        segmentsLength: transcriptData?.segments?.length || 0,
-        textLength: transcriptData?.text?.length || 0,
+        hasContent: !!transcriptData?.content,
+        contentLength: transcriptData?.content?.length || 0,
         dataKeys: Object.keys(transcriptData || {}),
         error: transcriptData?.error || null
       });
@@ -112,29 +111,29 @@ export class YouTubeSummaryService {
         throw new Error(`SupaData API 오류: ${transcriptData.error}`);
       }
 
-      // 자막 텍스트 추출 - segments 배열에서 text 필드들을 모아서 합치기
+      // 자막 텍스트 추출 - content 배열에서 text 필드들을 모아서 합치기
       let transcriptText = '';
       
       if (transcriptData.text && transcriptData.text.trim() !== '') {
         // 기존 방식: text 필드가 있는 경우
         transcriptText = transcriptData.text;
         console.log(`[YOUTUBE_SUMMARY] Using direct text field: ${transcriptText.length} characters`);
-      } else if (transcriptData.segments && Array.isArray(transcriptData.segments) && transcriptData.segments.length > 0) {
-        // 새로운 방식: segments 배열에서 text들을 합치기
-        console.log(`[YOUTUBE_SUMMARY] Extracting text from ${transcriptData.segments.length} segments`);
+      } else if (transcriptData.content && Array.isArray(transcriptData.content) && transcriptData.content.length > 0) {
+        // 새로운 방식: content 배열에서 text들을 합치기
+        console.log(`[YOUTUBE_SUMMARY] Extracting text from ${transcriptData.content.length} content items`);
         
-        // segments 배열에서 text 값만 추출 후, 하나의 문자열로 합치기
-        const segmentTexts = transcriptData.segments || [];
-        transcriptText = segmentTexts.map(segment => segment.text || '').join(' ');
+        // content 배열에서 text 값만 추출 후, 하나의 문자열로 합치기
+        const contentArray = transcriptData.content || [];
+        transcriptText = contentArray.map(entry => entry.text || '').join(' ');
         
-        console.log(`[YOUTUBE_SUMMARY] Combined segments into text: ${transcriptText.length} characters`);
+        console.log(`[YOUTUBE_SUMMARY] Combined content into text: ${transcriptText.length} characters`);
         console.log(`[YOUTUBE_SUMMARY] First 200 chars of combined text: ${transcriptText.substring(0, 200)}...`);
       } else {
         console.error(`[YOUTUBE_SUMMARY] No transcript text found. Full response structure:`, {
           hasText: !!transcriptData.text,
-          hasSegments: !!transcriptData.segments,
-          segmentsIsArray: Array.isArray(transcriptData.segments),
-          segmentsLength: transcriptData.segments?.length,
+          hasContent: !!transcriptData.content,
+          contentIsArray: Array.isArray(transcriptData.content),
+          contentLength: transcriptData.content?.length,
           dataKeys: Object.keys(transcriptData || {})
         });
         throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
