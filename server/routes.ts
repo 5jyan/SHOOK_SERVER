@@ -10,19 +10,12 @@ import path from "path";
 
 const execAsync = promisify(exec);
 
-// YouTube Transcript API import
-let YoutubeTranscript: any;
-try {
-  // Dynamic import for ES modules
-  import('youtube-transcript').then((module) => {
-    YoutubeTranscript = module.YoutubeTranscript || module.default || module;
-    console.log('[CAPTIONS] youtube-transcript loaded successfully');
-  }).catch((error) => {
-    console.log('[CAPTIONS] youtube-transcript import failed:', error.message);
-  });
-} catch (error) {
-  console.log('[CAPTIONS] youtube-transcript not available, falling back to yt-dlp only:', error.message);
-}
+// 프록시 설정
+const PROXY_SERVERS = [
+  'socks5://127.0.0.1:9050',  // Tor 로컬 프록시
+  'http://proxy.example.com:8080',  // HTTP 프록시 예시
+  'socks5://proxy.torproject.org:9050'  // Tor 프로젝트 프록시
+];
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -378,16 +371,26 @@ export function registerRoutes(app: Express): Server {
       const subtitlePath = path.join(tempDir, `${videoId}.%(ext)s`);
 
       let subtitleFiles: string[] = [];
-      let attempts = [
-        // 방법 1: 사용자 에이전트 변경 + 딜레이
-        `yt-dlp --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 2 --output "${subtitlePath}" "${url}"`,
-        // 방법 2: 최소한의 옵션으로 자동 생성 자막만
-        `yt-dlp --write-auto-subs --sub-langs "en" --skip-download --sleep-interval 3 --output "${subtitlePath}" "${url}"`,
-        // 방법 3: 쿠키 무시 + 기본 옵션
-        `yt-dlp --no-cookies --write-auto-subs --sub-langs "ko" --skip-download --output "${subtitlePath}" "${url}"`,
-        // 방법 4: 간단한 자막 추출 (백업)
-        `yt-dlp --write-auto-subs --skip-download --output "${subtitlePath}" "${url}"`
-      ];
+      
+      // 프록시를 포함한 다양한 방법으로 자막 추출 시도
+      let attempts = [];
+      
+      // 프록시 서버들과 함께 시도
+      for (const proxy of PROXY_SERVERS) {
+        attempts.push(
+          `yt-dlp --proxy "${proxy}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 1 --max-sleep-interval 5 --retries 3 --output "${subtitlePath}" "${url}"`
+        );
+      }
+      
+      // 프록시 없이 다른 방법들도 추가
+      attempts.push(
+        // IPv6 사용
+        `yt-dlp --force-ipv6 --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 2 --output "${subtitlePath}" "${url}"`,
+        // 쿠키 무시 + 딜레이 증가
+        `yt-dlp --no-cookies --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" --write-auto-subs --sub-langs "en" --skip-download --sleep-interval 5 --max-sleep-interval 10 --output "${subtitlePath}" "${url}"`,
+        // 최소한의 옵션
+        `yt-dlp --write-auto-subs --skip-download --sleep-interval 3 --output "${subtitlePath}" "${url}"`
+      );
 
       for (let i = 0; i < attempts.length; i++) {
         const command = attempts[i];
