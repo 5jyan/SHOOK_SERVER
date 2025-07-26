@@ -24,7 +24,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { YoutubeChannel } from "@shared/schema";
+import type { YoutubeChannel, MonitoredVideo } from "@shared/schema";
 
 export default function HomePage() {
   const { user, logoutMutation } = useAuth();
@@ -66,6 +66,16 @@ export default function HomePage() {
         error.message,
       );
     },
+  });
+
+  // Query to get monitored videos
+  const {
+    data: monitoredVideos = [],
+    isLoading: videosLoading,
+  } = useQuery<(MonitoredVideo & { channelTitle: string })[]>({
+    queryKey: ["/api/monitored-videos", user?.id?.toString()],
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5분 캐시
   });
 
   // useQuery가 실행되는지 확인하기 위한 로그
@@ -589,6 +599,111 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
+        {/* Monitored Videos */}
+        {isSlackConnected && channels.length > 0 && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600" />
+                자동 처리된 영상
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {videosLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  <span className="ml-2 text-slate-600">영상 목록을 불러오고 있습니다...</span>
+                </div>
+              ) : monitoredVideos.length === 0 ? (
+                <div className="text-center py-8">
+                  <Video className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                  <p className="text-slate-600 mb-2">
+                    아직 자동으로 처리된 영상이 없습니다.
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    구독한 채널에서 새 영상이 업로드되면 자동으로 처리됩니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {monitoredVideos.slice(0, 10).map((video) => (
+                    <div
+                      key={video.id}
+                      className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200"
+                    >
+                      <div className="w-20 h-14 rounded-lg overflow-hidden bg-slate-200 flex-shrink-0">
+                        <img
+                          src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-slate-900 truncate mb-1">
+                          {video.title}
+                        </h4>
+                        <p className="text-sm text-slate-600 mb-2">
+                          {video.channelTitle}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          <span>
+                            {new Date(video.publishedAt).toLocaleDateString('ko-KR')}
+                          </span>
+                          {video.duration && (
+                            <span>{video.duration}</span>
+                          )}
+                          <div className="flex items-center gap-1">
+                            {video.processed ? (
+                              <>
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                                <span className="text-green-600">처리 완료</span>
+                              </>
+                            ) : video.errorMessage ? (
+                              <>
+                                <AlertTriangle className="w-3 h-3 text-red-500" />
+                                <span className="text-red-600">처리 실패</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3 h-3 text-blue-500" />
+                                <span className="text-blue-600">처리 중</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                        >
+                          <a
+                            href={`https://www.youtube.com/watch?v=${video.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            보기
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {monitoredVideos.length > 10 && (
+                    <div className="text-center pt-4">
+                      <p className="text-sm text-slate-500">
+                        최근 10개 영상만 표시됩니다. (총 {monitoredVideos.length}개)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* YouTube Video Summary */}
         {isSlackConnected && (
           <Card className="mb-8">
@@ -693,8 +808,13 @@ export default function HomePage() {
 
           <div className="mt-4 text-center">
             <p className="text-sm text-slate-600">
-              모든 단계가 완료되면 10분마다 새로운 영상을 자동으로 확인합니다.
+              모든 단계가 완료되면 5분마다 새로운 영상을 자동으로 확인합니다.
             </p>
+            {channels.length > 0 && isSlackConnected && (
+              <p className="text-xs text-green-600 mt-2 font-medium">
+                ✓ 자동 모니터링이 활성화되었습니다
+              </p>
+            )}
           </div>
         </div>
       </main>

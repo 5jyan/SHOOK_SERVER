@@ -2,12 +2,14 @@ import {
   users, 
   youtubeChannels, 
   userChannels,
+  monitoredVideos,
   type User, 
   type InsertUser, 
   type YoutubeChannel, 
   type InsertYoutubeChannel,
   type UserChannel,
-  type InsertUserChannel
+  type InsertUserChannel,
+  type MonitoredVideo
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -35,6 +37,9 @@ export interface IStorage {
   isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean>;
   subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel>;
   unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void>;
+  
+  // Monitored videos methods
+  getMonitoredVideos(userId: number, limit?: number): Promise<(MonitoredVideo & { channelTitle: string })[]>;
   
   sessionStore: session.Store;
 }
@@ -173,6 +178,32 @@ export class DatabaseStorage implements IStorage {
         eq(userChannels.channelId, channelId)
       )
     );
+  }
+
+  async getMonitoredVideos(userId: number, limit: number = 20): Promise<(MonitoredVideo & { channelTitle: string })[]> {
+    // 사용자가 구독한 채널의 모니터링된 영상들을 가져옴
+    const result = await db
+      .select({
+        id: monitoredVideos.id,
+        videoId: monitoredVideos.videoId,
+        channelId: monitoredVideos.channelId,
+        title: monitoredVideos.title,
+        publishedAt: monitoredVideos.publishedAt,
+        duration: monitoredVideos.duration,
+        processed: monitoredVideos.processed,
+        processedAt: monitoredVideos.processedAt,
+        errorMessage: monitoredVideos.errorMessage,
+        createdAt: monitoredVideos.createdAt,
+        channelTitle: youtubeChannels.title
+      })
+      .from(monitoredVideos)
+      .innerJoin(youtubeChannels, eq(monitoredVideos.channelId, youtubeChannels.channelId))
+      .innerJoin(userChannels, eq(youtubeChannels.channelId, userChannels.channelId))
+      .where(eq(userChannels.userId, userId))
+      .orderBy(monitoredVideos.publishedAt)
+      .limit(limit);
+    
+    return result;
   }
 }
 
