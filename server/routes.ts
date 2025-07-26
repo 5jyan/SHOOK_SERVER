@@ -10,6 +10,20 @@ import path from "path";
 
 const execAsync = promisify(exec);
 
+// YouTube Transcript API import
+let YoutubeTranscript: any;
+try {
+  // Dynamic import for ES modules
+  import('youtube-transcript').then((module) => {
+    YoutubeTranscript = module.YoutubeTranscript || module.default || module;
+    console.log('[CAPTIONS] youtube-transcript loaded successfully');
+  }).catch((error) => {
+    console.log('[CAPTIONS] youtube-transcript import failed:', error.message);
+  });
+} catch (error) {
+  console.log('[CAPTIONS] youtube-transcript not available, falling back to yt-dlp only:', error.message);
+}
+
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
   setupAuth(app);
@@ -354,23 +368,25 @@ export function registerRoutes(app: Express): Server {
       const videoId = videoIdMatch[1];
       console.log(`[CAPTIONS] Video ID: ${videoId}`);
 
+      // yt-dlp를 사용한 자막 추출 (개선된 방법)
+      console.log(`[CAPTIONS] Falling back to yt-dlp extraction...`);
+      
       // 임시 파일 경로 설정
       const tempDir = path.join(process.cwd(), 'temp');
       await fs.mkdir(tempDir, { recursive: true });
       
       const subtitlePath = path.join(tempDir, `${videoId}.%(ext)s`);
 
-      // 여러 가지 방법으로 자막 추출 시도
       let subtitleFiles: string[] = [];
       let attempts = [
-        // 방법 1: 기본 자막 추출
-        `yt-dlp --write-auto-subs --write-subs --sub-langs "ko.*,en.*" --skip-download --output "${subtitlePath}" "${url}"`,
-        // 방법 2: 더 관대한 옵션
-        `yt-dlp --write-auto-subs --write-subs --sub-langs "all" --skip-download --no-check-certificates --output "${subtitlePath}" "${url}"`,
-        // 방법 3: 자동 생성 자막만
-        `yt-dlp --write-auto-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`,
-        // 방법 4: 수동 자막만
-        `yt-dlp --write-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`
+        // 방법 1: 사용자 에이전트 변경 + 딜레이
+        `yt-dlp --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --sleep-interval 2 --output "${subtitlePath}" "${url}"`,
+        // 방법 2: 최소한의 옵션으로 자동 생성 자막만
+        `yt-dlp --write-auto-subs --sub-langs "en" --skip-download --sleep-interval 3 --output "${subtitlePath}" "${url}"`,
+        // 방법 3: 쿠키 무시 + 기본 옵션
+        `yt-dlp --no-cookies --write-auto-subs --sub-langs "ko" --skip-download --output "${subtitlePath}" "${url}"`,
+        // 방법 4: 간단한 자막 추출 (백업)
+        `yt-dlp --write-auto-subs --skip-download --output "${subtitlePath}" "${url}"`
       ];
 
       for (let i = 0; i < attempts.length; i++) {
