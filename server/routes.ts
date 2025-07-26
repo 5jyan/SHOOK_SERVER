@@ -360,113 +360,123 @@ export function registerRoutes(app: Express): Server {
       
       const subtitlePath = path.join(tempDir, `${videoId}.%(ext)s`);
 
-      try {
-        // yt-dlp를 사용해서 자막 추출 (한국어 우선, 자동생성 자막 포함)
-        const command = `yt-dlp --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`;
-        console.log(`[CAPTIONS] Running command: ${command}`);
+      // 여러 가지 방법으로 자막 추출 시도
+      let subtitleFiles: string[] = [];
+      let attempts = [
+        // 방법 1: 기본 자막 추출
+        `yt-dlp --write-auto-subs --write-subs --sub-langs "ko.*,en.*" --skip-download --output "${subtitlePath}" "${url}"`,
+        // 방법 2: 더 관대한 옵션
+        `yt-dlp --write-auto-subs --write-subs --sub-langs "all" --skip-download --no-check-certificates --output "${subtitlePath}" "${url}"`,
+        // 방법 3: 자동 생성 자막만
+        `yt-dlp --write-auto-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`,
+        // 방법 4: 수동 자막만
+        `yt-dlp --write-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`
+      ];
+
+      for (let i = 0; i < attempts.length; i++) {
+        const command = attempts[i];
+        console.log(`[CAPTIONS] Attempt ${i + 1}: ${command}`);
         
         try {
-          const { stdout, stderr } = await execAsync(command);
-          console.log(`[CAPTIONS] yt-dlp stdout:`, stdout);
-          if (stderr) console.log(`[CAPTIONS] yt-dlp stderr:`, stderr);
-        } catch (ytDlpCommandError) {
-          // yt-dlp 명령어에서 오류가 발생해도 자막 파일이 생성되었을 수 있으므로 계속 진행
-          console.log(`[CAPTIONS] yt-dlp command failed but checking for subtitle files:`, (ytDlpCommandError as Error).message);
-        }
-
-        // 생성된 자막 파일들 찾기
-        const files = await fs.readdir(tempDir);
-        const subtitleFiles = files.filter(file => file.startsWith(videoId) && (file.endsWith('.vtt') || file.endsWith('.srt')));
-        
-        console.log(`[CAPTIONS] Found subtitle files:`, subtitleFiles);
-
-        if (subtitleFiles.length === 0) {
-          return res.status(404).json({ error: "해당 영상에서 자막을 찾을 수 없습니다" });
-        }
-
-        // 우선순위: 한국어 수동 자막 > 한국어 자동생성 > 영어 수동 > 영어 자동생성
-        const preferredFile = subtitleFiles.find(file => file.includes('.ko.vtt') && !file.includes('auto-generated')) ||
-                            subtitleFiles.find(file => file.includes('.ko.vtt')) ||
-                            subtitleFiles.find(file => file.includes('.en.vtt') && !file.includes('auto-generated')) ||
-                            subtitleFiles.find(file => file.includes('.en.vtt')) ||
-                            subtitleFiles[0];
-
-        console.log(`[CAPTIONS] Selected subtitle file: ${preferredFile}`);
-
-        // 자막 파일 읽기
-        const subtitleContent = await fs.readFile(path.join(tempDir, preferredFile), 'utf-8');
-        
-        // VTT 형식의 자막을 파싱해서 텍스트만 추출
-        const lines = subtitleContent.split('\n');
-        const captions = [];
-        let currentCaption = { start: '', end: '', text: '' };
-        
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i].trim();
+          const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
+          console.log(`[CAPTIONS] yt-dlp stdout (attempt ${i + 1}):`, stdout);
+          if (stderr) console.log(`[CAPTIONS] yt-dlp stderr (attempt ${i + 1}):`, stderr);
           
-          // 시간 정보가 포함된 라인 찾기 (예: 00:00:01.000 --> 00:00:03.000)
-          if (line.includes(' --> ')) {
-            if (currentCaption.text) {
-              captions.push({ ...currentCaption });
-            }
-            const [start, end] = line.split(' --> ');
-            currentCaption = { start: start.trim(), end: end.trim(), text: '' };
-          }
-          // 텍스트 라인인 경우
-          else if (line && !line.startsWith('WEBVTT') && !line.startsWith('NOTE') && !line.match(/^\d+$/)) {
-            if (currentCaption.start) {
-              currentCaption.text += (currentCaption.text ? ' ' : '') + line;
-            }
-          }
-        }
-        
-        // 마지막 자막 추가
-        if (currentCaption.text) {
-          captions.push(currentCaption);
-        }
-
-        // 전체 텍스트 추출 (시간 정보 없이)
-        const fullText = captions.map(caption => caption.text).join(' ');
-
-        // 임시 파일들 정리
-        try {
-          for (const file of subtitleFiles) {
-            await fs.unlink(path.join(tempDir, file));
-          }
-        } catch (cleanupError) {
-          console.warn(`[CAPTIONS] Error cleaning up files:`, cleanupError);
-        }
-
-        console.log(`[CAPTIONS] Successfully extracted captions. Total captions: ${captions.length}`);
-
-        res.json({
-          success: true,
-          videoId,
-          url,
-          subtitleFile: preferredFile,
-          captions,
-          fullText,
-          totalCaptions: captions.length
-        });
-
-      } catch (ytDlpError) {
-        console.error(`[CAPTIONS] yt-dlp error:`, ytDlpError);
-        
-        // 임시 파일들 정리 시도
-        try {
+          // 생성된 자막 파일들 확인
           const files = await fs.readdir(tempDir);
-          const subtitleFiles = files.filter(file => file.startsWith(videoId));
-          for (const file of subtitleFiles) {
-            await fs.unlink(path.join(tempDir, file));
+          subtitleFiles = files.filter(file => file.startsWith(videoId) && (file.endsWith('.vtt') || file.endsWith('.srt')));
+          
+          console.log(`[CAPTIONS] Found subtitle files after attempt ${i + 1}:`, subtitleFiles);
+          
+          if (subtitleFiles.length > 0) {
+            console.log(`[CAPTIONS] Success with attempt ${i + 1}`);
+            break;
           }
-        } catch (cleanupError) {
-          console.warn(`[CAPTIONS] Error cleaning up files after error:`, cleanupError);
+        } catch (ytDlpCommandError) {
+          console.log(`[CAPTIONS] Attempt ${i + 1} failed:`, (ytDlpCommandError as Error).message);
+          
+          // 오류가 발생해도 파일이 생성되었을 수 있으므로 확인
+          try {
+            const files = await fs.readdir(tempDir);
+            subtitleFiles = files.filter(file => file.startsWith(videoId) && (file.endsWith('.vtt') || file.endsWith('.srt')));
+            if (subtitleFiles.length > 0) {
+              console.log(`[CAPTIONS] Found subtitle files despite error in attempt ${i + 1}:`, subtitleFiles);
+              break;
+            }
+          } catch (dirError) {
+            console.log(`[CAPTIONS] Could not read temp directory:`, dirError);
+          }
         }
-
-        return res.status(500).json({ 
-          error: "자막 추출 중 오류가 발생했습니다: " + (ytDlpError as Error).message 
-        });
       }
+
+      if (subtitleFiles.length === 0) {
+        return res.status(404).json({ error: "해당 영상에서 자막을 찾을 수 없습니다. 영상에 자막이 있는지 확인해주세요." });
+      }
+
+      // 우선순위: 한국어 수동 자막 > 한국어 자동생성 > 영어 수동 > 영어 자동생성
+      const preferredFile = subtitleFiles.find(file => file.includes('.ko.vtt') && !file.includes('auto-generated')) ||
+                          subtitleFiles.find(file => file.includes('.ko.vtt')) ||
+                          subtitleFiles.find(file => file.includes('.en.vtt') && !file.includes('auto-generated')) ||
+                          subtitleFiles.find(file => file.includes('.en.vtt')) ||
+                          subtitleFiles[0];
+
+      console.log(`[CAPTIONS] Selected subtitle file: ${preferredFile}`);
+
+      // 자막 파일 읽기
+      const subtitleContent = await fs.readFile(path.join(tempDir, preferredFile), 'utf-8');
+      
+      // VTT 형식의 자막을 파싱해서 텍스트만 추출
+      const lines = subtitleContent.split('\n');
+      const captions = [];
+      let currentCaption = { start: '', end: '', text: '' };
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // 시간 정보가 포함된 라인 찾기 (예: 00:00:01.000 --> 00:00:03.000)
+        if (line.includes(' --> ')) {
+          if (currentCaption.text) {
+            captions.push({ ...currentCaption });
+          }
+          const [start, end] = line.split(' --> ');
+          currentCaption = { start: start.trim(), end: end.trim(), text: '' };
+        }
+        // 텍스트 라인인 경우
+        else if (line && !line.startsWith('WEBVTT') && !line.startsWith('NOTE') && !line.match(/^\d+$/)) {
+          if (currentCaption.start) {
+            currentCaption.text += (currentCaption.text ? ' ' : '') + line;
+          }
+        }
+      }
+      
+      // 마지막 자막 추가
+      if (currentCaption.text) {
+        captions.push(currentCaption);
+      }
+
+      // 전체 텍스트 추출 (시간 정보 없이)
+      const fullText = captions.map(caption => caption.text).join(' ');
+
+      // 임시 파일들 정리
+      try {
+        for (const file of subtitleFiles) {
+          await fs.unlink(path.join(tempDir, file));
+        }
+      } catch (cleanupError) {
+        console.warn(`[CAPTIONS] Error cleaning up files:`, cleanupError);
+      }
+
+      console.log(`[CAPTIONS] Successfully extracted captions. Total captions: ${captions.length}`);
+
+      res.json({
+        success: true,
+        videoId,
+        url,
+        subtitleFile: preferredFile,
+        captions,
+        fullText,
+        totalCaptions: captions.length
+      });
 
     } catch (error) {
       console.error(`[CAPTIONS] General error:`, error);
