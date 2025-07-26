@@ -19,7 +19,9 @@ import {
   ExternalLink,
   AlertTriangle,
   ArrowLeft,
+  FileText,
 } from "lucide-react";
+import { Link } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -317,6 +319,20 @@ export default function HomePage() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
+              <nav className="flex items-center space-x-2">
+                <Link href="/">
+                  <Button variant="ghost" size="sm">
+                    <Youtube className="w-4 h-4 mr-2" />
+                    채널 관리
+                  </Button>
+                </Link>
+                <Link href="/captions">
+                  <Button variant="ghost" size="sm">
+                    <FileText className="w-4 h-4 mr-2" />
+                    자막 추출
+                  </Button>
+                </Link>
+              </nav>
               <span className="text-sm text-slate-600">{user?.username}님</span>
               <Button
                 variant="ghost"

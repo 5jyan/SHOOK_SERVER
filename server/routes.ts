@@ -4,6 +4,7 @@ import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
 import { youtubeCaptionExtractor } from "./youtube-captions";
+import { youtubeCaptionsService } from "./youtube-captions-service";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -417,6 +418,47 @@ export function registerRoutes(app: Express): Server {
       console.error(`[CAPTIONS] Error extracting video ID from URL:`, error);
       res.status(500).json({ 
         error: "URL 처리 중 오류가 발생했습니다." 
+      });
+    }
+  });
+
+  // 새로운 자막 추출 API (youtube-captions-scraper 사용)
+  app.post("/api/captions/extract", async (req, res) => {
+    console.log(`[CAPTIONS_NEW] Received caption extraction request`);
+    
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { url } = req.body;
+    
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ 
+        error: "유효한 YouTube URL을 입력해주세요." 
+      });
+    }
+
+    try {
+      console.log(`[CAPTIONS_NEW] Extracting captions from URL: ${url}`);
+      const result = await youtubeCaptionsService.getCaptions(url);
+      
+      console.log(`[CAPTIONS_NEW] Successfully extracted ${result.captions.length} captions for video: ${result.videoId}`);
+      console.log(`[CAPTIONS_NEW] Language: ${result.language}, Auto: ${result.auto}`);
+      
+      // 텍스트 형태로도 변환
+      const textFormat = youtubeCaptionsService.formatCaptionsAsText(result.captions);
+      
+      res.json({
+        success: true,
+        ...result,
+        textFormat,
+        extractionMethod: 'youtube-captions-scraper'
+      });
+
+    } catch (error: any) {
+      console.error(`[CAPTIONS_NEW] Error extracting captions:`, error);
+      res.status(500).json({ 
+        error: error.message || "자막 추출 중 오류가 발생했습니다."
       });
     }
   });
