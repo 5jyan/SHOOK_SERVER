@@ -240,6 +240,15 @@ export default function HomePage() {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-slate-600">{user?.username}님</span>
               <Button
+                onClick={() => window.location.href = '/captions'}
+                variant="outline"
+                size="sm"
+                className="text-slate-600 hover:text-slate-900"
+              >
+                <Youtube className="w-4 h-4 mr-2" />
+                자막 추출
+              </Button>
+              <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}

@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
+import { getSubtitles } from "youtube-captions-scraper";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
@@ -324,7 +325,116 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // YouTube Captions Extraction Route
+  app.post("/api/captions/extract", async (req, res) => {
+    console.log(`[CAPTIONS] Received caption extraction request`);
+    
+    if (!req.isAuthenticated()) {
+      console.log(`[CAPTIONS] Request rejected - user not authenticated`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { url } = req.body;
+    
+    if (!url) {
+      console.log(`[CAPTIONS] Request rejected - missing URL`);
+      return res.status(400).json({ error: "YouTube URL is required" });
+    }
+
+    try {
+      console.log(`[CAPTIONS] Extracting captions for URL: ${url}`);
+      
+      // YouTube URL에서 비디오 ID 추출
+      const videoId = extractVideoId(url);
+      if (!videoId) {
+        console.log(`[CAPTIONS] Invalid YouTube URL: ${url}`);
+        return res.status(400).json({ error: "Invalid YouTube URL" });
+      }
+
+      console.log(`[CAPTIONS] Video ID extracted: ${videoId}`);
+      
+      // 자막 추출 시도 (한국어 우선, 영어 대체, 자동생성 자막 허용)
+      let captions;
+      try {
+        // 한국어 자막 우선 시도
+        captions = await getSubtitles({
+          videoID: videoId,
+          lang: 'ko'
+        });
+        console.log(`[CAPTIONS] Korean captions found for video ${videoId}`);
+      } catch (koError) {
+        console.log(`[CAPTIONS] Korean captions not available, trying English...`);
+        try {
+          // 영어 자막 시도
+          captions = await getSubtitles({
+            videoID: videoId,
+            lang: 'en'
+          });
+          console.log(`[CAPTIONS] English captions found for video ${videoId}`);
+        } catch (enError) {
+          console.log(`[CAPTIONS] English captions not available, trying auto-generated...`);
+          try {
+            // 자동생성 자막 시도 (언어 지정 없음)
+            captions = await getSubtitles({
+              videoID: videoId
+            });
+            console.log(`[CAPTIONS] Auto-generated captions found for video ${videoId}`);
+          } catch (autoError) {
+            console.error(`[CAPTIONS] No captions available for video ${videoId}:`, autoError);
+            return res.status(404).json({ 
+              error: "자막을 찾을 수 없습니다. 이 영상에는 자막이 없거나 비공개 영상일 수 있습니다." 
+            });
+          }
+        }
+      }
+
+      if (!captions || captions.length === 0) {
+        console.log(`[CAPTIONS] Empty captions for video ${videoId}`);
+        return res.status(404).json({ 
+          error: "자막이 비어있습니다." 
+        });
+      }
+
+      // 자막 텍스트 결합
+      const fullText = captions.map(caption => caption.text).join(' ');
+      console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments (${fullText.length} characters) for video ${videoId}`);
+      
+      res.json({
+        success: true,
+        videoId,
+        url,
+        captions: captions,
+        fullText: fullText,
+        segmentCount: captions.length,
+        language: captions[0]?.lang || 'unknown'
+      });
+
+    } catch (error) {
+      console.error(`[CAPTIONS] Error extracting captions:`, error);
+      res.status(500).json({ 
+        error: "자막 추출 중 오류가 발생했습니다. 다시 시도해주세요." 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
+}
+
+// YouTube URL에서 비디오 ID를 추출하는 헬퍼 함수
+function extractVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
 }
