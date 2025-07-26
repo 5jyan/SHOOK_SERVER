@@ -365,9 +365,14 @@ export function registerRoutes(app: Express): Server {
         const command = `yt-dlp --write-auto-subs --write-subs --sub-langs "ko,en" --skip-download --output "${subtitlePath}" "${url}"`;
         console.log(`[CAPTIONS] Running command: ${command}`);
         
-        const { stdout, stderr } = await execAsync(command);
-        console.log(`[CAPTIONS] yt-dlp stdout:`, stdout);
-        if (stderr) console.log(`[CAPTIONS] yt-dlp stderr:`, stderr);
+        try {
+          const { stdout, stderr } = await execAsync(command);
+          console.log(`[CAPTIONS] yt-dlp stdout:`, stdout);
+          if (stderr) console.log(`[CAPTIONS] yt-dlp stderr:`, stderr);
+        } catch (ytDlpCommandError) {
+          // yt-dlp 명령어에서 오류가 발생해도 자막 파일이 생성되었을 수 있으므로 계속 진행
+          console.log(`[CAPTIONS] yt-dlp command failed but checking for subtitle files:`, (ytDlpCommandError as Error).message);
+        }
 
         // 생성된 자막 파일들 찾기
         const files = await fs.readdir(tempDir);
