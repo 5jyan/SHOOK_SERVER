@@ -34,6 +34,7 @@ export default function HomePage() {
   const [slackSetupCompleted, setSlackSetupCompleted] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [workspaceJoined, setWorkspaceJoined] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
 
   // 사용자의 Slack 연동 상태를 확인
   const isSlackConnected = user?.slackChannelId;
@@ -138,6 +139,31 @@ export default function HomePage() {
     },
   });
 
+  // Mutation to summarize YouTube URL
+  const summarizeMutation = useMutation({
+    mutationFn: async (youtubeUrl: string) => {
+      console.log(`[FRONTEND] Summarizing YouTube URL: ${youtubeUrl}`);
+      const res = await apiRequest("POST", "/api/youtube/summarize", { youtubeUrl });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] YouTube summarization successful:`, data);
+      toast({
+        title: "성공",
+        description: "YouTube 영상이 성공적으로 요약되어 Slack 채널로 전송되었습니다!",
+      });
+      setYoutubeUrl("");
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error summarizing YouTube URL:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Mutation to setup Slack manually
   const slackSetupMutation = useMutation({
     mutationFn: async (email: string) => {
@@ -198,6 +224,28 @@ export default function HomePage() {
       return;
     }
     slackSetupMutation.mutate(userEmail);
+  };
+
+  const handleSummarizeVideo = () => {
+    if (!youtubeUrl) {
+      toast({
+        title: "오류",
+        description: "YouTube URL을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!youtubeUrl.includes('youtube.com') && !youtubeUrl.includes('youtu.be')) {
+      toast({
+        title: "오류",
+        description: "올바른 YouTube URL을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    summarizeMutation.mutate(youtubeUrl);
   };
 
   const getThumbnailIcon = (type: string) => {
@@ -540,6 +588,64 @@ export default function HomePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* YouTube Video Summary */}
+        {isSlackConnected && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="w-5 h-5 bg-red-600 rounded flex items-center justify-center">
+                  <Youtube className="w-3 h-3 text-white" />
+                </div>
+                YouTube 영상 요약
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-slate-600 text-center">
+                  YouTube 영상 URL을 입력하면 자동으로 자막을 추출하고 요약하여 Slack 채널로 전송합니다.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Input
+                    type="url"
+                    placeholder="https://youtube.com/watch?v=..."
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleSummarizeVideo}
+                    disabled={summarizeMutation.isPending}
+                    className="bg-red-600 hover:bg-red-700 text-white whitespace-nowrap"
+                  >
+                    {summarizeMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4 mr-2" />
+                    )}
+                    영상 요약하기
+                  </Button>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <Bot className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
+                    <div className="text-sm text-blue-700">
+                      <p className="font-medium mb-2">요약 과정:</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>YouTube 영상에서 자막을 자동으로 추출합니다</li>
+                        <li>Claude AI를 사용하여 자막 내용을 한국어로 요약합니다</li>
+                        <li>요약된 내용을 연결된 Slack 채널로 전송합니다</li>
+                        <li>Slack에서 영상 링크와 함께 요약을 확인할 수 있습니다</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Service Status */}
         <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">

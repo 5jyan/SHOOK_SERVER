@@ -3,10 +3,14 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { slackService } from "./slack";
+import { YouTubeSummaryService } from "./youtube-summary";
 
 export function registerRoutes(app: Express): Server {
   // sets up /api/register, /api/login, /api/logout, /api/user
   setupAuth(app);
+
+  // Initialize YouTube Summary Service
+  const youtubeSummaryService = new YouTubeSummaryService();
 
   // YouTube Channel Management Routes
   app.get("/api/channels/:userId", async (req, res) => {
@@ -256,6 +260,91 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("[SLACK_SETUP] Error in manual setup:", error);
       res.status(500).json({ error: "슬랙 설정 중 오류가 발생했습니다" });
+    }
+  });
+
+  // YouTube URL Summary endpoint
+  app.post("/api/youtube/summarize", async (req, res) => {
+    console.log(`[YOUTUBE_SUMMARY] Received summarize request`);
+    
+    if (!req.isAuthenticated()) {
+      console.log(`[YOUTUBE_SUMMARY] Request rejected - user not authenticated`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const { youtubeUrl } = req.body;
+      
+      if (!youtubeUrl) {
+        console.log(`[YOUTUBE_SUMMARY] Missing YouTube URL in request`);
+        return res.status(400).json({ error: "YouTube URL이 필요합니다." });
+      }
+
+      console.log(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl} for user: ${req.user.username}`);
+      
+      // 사용자가 Slack 채널을 설정했는지 확인
+      if (!req.user.slackChannelId) {
+        console.log(`[YOUTUBE_SUMMARY] User ${req.user.username} does not have Slack channel set up`);
+        return res.status(400).json({ error: "먼저 Slack 채널을 설정해주세요." });
+      }
+
+      // 1. YouTube URL 처리 (자막 추출 및 요약)
+      console.log(`[YOUTUBE_SUMMARY] Starting YouTube processing...`);
+      const { transcript, summary } = await youtubeSummaryService.processYouTubeUrl(youtubeUrl);
+      
+      // 2. Slack 채널로 요약 전송
+      console.log(`[YOUTUBE_SUMMARY] Sending summary to Slack channel: ${req.user.slackChannelId}`);
+      
+      const slackMessage = {
+        channel: req.user.slackChannelId,
+        text: `🎥 YouTube 영상 요약\n\n📹 영상 링크: ${youtubeUrl}\n\n📝 요약:\n${summary}`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `🎥 *YouTube 영상 요약*`
+            }
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn", 
+              text: `📹 *영상 링크:* <${youtubeUrl}|YouTube에서 보기>`
+            }
+          },
+          {
+            type: "divider"
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `📝 *요약:*\n${summary}`
+            }
+          }
+        ]
+      };
+
+      const messageResult = await slackService.sendMessage(slackMessage);
+      
+      if (messageResult) {
+        console.log(`[YOUTUBE_SUMMARY] Summary sent successfully to Slack`);
+        res.json({ 
+          success: true, 
+          message: "YouTube 영상이 성공적으로 요약되어 Slack 채널로 전송되었습니다.",
+          summary: summary
+        });
+      } else {
+        console.error(`[YOUTUBE_SUMMARY] Failed to send message to Slack`);
+        res.status(500).json({ error: "Slack 메시지 전송에 실패했습니다." });
+      }
+
+    } catch (error) {
+      console.error("[YOUTUBE_SUMMARY] Error processing YouTube URL:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "YouTube 영상 처리 중 오류가 발생했습니다." 
+      });
     }
   });
 

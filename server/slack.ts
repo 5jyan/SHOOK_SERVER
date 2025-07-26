@@ -195,6 +195,34 @@ export class SlackService {
   }
 
   /**
+   * 일반 메시지 전송
+   */
+  async sendMessage(message: any): Promise<string | undefined> {
+    try {
+      console.log(`[SLACK_SERVICE] Sending message to channel ${message.channel}`);
+      
+      const response = await this.slack.chat.postMessage(message);
+
+      console.log(`[SLACK_SERVICE] chat.postMessage response:`, {
+        ok: response.ok,
+        error: response.error,
+        ts: response.ts
+      });
+      
+      if (response.ok) {
+        console.log(`[SLACK_SERVICE] Message sent successfully to channel ${message.channel}`);
+        return response.ts;
+      } else {
+        console.error(`[SLACK_SERVICE] Failed to send message. Error: ${response.error}`);
+        return undefined;
+      }
+    } catch (error) {
+      console.error(`[SLACK_SERVICE] Error sending message:`, error);
+      return undefined;
+    }
+  }
+
+  /**
    * 환영 메시지 전송
    */
   async sendWelcomeMessage(channelId: string, userName: string): Promise<void> {
