@@ -355,41 +355,67 @@ export function registerRoutes(app: Express): Server {
       
       // 자막 추출 시도 (한국어 우선, 영어 대체, 자동생성 자막 허용)
       let captions;
-      try {
-        // 한국어 자막 우선 시도
-        captions = await getSubtitles({
-          videoID: videoId,
-          lang: 'ko'
-        });
-        console.log(`[CAPTIONS] Korean captions found for video ${videoId}`);
-      } catch (koError) {
-        console.log(`[CAPTIONS] Korean captions not available, trying English...`);
+      let captionLanguage = 'unknown';
+      let captionSource = 'unknown';
+      
+      const captionAttempts = [
+        { desc: 'Korean manual', params: { videoID: videoId, lang: 'ko' }, lang: 'ko', source: 'manual-ko' },
+        { desc: 'Korean auto', params: { videoID: videoId, lang: 'ko', auto: true }, lang: 'ko', source: 'auto-ko' },
+        { desc: 'English manual', params: { videoID: videoId, lang: 'en' }, lang: 'en', source: 'manual-en' },
+        { desc: 'Auto-generated', params: { videoID: videoId }, lang: 'auto', source: 'auto-generated' },
+        { desc: 'Any auto', params: { videoID: videoId, auto: true }, lang: 'auto', source: 'auto-any' }
+      ];
+      
+      for (const attempt of captionAttempts) {
         try {
-          // 영어 자막 시도
-          captions = await getSubtitles({
-            videoID: videoId,
-            lang: 'en'
+          console.log(`[CAPTIONS] Attempting ${attempt.desc} captions for video ${videoId}...`);
+          captions = await getSubtitles(attempt.params);
+          
+          console.log(`[CAPTIONS] ${attempt.desc} captions response:`, {
+            found: !!captions,
+            length: captions?.length || 0,
+            firstSegment: captions?.[0] || null,
+            sampleText: (captions?.[0]?.text || '').substring(0, 100)
           });
-          console.log(`[CAPTIONS] English captions found for video ${videoId}`);
-        } catch (enError) {
-          console.log(`[CAPTIONS] English captions not available, trying auto-generated...`);
-          try {
-            // 자동생성 자막 시도 (언어 지정 없음)
-            captions = await getSubtitles({
-              videoID: videoId
-            });
-            console.log(`[CAPTIONS] Auto-generated captions found for video ${videoId}`);
-          } catch (autoError) {
-            console.error(`[CAPTIONS] No captions available for video ${videoId}:`, autoError);
-            return res.status(404).json({ 
-              error: "자막을 찾을 수 없습니다. 이 영상에는 자막이 없거나 비공개 영상일 수 있습니다." 
-            });
+          
+          if (captions && Array.isArray(captions) && captions.length > 0) {
+            captionLanguage = attempt.lang === 'auto' ? (captions[0]?.lang || 'auto') : attempt.lang;
+            captionSource = attempt.source;
+            console.log(`[CAPTIONS] Successfully found ${attempt.desc} captions!`);
+            break;
           }
+        } catch (error) {
+          console.log(`[CAPTIONS] ${attempt.desc} captions failed:`, {
+            error: error.message,
+            stack: error.stack?.substring(0, 200)
+          });
         }
       }
+      
+      if (!captions || !Array.isArray(captions) || captions.length === 0) {
+        console.error(`[CAPTIONS] All caption extraction methods failed for video ${videoId}`);
+        return res.status(404).json({ 
+          error: "자막을 찾을 수 없습니다. 이 영상에는 자막이 없거나 비공개 영상일 수 있습니다." 
+        });
+      }
 
-      if (!captions || captions.length === 0) {
-        console.log(`[CAPTIONS] Empty captions for video ${videoId}`);
+      console.log(`[CAPTIONS] Final caption check:`, {
+        captionsExists: !!captions,
+        captionsLength: captions?.length || 0,
+        captionLanguage,
+        captionSource,
+        isArray: Array.isArray(captions),
+        captionType: typeof captions,
+        firstThreeSegments: captions?.slice(0, 3) || []
+      });
+
+      if (!captions || !Array.isArray(captions) || captions.length === 0) {
+        console.log(`[CAPTIONS] Empty or invalid captions for video ${videoId}:`, {
+          captions: captions,
+          type: typeof captions,
+          isArray: Array.isArray(captions),
+          length: captions?.length
+        });
         return res.status(404).json({ 
           error: "자막이 비어있습니다." 
         });
@@ -397,7 +423,15 @@ export function registerRoutes(app: Express): Server {
 
       // 자막 텍스트 결합
       const fullText = captions.map(caption => caption.text).join(' ');
-      console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments (${fullText.length} characters) for video ${videoId}`);
+      console.log(`[CAPTIONS] Successfully extracted ${captions.length} caption segments (${fullText.length} characters) for video ${videoId}:`, {
+        captionSource,
+        captionLanguage,
+        segmentCount: captions.length,
+        textLength: fullText.length,
+        firstSegmentText: captions[0]?.text || '',
+        lastSegmentText: captions[captions.length - 1]?.text || '',
+        sampleFullText: fullText.substring(0, 200) + '...'
+      });
       
       res.json({
         success: true,
@@ -406,7 +440,8 @@ export function registerRoutes(app: Express): Server {
         captions: captions,
         fullText: fullText,
         segmentCount: captions.length,
-        language: captions[0]?.lang || 'unknown'
+        language: captionLanguage,
+        source: captionSource
       });
 
     } catch (error) {

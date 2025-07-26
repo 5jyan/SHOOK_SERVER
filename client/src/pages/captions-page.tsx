@@ -32,6 +32,7 @@ interface CaptionResponse {
   fullText: string;
   segmentCount: number;
   language: string;
+  source: string;
 }
 
 export default function CaptionsPage() {
@@ -246,6 +247,13 @@ export default function CaptionsPage() {
                     <Globe className="w-4 h-4 text-slate-500" />
                     <span className="text-sm text-slate-600">언어:</span>
                     <Badge variant="outline">{captionData.language}</Badge>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm text-slate-600">자막 출처:</span>
+                    <Badge variant="secondary">{captionData.source}</Badge>
                   </div>
                 </div>
               </CardContent>
