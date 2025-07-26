@@ -122,13 +122,21 @@ export class YouTubeSummaryService {
       } else if (transcriptData.segments && Array.isArray(transcriptData.segments) && transcriptData.segments.length > 0) {
         // 새로운 방식: segments 배열에서 text들을 합치기
         console.log(`[YOUTUBE_SUMMARY] Extracting text from ${transcriptData.segments.length} segments`);
-        transcriptText = transcriptData.segments
-          .map(segment => segment.text || '')
-          .filter(text => text.trim() !== '')
-          .join(' ');
+        
+        // segments 배열에서 text 값만 추출 후, 하나의 문자열로 합치기
+        const segmentTexts = transcriptData.segments || [];
+        transcriptText = segmentTexts.map(segment => segment.text || '').join(' ');
+        
         console.log(`[YOUTUBE_SUMMARY] Combined segments into text: ${transcriptText.length} characters`);
+        console.log(`[YOUTUBE_SUMMARY] First 200 chars of combined text: ${transcriptText.substring(0, 200)}...`);
       } else {
-        console.error(`[YOUTUBE_SUMMARY] No transcript text found. Full response:`, transcriptData);
+        console.error(`[YOUTUBE_SUMMARY] No transcript text found. Full response structure:`, {
+          hasText: !!transcriptData.text,
+          hasSegments: !!transcriptData.segments,
+          segmentsIsArray: Array.isArray(transcriptData.segments),
+          segmentsLength: transcriptData.segments?.length,
+          dataKeys: Object.keys(transcriptData || {})
+        });
         throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
       }
 
