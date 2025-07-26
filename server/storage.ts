@@ -35,6 +35,8 @@ export interface IStorage {
   isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean>;
   subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel>;
   unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void>;
+  getChannelSubscriberCount(channelId: string): Promise<number>;
+  deleteYoutubeChannel(channelId: string): Promise<void>;
   
   // Channel videos methods
   getChannelVideos(userId: number, limit?: number): Promise<YoutubeChannel[]>;
@@ -138,6 +140,12 @@ export class DatabaseStorage implements IStorage {
         subscriberCount: youtubeChannels.subscriberCount,
         videoCount: youtubeChannels.videoCount,
         updatedAt: youtubeChannels.updatedAt,
+        recentVideoId: youtubeChannels.recentVideoId,
+        recentVideoTitle: youtubeChannels.recentVideoTitle,
+        videoPublishedAt: youtubeChannels.videoPublishedAt,
+        processed: youtubeChannels.processed,
+        errorMessage: youtubeChannels.errorMessage,
+        caption: youtubeChannels.caption,
         subscriptionId: userChannels.id,
         subscribedAt: userChannels.createdAt
       })
@@ -176,6 +184,19 @@ export class DatabaseStorage implements IStorage {
         eq(userChannels.channelId, channelId)
       )
     );
+  }
+
+  async getChannelSubscriberCount(channelId: string): Promise<number> {
+    const result = await db
+      .select({ count: userChannels.id })
+      .from(userChannels)
+      .where(eq(userChannels.channelId, channelId));
+    
+    return result.length;
+  }
+
+  async deleteYoutubeChannel(channelId: string): Promise<void> {
+    await db.delete(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
   }
 
   async getChannelVideos(userId: number, limit: number = 20): Promise<YoutubeChannel[]> {

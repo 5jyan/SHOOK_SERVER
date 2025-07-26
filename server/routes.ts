@@ -147,10 +147,25 @@ export function registerRoutes(app: Express): Server {
       const { channelId } = req.params;
       console.log(`[CHANNELS] Unsubscribing user ${req.user.id} from channel ${channelId}`);
       
+      // 1. Remove user subscription from user_channels table
       await storage.unsubscribeUserFromChannel(req.user.id, channelId);
       console.log(`[CHANNELS] Successfully unsubscribed user ${req.user.id} from channel ${channelId}`);
       
-      res.status(200).json({ message: "Channel unsubscribed successfully" });
+      // 2. Check if any other users are subscribed to this channel
+      const remainingSubscribers = await storage.getChannelSubscriberCount(channelId);
+      console.log(`[CHANNELS] Channel ${channelId} has ${remainingSubscribers} remaining subscribers`);
+      
+      // 3. If no users are subscribed, delete the channel from youtube_channels table
+      if (remainingSubscribers === 0) {
+        console.log(`[CHANNELS] No remaining subscribers for channel ${channelId}, deleting from youtube_channels table`);
+        await storage.deleteYoutubeChannel(channelId);
+        console.log(`[CHANNELS] Successfully deleted channel ${channelId} from youtube_channels table`);
+      }
+      
+      res.status(200).json({ 
+        message: "Channel unsubscribed successfully",
+        channelDeleted: remainingSubscribers === 0
+      });
     } catch (error) {
       console.error("[CHANNELS] Error unsubscribing from channel:", error);
       res.status(500).json({ error: "Failed to unsubscribe from channel" });
