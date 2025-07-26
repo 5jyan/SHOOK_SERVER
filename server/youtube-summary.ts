@@ -53,32 +53,69 @@ export class YouTubeSummaryService {
 
       console.log(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
 
-      const response = await fetch(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`, {
+      const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
+      const requestHeaders = {
+        'x-api-key': 'sd_ea34b72440935edf8ccf1654a043ed62',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)'
+      };
+
+      console.log(`[YOUTUBE_SUMMARY] Request details:`);
+      console.log(`[YOUTUBE_SUMMARY] - Method: GET`);
+      console.log(`[YOUTUBE_SUMMARY] - URL: ${requestUrl}`);
+      console.log(`[YOUTUBE_SUMMARY] - Headers:`, requestHeaders);
+
+      const response = await fetch(requestUrl, {
         method: 'GET',
-        headers: {
-          'x-api-key': 'sd_ea34b72440935edf8ccf1654a043ed62',
-          'Content-Type': 'application/json'
-        }
+        headers: requestHeaders
       });
 
-      console.log(`[YOUTUBE_SUMMARY] SupaData API response status: ${response.status}`);
+      console.log(`[YOUTUBE_SUMMARY] Response details:`);
+      console.log(`[YOUTUBE_SUMMARY] - Status: ${response.status} ${response.statusText}`);
+      console.log(`[YOUTUBE_SUMMARY] - Headers:`, Object.fromEntries(response.headers.entries()));
+
+      const responseText = await response.text();
+      console.log(`[YOUTUBE_SUMMARY] - Raw Response Body (first 500 chars): ${responseText.substring(0, 500)}`);
+      console.log(`[YOUTUBE_SUMMARY] - Full Response Body Length: ${responseText.length} characters`);
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[YOUTUBE_SUMMARY] SupaData API error: ${response.status} - ${errorText}`);
-        throw new Error(`자막 추출 실패: ${response.status}`);
+        console.error(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText
+        });
+        throw new Error(`자막 추출 실패: ${response.status} - ${responseText}`);
       }
 
-      const transcriptData = await response.json();
-      console.log(`[YOUTUBE_SUMMARY] Transcript data received:`, {
+      let transcriptData;
+      try {
+        transcriptData = JSON.parse(responseText);
+        console.log(`[YOUTUBE_SUMMARY] Parsed JSON response:`, JSON.stringify(transcriptData, null, 2));
+      } catch (parseError) {
+        console.error(`[YOUTUBE_SUMMARY] JSON parse error:`, parseError);
+        console.error(`[YOUTUBE_SUMMARY] Response was not valid JSON: ${responseText}`);
+        throw new Error(`응답 형식 오류: JSON 파싱 실패`);
+      }
+
+      console.log(`[YOUTUBE_SUMMARY] Transcript data analysis:`, {
         hasData: !!transcriptData,
-        textLength: transcriptData?.text?.length || 0
+        hasText: !!transcriptData?.text,
+        textLength: transcriptData?.text?.length || 0,
+        dataKeys: Object.keys(transcriptData || {}),
+        error: transcriptData?.error || null
       });
 
-      if (!transcriptData.text) {
-        throw new Error("자막을 찾을 수 없습니다.");
+      if (transcriptData.error) {
+        console.error(`[YOUTUBE_SUMMARY] API returned error:`, transcriptData.error);
+        throw new Error(`SupaData API 오류: ${transcriptData.error}`);
       }
 
+      if (!transcriptData.text || transcriptData.text.trim() === '') {
+        console.error(`[YOUTUBE_SUMMARY] No transcript text found. Full response:`, transcriptData);
+        throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
+      }
+
+      console.log(`[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptData.text.length} characters`);
       return transcriptData.text;
     } catch (error) {
       console.error(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
