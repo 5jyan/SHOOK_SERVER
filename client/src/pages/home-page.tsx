@@ -19,13 +19,11 @@ import {
   ExternalLink,
   AlertTriangle,
   ArrowLeft,
-  FileText,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Link } from "wouter";
 import type { YoutubeChannel } from "@shared/schema";
 
 export default function HomePage() {
@@ -240,16 +238,6 @@ export default function HomePage() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Link href="/captions">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-slate-600 hover:text-slate-900"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  자막 추출
-                </Button>
-              </Link>
               <span className="text-sm text-slate-600">{user?.username}님</span>
               <Button
                 variant="ghost"
