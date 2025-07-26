@@ -24,7 +24,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { YoutubeChannel, MonitoredVideo } from "@shared/schema";
+import type { YoutubeChannel } from "@shared/schema";
 
 export default function HomePage() {
   const { user, logoutMutation } = useAuth();
@@ -68,12 +68,12 @@ export default function HomePage() {
     },
   });
 
-  // Query to get monitored videos
+  // Query to get channel videos
   const {
-    data: monitoredVideos = [],
+    data: channelVideos = [],
     isLoading: videosLoading,
-  } = useQuery<(MonitoredVideo & { channelTitle: string })[]>({
-    queryKey: ["/api/monitored-videos", user?.id?.toString()],
+  } = useQuery<YoutubeChannel[]>({
+    queryKey: ["/api/channel-videos", user?.id?.toString()],
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5분 캐시
   });
@@ -614,7 +614,7 @@ export default function HomePage() {
                   <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                   <span className="ml-2 text-slate-600">영상 목록을 불러오고 있습니다...</span>
                 </div>
-              ) : monitoredVideos.length === 0 ? (
+              ) : channelVideos.length === 0 ? (
                 <div className="text-center py-8">
                   <Video className="w-12 h-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-600 mb-2">
@@ -626,39 +626,38 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {monitoredVideos.slice(0, 10).map((video) => (
+                  {channelVideos.slice(0, 10).map((channel) => (
                     <div
-                      key={video.id}
+                      key={channel.channelId}
                       className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200"
                     >
                       <div className="w-20 h-14 rounded-lg overflow-hidden bg-slate-200 flex-shrink-0">
-                        <img
-                          src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                        />
+                        {channel.recentVideoId && (
+                          <img
+                            src={`https://img.youtube.com/vi/${channel.recentVideoId}/mqdefault.jpg`}
+                            alt={channel.recentVideoTitle || ''}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-slate-900 truncate mb-1">
-                          {video.title}
+                          {channel.recentVideoTitle || '제목 없음'}
                         </h4>
                         <p className="text-sm text-slate-600 mb-2">
-                          {video.channelTitle}
+                          {channel.title}
                         </p>
                         <div className="flex items-center gap-4 text-xs text-slate-500">
                           <span>
-                            {new Date(video.publishedAt).toLocaleDateString('ko-KR')}
+                            {channel.videoPublishedAt ? new Date(channel.videoPublishedAt).toLocaleDateString('ko-KR') : '날짜 없음'}
                           </span>
-                          {video.duration && (
-                            <span>{video.duration}</span>
-                          )}
                           <div className="flex items-center gap-1">
-                            {video.processed ? (
+                            {channel.processed ? (
                               <>
                                 <CheckCircle className="w-3 h-3 text-green-500" />
                                 <span className="text-green-600">처리 완료</span>
                               </>
-                            ) : video.errorMessage ? (
+                            ) : channel.errorMessage ? (
                               <>
                                 <AlertTriangle className="w-3 h-3 text-red-500" />
                                 <span className="text-red-600">처리 실패</span>
@@ -673,28 +672,30 @@ export default function HomePage() {
                         </div>
                       </div>
                       <div className="flex-shrink-0">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild
-                        >
-                          <a
-                            href={`https://www.youtube.com/watch?v=${video.videoId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1"
+                        {channel.recentVideoId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
                           >
-                            <ExternalLink className="w-3 h-3" />
-                            보기
-                          </a>
-                        </Button>
+                            <a
+                              href={`https://www.youtube.com/watch?v=${channel.recentVideoId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              보기
+                            </a>
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
-                  {monitoredVideos.length > 10 && (
+                  {channelVideos.length > 10 && (
                     <div className="text-center pt-4">
                       <p className="text-sm text-slate-500">
-                        최근 10개 영상만 표시됩니다. (총 {monitoredVideos.length}개)
+                        최근 10개 영상만 표시됩니다. (총 {channelVideos.length}개)
                       </p>
                     </div>
                   )}

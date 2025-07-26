@@ -413,8 +413,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get monitored videos for user
-  app.get("/api/monitored-videos/:userId", async (req, res) => {
+  // Get channel videos for user
+  app.get("/api/channel-videos/:userId", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -427,14 +427,14 @@ export function registerRoutes(app: Express): Server {
       }
 
       const limit = parseInt(req.query.limit as string) || 20;
-      const monitoredVideos = await storage.getMonitoredVideos(userId, limit);
+      const channelVideos = await storage.getChannelVideos(userId, limit);
       
-      console.log(`[MONITORED_VIDEOS] Retrieved ${monitoredVideos.length} monitored videos for user ${userId}`);
-      res.json(monitoredVideos);
+      console.log(`[CHANNEL_VIDEOS] Retrieved ${channelVideos.length} channel videos for user ${userId}`);
+      res.json(channelVideos);
       
     } catch (error) {
-      console.error("[MONITORED_VIDEOS] Error getting monitored videos:", error);
-      res.status(500).json({ error: "모니터링된 영상을 가져오는 중 오류가 발생했습니다" });
+      console.error("[CHANNEL_VIDEOS] Error getting channel videos:", error);
+      res.status(500).json({ error: "채널 영상을 가져오는 중 오류가 발생했습니다" });
     }
   });
 

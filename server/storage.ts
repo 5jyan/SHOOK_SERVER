@@ -2,17 +2,15 @@ import {
   users, 
   youtubeChannels, 
   userChannels,
-  monitoredVideos,
   type User, 
   type InsertUser, 
   type YoutubeChannel, 
   type InsertYoutubeChannel,
   type UserChannel,
-  type InsertUserChannel,
-  type MonitoredVideo
+  type InsertUserChannel
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
@@ -38,8 +36,8 @@ export interface IStorage {
   subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel>;
   unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void>;
   
-  // Monitored videos methods
-  getMonitoredVideos(userId: number, limit?: number): Promise<(MonitoredVideo & { channelTitle: string })[]>;
+  // Channel videos methods
+  getChannelVideos(userId: number, limit?: number): Promise<YoutubeChannel[]>;
   
   sessionStore: session.Store;
 }
@@ -180,30 +178,20 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
-  async getMonitoredVideos(userId: number, limit: number = 20): Promise<(MonitoredVideo & { channelTitle: string })[]> {
-    // 사용자가 구독한 채널의 모니터링된 영상들을 가져옴
+  async getChannelVideos(userId: number, limit: number = 20): Promise<YoutubeChannel[]> {
+    // 사용자가 구독한 채널들의 최신 영상 정보를 가져옴
     const result = await db
-      .select({
-        id: monitoredVideos.id,
-        videoId: monitoredVideos.videoId,
-        channelId: monitoredVideos.channelId,
-        title: monitoredVideos.title,
-        publishedAt: monitoredVideos.publishedAt,
-        duration: monitoredVideos.duration,
-        processed: monitoredVideos.processed,
-        processedAt: monitoredVideos.processedAt,
-        errorMessage: monitoredVideos.errorMessage,
-        createdAt: monitoredVideos.createdAt,
-        channelTitle: youtubeChannels.title
-      })
-      .from(monitoredVideos)
-      .innerJoin(youtubeChannels, eq(monitoredVideos.channelId, youtubeChannels.channelId))
+      .select()
+      .from(youtubeChannels)
       .innerJoin(userChannels, eq(youtubeChannels.channelId, userChannels.channelId))
-      .where(eq(userChannels.userId, userId))
-      .orderBy(monitoredVideos.publishedAt)
+      .where(and(
+        eq(userChannels.userId, userId),
+        isNotNull(youtubeChannels.recentVideoId) // recentVideoId가 null이 아닌 것만
+      ))
+      .orderBy(youtubeChannels.videoPublishedAt)
       .limit(limit);
     
-    return result;
+    return result.map(row => row.youtube_channels);
   }
 }
 

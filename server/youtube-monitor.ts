@@ -1,22 +1,24 @@
-import { eq, notInArray, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db.js";
-import { youtubeChannels, userChannels, monitoredVideos, users } from "../shared/schema.js";
+import { youtubeChannels, userChannels, users } from "../shared/schema.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
+import { SlackService } from "./slack.js";
 
 interface RSSVideo {
   videoId: string;
   channelId: string;
   title: string;
   publishedAt: Date;
-  duration?: string;
 }
 
 export class YouTubeMonitor {
   private summaryService: YouTubeSummaryService;
+  private slackService: SlackService;
   private monitorInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.summaryService = new YouTubeSummaryService();
+    this.slackService = new SlackService();
   }
 
   // RSS 피드에서 YouTube 영상 정보 파싱
@@ -73,64 +75,43 @@ export class YouTubeMonitor {
     }
   }
 
-  // YouTube API를 통해 영상 길이 확인
-  private async getVideoDuration(videoId: string): Promise<string | null> {
-    try {
-      // YouTube Data API가 없으므로 기본적으로 모든 영상을 처리
-      // 실제 구현에서는 YouTube Data API를 사용하여 duration을 가져와야 함
-      console.log(`[YOUTUBE_MONITOR] Getting duration for video: ${videoId}`);
-      return null; // 일단 null로 반환하고 나중에 처리 중에 판단
-    } catch (error) {
-      console.error(`[YOUTUBE_MONITOR] Error getting duration for video ${videoId}:`, error);
-      return null;
-    }
-  }
-
-  // 영상 길이가 2분 이상인지 확인 (ISO 8601 duration format)
-  private isDurationValid(duration: string | null): boolean {
-    if (!duration) {
-      // duration을 가져올 수 없는 경우 일단 처리해보도록 함
-      return true;
-    }
-
-    // PT4M13S 형식에서 분과 초 추출
-    const match = duration.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!match) return true;
-
-    const minutes = parseInt(match[1] || '0', 10);
-    const seconds = parseInt(match[2] || '0', 10);
-    const totalSeconds = minutes * 60 + seconds;
-
-    console.log(`[YOUTUBE_MONITOR] Video duration: ${minutes}:${seconds} (${totalSeconds}s)`);
-    return totalSeconds >= 120; // 2분(120초) 이상
-  }
-
-  // 새로운 영상을 데이터베이스에 저장
-  private async saveNewVideo(video: RSSVideo): Promise<void> {
-    try {
-      await db.insert(monitoredVideos).values({
-        videoId: video.videoId,
-        channelId: video.channelId,
-        title: video.title,
-        publishedAt: video.publishedAt,
-        duration: video.duration || null,
-        processed: false,
-      });
-      
-      console.log(`[YOUTUBE_MONITOR] Saved new video: ${video.title} (${video.videoId})`);
-    } catch (error) {
-      console.error(`[YOUTUBE_MONITOR] Error saving video ${video.videoId}:`, error);
-    }
-  }
-
-  // 영상 처리 (자막 추출, 요약, Slack 전송)
-  private async processVideo(video: RSSVideo): Promise<void> {
-    console.log(`[YOUTUBE_MONITOR] Processing video: ${video.title} (${video.videoId})`);
+  // 채널의 최신 영상 정보 처리
+  private async processChannelVideo(channel: any, latestVideo: RSSVideo): Promise<void> {
+    console.log(`[YOUTUBE_MONITOR] Processing new video for channel ${channel.title}: ${latestVideo.title}`);
     
     try {
-      const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+      // 1. 채널 정보 업데이트 (processed = false로 설정)
+      await db
+        .update(youtubeChannels)
+        .set({
+          recentVideoId: latestVideo.videoId,
+          recentVideoTitle: latestVideo.title,
+          videoPublishedAt: latestVideo.publishedAt,
+          processed: false,
+          errorMessage: null,
+          caption: null,
+        })
+        .where(eq(youtubeChannels.channelId, channel.channelId));
+
+      console.log(`[YOUTUBE_MONITOR] Updated channel ${channel.channelId} with new video info`);
+
+      // 2. 자막 추출 및 요약 생성
+      const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
+      console.log(`[YOUTUBE_MONITOR] Extracting transcript and generating summary for: ${videoUrl}`);
       
-      // 해당 채널을 구독한 모든 사용자 찾기
+      const { transcript, summary } = await this.summaryService.processYouTubeUrl(videoUrl);
+      
+      // 3. 요약본을 caption 컬럼에 저장
+      await db
+        .update(youtubeChannels)
+        .set({
+          caption: summary,
+        })
+        .where(eq(youtubeChannels.channelId, channel.channelId));
+
+      console.log(`[YOUTUBE_MONITOR] Generated and saved summary for video: ${latestVideo.videoId}`);
+
+      // 4. 해당 채널을 구독한 모든 사용자 찾기
       const subscribedUsers = await db
         .select({
           userId: users.id,
@@ -138,11 +119,11 @@ export class YouTubeMonitor {
         })
         .from(userChannels)
         .innerJoin(users, eq(userChannels.userId, users.id))
-        .where(eq(userChannels.channelId, video.channelId));
+        .where(eq(userChannels.channelId, channel.channelId));
 
-      console.log(`[YOUTUBE_MONITOR] Found ${subscribedUsers.length} subscribed users for channel ${video.channelId}`);
+      console.log(`[YOUTUBE_MONITOR] Found ${subscribedUsers.length} subscribed users for channel ${channel.channelId}`);
 
-      // 각 사용자에게 요약 전송
+      // 5. 각 사용자의 Slack 채널로 요약 전송
       for (const user of subscribedUsers) {
         if (!user.slackChannelId) {
           console.log(`[YOUTUBE_MONITOR] User ${user.userId} has no Slack channel, skipping`);
@@ -150,35 +131,67 @@ export class YouTubeMonitor {
         }
 
         try {
-          console.log(`[YOUTUBE_MONITOR] Processing for user ${user.userId}, channel ${user.slackChannelId}`);
-          await this.summaryService.processYouTubeUrl(videoUrl, user.slackChannelId);
+          console.log(`[YOUTUBE_MONITOR] Sending summary to user ${user.userId}, channel ${user.slackChannelId}`);
+          
+          const slackMessage = {
+            channel: user.slackChannelId,
+            text: `🎥 새 영상: ${latestVideo.title}\n\n📝 요약:\n${summary}`,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `🎥 *새 영상 알림* - ${channel.title}`
+                }
+              },
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn", 
+                  text: `📹 *제목:* ${latestVideo.title}\n🔗 *링크:* <${videoUrl}|YouTube에서 보기>`
+                }
+              },
+              {
+                type: "divider"
+              },
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `📝 *요약:*\n${summary}`
+                }
+              }
+            ]
+          };
+
+          await this.slackService.sendMessage(slackMessage);
+          console.log(`[YOUTUBE_MONITOR] Successfully sent summary to user ${user.userId}`);
         } catch (error) {
-          console.error(`[YOUTUBE_MONITOR] Error processing video for user ${user.userId}:`, error);
+          console.error(`[YOUTUBE_MONITOR] Error sending message to user ${user.userId}:`, error);
         }
       }
 
-      // 처리 완료 표시
+      // 6. 모든 처리 완료 후 processed = true로 설정
       await db
-        .update(monitoredVideos)
+        .update(youtubeChannels)
         .set({
           processed: true,
-          processedAt: new Date(),
         })
-        .where(eq(monitoredVideos.videoId, video.videoId));
+        .where(eq(youtubeChannels.channelId, channel.channelId));
 
-      console.log(`[YOUTUBE_MONITOR] Successfully processed video: ${video.videoId}`);
+      console.log(`[YOUTUBE_MONITOR] Successfully completed processing for video: ${latestVideo.videoId}`);
+
     } catch (error) {
-      console.error(`[YOUTUBE_MONITOR] Error processing video ${video.videoId}:`, error);
+      console.error(`[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`, error);
       
-      // 에러 메시지 저장
+      // 에러 발생 시 에러 메시지 저장하고 processed = true로 설정
       await db
-        .update(monitoredVideos)
+        .update(youtubeChannels)
         .set({
           processed: true,
-          processedAt: new Date(),
           errorMessage: error instanceof Error ? error.message : String(error),
         })
-        .where(eq(monitoredVideos.videoId, video.videoId));
+        .where(eq(youtubeChannels.channelId, channel.channelId));
     }
   }
 
@@ -193,51 +206,28 @@ export class YouTubeMonitor {
 
       for (const channel of channels) {
         try {
-          // RSS에서 새 영상 가져오기
+          // RSS에서 최신 영상 가져오기
           const rssVideos = await this.fetchChannelRSS(channel.channelId);
           
           if (rssVideos.length === 0) {
-            console.log(`[YOUTUBE_MONITOR] No new videos found for channel: ${channel.title}`);
+            console.log(`[YOUTUBE_MONITOR] No recent videos found for channel: ${channel.title}`);
             continue;
           }
 
-          // 이미 모니터링된 영상 제외
-          const existingVideoIds = await db
-            .select({ videoId: monitoredVideos.videoId })
-            .from(monitoredVideos)
-            .where(eq(monitoredVideos.channelId, channel.channelId));
-
-          const existingIds = existingVideoIds.map(v => v.videoId);
-          const newVideos = rssVideos.filter(v => !existingIds.includes(v.videoId));
-
-          console.log(`[YOUTUBE_MONITOR] Found ${newVideos.length} new videos for channel: ${channel.title}`);
-
-          // 새 영상 처리
-          for (const video of newVideos) {
-            // 영상 길이 확인
-            const duration = await this.getVideoDuration(video.videoId);
-            video.duration = duration || undefined;
-
-            // 일단 모든 영상을 데이터베이스에 저장
-            await this.saveNewVideo(video);
-
-            // 2분 이상인 영상만 처리 (duration이 없으면 일단 처리)
-            if (this.isDurationValid(duration)) {
-              console.log(`[YOUTUBE_MONITOR] Video ${video.videoId} is valid for processing`);
-              await this.processVideo(video);
-            } else {
-              console.log(`[YOUTUBE_MONITOR] Video ${video.videoId} is too short (shorts), skipping processing`);
-              // 짧은 영상은 처리 완료로 표시
-              await db
-                .update(monitoredVideos)
-                .set({
-                  processed: true,
-                  processedAt: new Date(),
-                  errorMessage: "Video too short (shorts)",
-                })
-                .where(eq(monitoredVideos.videoId, video.videoId));
-            }
+          // 가장 최신 영상 (첫 번째 영상)
+          const latestVideo = rssVideos[0];
+          
+          // 현재 저장된 영상 ID와 비교
+          if (channel.recentVideoId === latestVideo.videoId) {
+            console.log(`[YOUTUBE_MONITOR] No new video for channel ${channel.title} (latest: ${latestVideo.videoId})`);
+            continue;
           }
+
+          console.log(`[YOUTUBE_MONITOR] New video detected for channel ${channel.title}: ${latestVideo.title} (${latestVideo.videoId})`);
+          
+          // 새 영상 처리
+          await this.processChannelVideo(channel, latestVideo);
+
         } catch (error) {
           console.error(`[YOUTUBE_MONITOR] Error monitoring channel ${channel.channelId}:`, error);
         }

@@ -24,6 +24,12 @@ export const youtubeChannels = pgTable("youtube_channels", {
   subscriberCount: text("subscriber_count"),
   videoCount: text("video_count"),
   updatedAt: timestamp("updated_at").defaultNow(),
+  recentVideoId: text("recent_video_id"),
+  recentVideoTitle: text("recent_video_title"),
+  videoPublishedAt: timestamp("video_published_at"),
+  processed: boolean("processed").default(false),
+  errorMessage: text("error_message"),
+  caption: text("caption"),
 });
 
 // User's subscribed channels (mapping table)
@@ -34,19 +40,7 @@ export const userChannels = pgTable("user_channels", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Monitored videos to prevent duplicate processing
-export const monitoredVideos = pgTable("monitored_videos", {
-  id: serial("id").primaryKey(),
-  videoId: text("video_id").notNull().unique(),
-  channelId: text("channel_id").notNull().references(() => youtubeChannels.channelId),
-  title: text("title").notNull(),
-  publishedAt: timestamp("published_at").notNull(),
-  duration: text("duration"), // ISO 8601 duration format (PT4M13S)
-  processed: boolean("processed").default(false),
-  processedAt: timestamp("processed_at"),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+
 
 export const usersRelations = relations(users, ({ many }) => ({
   userChannels: many(userChannels),
@@ -54,7 +48,6 @@ export const usersRelations = relations(users, ({ many }) => ({
 
 export const youtubeChannelsRelations = relations(youtubeChannels, ({ many }) => ({
   userChannels: many(userChannels),
-  monitoredVideos: many(monitoredVideos),
 }));
 
 export const userChannelsRelations = relations(userChannels, ({ one }) => ({
@@ -68,12 +61,7 @@ export const userChannelsRelations = relations(userChannels, ({ one }) => ({
   }),
 }));
 
-export const monitoredVideosRelations = relations(monitoredVideos, ({ one }) => ({
-  youtubeChannel: one(youtubeChannels, {
-    fields: [monitoredVideos.channelId],
-    references: [youtubeChannels.channelId],
-  }),
-}));
+
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -89,16 +77,9 @@ export const insertUserChannelSchema = createInsertSchema(userChannels).omit({
   createdAt: true,
 });
 
-export const insertMonitoredVideoSchema = createInsertSchema(monitoredVideos).omit({
-  id: true,
-  createdAt: true,
-});
-
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertYoutubeChannel = z.infer<typeof insertYoutubeChannelSchema>;
 export type YoutubeChannel = typeof youtubeChannels.$inferSelect;
 export type InsertUserChannel = z.infer<typeof insertUserChannelSchema>;
 export type UserChannel = typeof userChannels.$inferSelect;
-export type InsertMonitoredVideo = z.infer<typeof insertMonitoredVideoSchema>;
-export type MonitoredVideo = typeof monitoredVideos.$inferSelect;
