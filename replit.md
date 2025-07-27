@@ -111,3 +111,4 @@ Preferred communication style: Simple, everyday language.
 - Consolidated video tracking in youtube_channels table (removed monitored_videos table)
 - Automatic transcript extraction, AI summarization, and Slack delivery
 - Real-time UI updates via React Query
+- Enhanced channel deletion: removes from user_channels and cleans up orphaned youtube_channels records
