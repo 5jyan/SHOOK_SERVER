@@ -6,9 +6,19 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"VT323"', 'monospace'],
-        pixel: ['"Press Start 2P"', 'monospace'],
-        mono: ['"VT323"', 'monospace']
+        sans: [
+          '"Titillium Web"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          'sans-serif',
+          '"Apple Color Emoji"',
+          '"Segoe UI Emoji"',
+          '"Segoe UI Symbol"'
+        ]
       },
       borderRadius: {
         lg: "var(--radius)",
