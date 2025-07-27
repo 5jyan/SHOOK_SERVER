@@ -262,12 +262,63 @@ export function registerRoutes(app: Express): Server {
       console.log(`[SLACK_SETUP] Sending welcome message to channel ${channel.id}`);
       await slackService.sendWelcomeMessage(channel.id, req.user.username);
       console.log(`[SLACK_SETUP] Welcome message sent`);
+
+      // 8. 사용자가 추가한 모든 채널의 최신 영상 요약을 Slack으로 전송
+      console.log(`[SLACK_SETUP] Sending summaries of all user channels to Slack...`);
+      try {
+        const userChannels = await storage.getUserChannels(req.user.id);
+        console.log(`[SLACK_SETUP] Found ${userChannels.length} channels for user ${req.user.username}`);
+        
+        for (const userChannel of userChannels) {
+          if (userChannel.caption && userChannel.recentVideoTitle) {
+            console.log(`[SLACK_SETUP] Sending summary for channel: ${userChannel.title}`);
+            
+            const summaryMessage = {
+              channel: channel.id,
+              text: `🎥 ${userChannel.title} - 최신 영상 요약\n\n📹 영상: ${userChannel.recentVideoTitle}\n\n📝 요약:\n${userChannel.caption}`,
+              blocks: [
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `🎥 *${userChannel.title}* - 최신 영상 요약`
+                  }
+                },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `📹 *영상:* ${userChannel.recentVideoTitle}`
+                  }
+                },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `📝 *요약:*\n${userChannel.caption}`
+                  }
+                },
+                {
+                  type: "divider"
+                }
+              ]
+            };
+
+            await slackService.sendMessage(summaryMessage);
+            console.log(`[SLACK_SETUP] Summary sent for channel: ${userChannel.title}`);
+          }
+        }
+        console.log(`[SLACK_SETUP] All channel summaries sent successfully`);
+      } catch (summaryError) {
+        console.error(`[SLACK_SETUP] Error sending channel summaries:`, summaryError);
+        // 에러가 발생해도 Slack 설정은 완료되었으므로 계속 진행
+      }
       
       console.log(`[SLACK_SETUP] Slack setup completed successfully for user ${req.user.username}`);
       
       res.json({ 
         success: true, 
-        message: "Slack 채널이 성공적으로 생성되었습니다.",
+        message: "Slack 채널이 성공적으로 생성되었습니다. 추가된 채널들의 최신 영상 요약도 함께 전송되었습니다.",
         channelId: channel.id,
         channelName: channel.name
       });
