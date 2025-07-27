@@ -21,7 +21,63 @@ export class YouTubeMonitor {
     this.slackService = new SlackService();
   }
 
-  // RSS 피드에서 YouTube 영상 정보 파싱 (가장 최신 영상만 가져오기)
+  // YouTube API를 사용하여 영상이 쇼츠인지 확인 (60초 이하면 쇼츠로 간주)
+  private async checkIfVideoIsShorts(videoId: string): Promise<boolean> {
+    try {
+      const apiKey = process.env.YOUTUBE_API_KEY;
+      if (!apiKey) {
+        console.log(`[YOUTUBE_MONITOR] YouTube API key not available, skipping shorts check for video: ${videoId}`);
+        return false; // API 키가 없으면 쇼츠 체크를 건너뛰고 처리
+      }
+
+      const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${apiKey}`;
+      const response = await fetch(apiUrl);
+      
+      if (!response.ok) {
+        console.log(`[YOUTUBE_MONITOR] YouTube API request failed for video ${videoId}: ${response.status}`);
+        return false; // API 실패 시 쇼츠가 아닌 것으로 간주
+      }
+
+      const data = await response.json();
+      
+      if (data.items && data.items.length > 0) {
+        const duration = data.items[0].contentDetails.duration; // ISO 8601 duration format (PT1M30S)
+        
+        // ISO 8601 duration을 초로 변환
+        const durationInSeconds = this.parseDurationToSeconds(duration);
+        
+        // 60초 이하면 쇼츠로 간주
+        const isShorts = durationInSeconds <= 60;
+        
+        if (isShorts) {
+          console.log(`[YOUTUBE_MONITOR] Video ${videoId} is shorts (${durationInSeconds}s)`);
+        } else {
+          console.log(`[YOUTUBE_MONITOR] Video ${videoId} is regular video (${durationInSeconds}s)`);
+        }
+        
+        return isShorts;
+      }
+      
+      return false; // 비디오 정보를 찾을 수 없으면 쇼츠가 아닌 것으로 간주
+    } catch (error) {
+      console.error(`[YOUTUBE_MONITOR] Error checking if video ${videoId} is shorts:`, error);
+      return false; // 에러 시 쇼츠가 아닌 것으로 간주
+    }
+  }
+
+  // ISO 8601 duration (PT1M30S) 을 초로 변환
+  private parseDurationToSeconds(duration: string): number {
+    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return 0;
+    
+    const hours = parseInt(match[1] || '0');
+    const minutes = parseInt(match[2] || '0');
+    const seconds = parseInt(match[3] || '0');
+    
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  // RSS 피드에서 YouTube 영상 정보 파싱 (쇼츠 영상 제외, 가장 최신 일반 영상만 가져오기)
   private async fetchLatestVideoFromRSS(channelId: string): Promise<RSSVideo | null> {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     
@@ -36,37 +92,48 @@ export class YouTubeMonitor {
       const xmlText = await response.text();
       console.log(`[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`);
       
-      // XML 파싱 (첫 번째 entry만 추출)
-      const entryMatch = xmlText.match(/<entry>([\s\S]*?)<\/entry>/);
+      // XML에서 모든 entry 찾기 (쇼츠가 아닌 첫 번째 영상을 찾기 위해)
+      const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
       
-      if (!entryMatch) {
+      if (!entryMatches || entryMatches.length === 0) {
         console.log(`[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`);
         return null;
       }
 
-      const entryXml = entryMatch[1];
-      
-      // 비디오 ID, 제목, 게시 날짜 추출
-      const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
-      const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
-      const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
-      
-      if (videoIdMatch && titleMatch && publishedMatch) {
-        const videoId = videoIdMatch[1];
-        const title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
-        const publishedAt = new Date(publishedMatch[1]);
+      // 각 entry를 확인하여 쇼츠가 아닌 첫 번째 영상 찾기
+      for (const entryMatch of entryMatches) {
+        const entryXml = entryMatch.replace(/<entry>|<\/entry>/g, '');
         
-        console.log(`[YOUTUBE_MONITOR] Latest video from channel ${channelId}: ${title} (${videoId})`);
+        // 비디오 ID, 제목, 게시 날짜 추출
+        const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
+        const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
+        const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
         
-        return {
-          videoId,
-          channelId,
-          title,
-          publishedAt
-        };
+        if (videoIdMatch && titleMatch && publishedMatch) {
+          const videoId = videoIdMatch[1];
+          const title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
+          const publishedAt = new Date(publishedMatch[1]);
+          
+          // 쇼츠 영상인지 확인 - YouTube API를 사용하여 영상 길이 체크
+          const isShorts = await this.checkIfVideoIsShorts(videoId);
+          
+          if (isShorts) {
+            console.log(`[YOUTUBE_MONITOR] Skipping shorts video: ${title} (${videoId})`);
+            continue;
+          }
+          
+          console.log(`[YOUTUBE_MONITOR] Latest non-shorts video from channel ${channelId}: ${title} (${videoId})`);
+          
+          return {
+            videoId,
+            channelId,
+            title,
+            publishedAt
+          };
+        }
       }
 
-      console.log(`[YOUTUBE_MONITOR] Failed to parse video data from RSS feed for channel ${channelId}`);
+      console.log(`[YOUTUBE_MONITOR] No non-shorts videos found in RSS feed for channel ${channelId}`);
       return null;
     } catch (error) {
       console.error(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
