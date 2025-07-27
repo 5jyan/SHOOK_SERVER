@@ -279,7 +279,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14">
             <div className="flex items-center">
-              <h1 className="text-xl font-medium text-foreground">
+              <h1 className="text-3xl font-bold text-foreground">
                 Roving Through
               </h1>
             </div>
@@ -460,11 +460,15 @@ export default function HomePage() {
               <div className="bg-muted/50 border gmail-border rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
-                      <CheckCircle className="text-white w-6 h-6" />
+                    <div className="relative">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
+                        <CheckCircle className="text-white w-6 h-6" />
+                      </div>
+                      {/* Active 애니메이션 효과 */}
+                      <div className="absolute -inset-1 rounded-full opacity-30 animate-ping" style={{backgroundColor: '#7C5CFA'}}></div>
                     </div>
                     <div className="ml-4">
-                      <p className="font-medium text-foreground text-lg">
+                      <p className="font-semibold text-foreground text-lg">
                         Slack 채널 연동중
                       </p>
                       <p className="text-muted-foreground text-sm">
@@ -690,64 +694,7 @@ export default function HomePage() {
           </Card>
         )}
 
-        {/* YouTube Video Summary */}
-        {isSlackConnected && (
-          <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
-                <div className="w-5 h-5 rounded flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
-                  <Youtube className="w-3 h-3 text-white" />
-                </div>
-                YouTube 영상 요약
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-slate-600 text-center">
-                  YouTube 영상 URL을 입력하면 자동으로 자막을 추출하고 요약하여 Slack 채널로 전송합니다.
-                </p>
 
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Input
-                    type="url"
-                    placeholder="https://youtube.com/watch?v=..."
-                    value={youtubeUrl}
-                    onChange={(e) => setYoutubeUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={handleSummarizeVideo}
-                    disabled={summarizeMutation.isPending}
-                    className="whitespace-nowrap"
-                    style={{backgroundColor: '#7C5CFA', color: 'white'}}
-                  >
-                    {summarizeMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4 mr-2" />
-                    )}
-                    영상 요약하기
-                  </Button>
-                </div>
-
-                <div className="rounded-lg p-4 border gmail-border" style={{backgroundColor: '#E5E5E5'}}>
-                  <div className="flex items-start">
-                    <Bot className="mt-0.5 mr-3 w-4 h-4" style={{color: '#7C5CFA'}} />
-                    <div className="text-sm text-muted-foreground">
-                      <p className="font-medium mb-2">요약 과정:</p>
-                      <ol className="list-decimal list-inside space-y-1">
-                        <li>YouTube 영상에서 자막을 자동으로 추출합니다</li>
-                        <li>Claude AI를 사용하여 자막 내용을 한국어로 요약합니다</li>
-                        <li>요약된 내용을 연결된 Slack 채널로 전송합니다</li>
-                        <li>Slack에서 영상 링크와 함께 요약을 확인할 수 있습니다</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Service Status */}
         <div className="rounded-xl p-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
