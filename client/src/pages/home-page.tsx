@@ -448,8 +448,8 @@ export default function HomePage() {
         <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
-              <div className="w-5 h-5 rounded flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
-                <div className="w-3 h-3 bg-white rounded-sm"></div>
+              <div className="w-5 h-5 rounded flex items-center justify-center" style={{backgroundColor: '#4A154B'}}>
+                <div className="w-3 h-3 bg-white rounded-sm transform rotate-45"></div>
               </div>
               Slack 연동
             </CardTitle>
@@ -478,8 +478,9 @@ export default function HomePage() {
                   </div>
                   <Button
                     onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary/10 shrink-0"
+                    variant="default"
+                    className="shrink-0 text-white"
+                    style={{backgroundColor: '#7C5CFA'}}
                   >
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Slack 열기
