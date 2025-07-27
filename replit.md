@@ -7,6 +7,8 @@ This is a full-stack web application that monitors YouTube channels for new vide
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Font family: Titillium Web for consistent typography throughout the application.
+Design style: Gmail-inspired clean interface with purple accent colors and unified color scheme.
 
 ## System Architecture
 

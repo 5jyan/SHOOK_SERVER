@@ -301,7 +301,7 @@ export default function HomePage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Service Title */}
         <div className="text-center mb-8">
           <h2 className="text-3xl font-medium text-foreground mb-4">
@@ -457,21 +457,17 @@ export default function HomePage() {
           <CardContent>
             {isSlackConnected ? (
               // 연동 완료된 상태
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+              <div className="bg-muted/50 border gmail-border rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="relative">
-                      <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center">
-                        <CheckCircle className="text-white w-6 h-6" />
-                      </div>
-                      {/* Active 애니메이션 효과 */}
-                      <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-20 animate-ping"></div>
+                    <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+                      <CheckCircle className="text-white w-6 h-6" />
                     </div>
                     <div className="ml-4">
-                      <p className="font-semibold text-green-800 text-lg">
+                      <p className="font-medium text-foreground text-lg">
                         Slack 채널 연동중
                       </p>
-                      <p className="text-green-600 text-sm">
+                      <p className="text-muted-foreground text-sm">
                         새로운 YouTube 영상 요약을 실시간으로 받아보실 수 있습니다
                       </p>
                     </div>
@@ -479,7 +475,7 @@ export default function HomePage() {
                   <Button
                     onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
                     variant="outline"
-                    className="text-purple-600 border-purple-600 hover:bg-purple-50 shrink-0"
+                    className="border-primary text-primary hover:bg-primary/10 shrink-0"
                   >
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Slack 열기
@@ -492,7 +488,7 @@ export default function HomePage() {
                 {!showEmailInput ? (
                   // 초기 상태: 워크스페이스 가입 버튼들
                   <div className="text-center space-y-4">
-                    <p className="text-slate-600">
+                    <p className="text-muted-foreground">
                       YouTube 영상 요약을 Slack으로 받기 위해 먼저 워크스페이스에 가입하세요.
                     </p>
                     
@@ -515,10 +511,10 @@ export default function HomePage() {
                       </Button>
                     </div>
 
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                    <div className="bg-muted/30 border gmail-border rounded-lg p-4 text-left">
                       <div className="flex items-start">
-                        <Mail className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
-                        <div className="text-sm text-blue-700">
+                        <Mail className="text-primary mt-0.5 mr-3 w-4 h-4" />
+                        <div className="text-sm text-muted-foreground">
                           <p className="font-medium mb-2">가입 방법:</p>
                           <ol className="list-decimal list-inside space-y-1">
                             <li>"Slack 워크스페이스 가입하기" 버튼을 클릭하세요</li>
