@@ -6,48 +6,66 @@
 
 :root {
   --background: hsl(0, 0%, 100%);
-  --foreground: hsl(222.2, 84%, 4.9%);
-  --muted: hsl(210, 40%, 96%);
-  --muted-foreground: hsl(215.4, 16.3%, 46.9%);
+  --foreground: hsl(0, 0%, 20%);
+  --muted: hsl(0, 0%, 96%);
+  --muted-foreground: hsl(0, 0%, 45%);
   --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(222.2, 84%, 4.9%);
+  --popover-foreground: hsl(0, 0%, 20%);
   --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(222.2, 84%, 4.9%);
-  --border: hsl(214.3, 31.8%, 91.4%);
-  --input: hsl(214.3, 31.8%, 91.4%);
-  --primary: hsl(221.2, 83.2%, 53.3%);
-  --primary-foreground: hsl(210, 40%, 98%);
-  --secondary: hsl(210, 40%, 96%);
-  --secondary-foreground: hsl(222.2, 84%, 4.9%);
-  --accent: hsl(210, 40%, 96%);
-  --accent-foreground: hsl(222.2, 84%, 4.9%);
-  --destructive: hsl(0, 84.2%, 60.2%);
-  --destructive-foreground: hsl(210, 40%, 98%);
-  --ring: hsl(221.2, 83.2%, 53.3%);
-  --radius: 0.5rem;
+  --card-foreground: hsl(0, 0%, 20%);
+  --border: hsl(0, 0%, 90%);
+  --input: hsl(0, 0%, 96%);
+  --primary: hsl(250, 84%, 60%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(0, 0%, 96%);
+  --secondary-foreground: hsl(0, 0%, 20%);
+  --accent: hsl(250, 84%, 60%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(250, 84%, 60%);
+  --radius: 0.375rem;
+  
+  /* Gmail-inspired colors */
+  --gmail-sidebar-bg: hsl(0, 0%, 97%);
+  --gmail-sidebar-selected: hsl(250, 84%, 60%);
+  --gmail-sidebar-text: hsl(0, 0%, 25%);
+  --gmail-sidebar-count: hsl(0, 0%, 60%);
+  --gmail-content-bg: hsl(0, 0%, 100%);
+  --gmail-border: hsl(0, 0%, 88%);
+  --gmail-hover: hsl(0, 0%, 95%);
 }
 
 .dark {
-  --background: hsl(222.2, 84%, 4.9%);
-  --foreground: hsl(210, 40%, 98%);
-  --muted: hsl(217.2, 32.6%, 17.5%);
-  --muted-foreground: hsl(215, 20.2%, 65.1%);
-  --popover: hsl(222.2, 84%, 4.9%);
-  --popover-foreground: hsl(210, 40%, 98%);
-  --card: hsl(222.2, 84%, 4.9%);
-  --card-foreground: hsl(210, 40%, 98%);
-  --border: hsl(217.2, 32.6%, 17.5%);
-  --input: hsl(217.2, 32.6%, 17.5%);
-  --primary: hsl(221.2, 83.2%, 53.3%);
-  --primary-foreground: hsl(210, 40%, 98%);
-  --secondary: hsl(217.2, 32.6%, 17.5%);
-  --secondary-foreground: hsl(210, 40%, 98%);
-  --accent: hsl(217.2, 32.6%, 17.5%);
-  --accent-foreground: hsl(210, 40%, 98%);
-  --destructive: hsl(0, 62.8%, 30.6%);
-  --destructive-foreground: hsl(210, 40%, 98%);
-  --ring: hsl(221.2, 83.2%, 53.3%);
-  --radius: 0.5rem;
+  --background: hsl(0, 0%, 15%);
+  --foreground: hsl(0, 0%, 90%);
+  --muted: hsl(0, 0%, 20%);
+  --muted-foreground: hsl(0, 0%, 60%);
+  --popover: hsl(0, 0%, 15%);
+  --popover-foreground: hsl(0, 0%, 90%);
+  --card: hsl(0, 0%, 18%);
+  --card-foreground: hsl(0, 0%, 90%);
+  --border: hsl(0, 0%, 25%);
+  --input: hsl(0, 0%, 20%);
+  --primary: hsl(250, 84%, 60%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(0, 0%, 20%);
+  --secondary-foreground: hsl(0, 0%, 90%);
+  --accent: hsl(250, 84%, 60%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(250, 84%, 60%);
+  --radius: 0.375rem;
+  
+  /* Gmail-inspired dark colors */
+  --gmail-sidebar-bg: hsl(0, 0%, 18%);
+  --gmail-sidebar-selected: hsl(250, 84%, 60%);
+  --gmail-sidebar-text: hsl(0, 0%, 85%);
+  --gmail-sidebar-count: hsl(0, 0%, 60%);
+  --gmail-content-bg: hsl(0, 0%, 15%);
+  --gmail-border: hsl(0, 0%, 25%);
+  --gmail-hover: hsl(0, 0%, 22%);
 }
 
 @layer base {
@@ -78,5 +96,34 @@
 
   .font-semibold {
     font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .gmail-sidebar {
+    background-color: var(--gmail-sidebar-bg);
+    color: var(--gmail-sidebar-text);
+  }
+  
+  .gmail-sidebar-selected {
+    background-color: var(--gmail-sidebar-selected);
+    color: white;
+    border-radius: 0 20px 20px 0;
+  }
+  
+  .gmail-hover:hover {
+    background-color: var(--gmail-hover);
+  }
+  
+  .gmail-border {
+    border-color: var(--gmail-border);
+  }
+  
+  .gmail-content {
+    background-color: var(--gmail-content-bg);
+  }
+  
+  .gmail-count {
+    color: var(--gmail-sidebar-count);
   }
 }

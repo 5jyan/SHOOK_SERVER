@@ -273,23 +273,24 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+      <header className="bg-white border-b gmail-border sticky top-0 z-40 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-14">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-slate-900">
+              <h1 className="text-xl font-medium text-foreground">
                 Roving Through
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-slate-600">{user?.username}님</span>
+              <span className="text-sm text-muted-foreground">{user?.username}님</span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted"
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 로그아웃
@@ -300,23 +301,23 @@ export default function HomePage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Service Title */}
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-slate-900 mb-4">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-medium text-foreground mb-4">
             YouTube 영상이 올라오면
             <br />
             요약본을 Slack으로 받아보세요
           </h2>
-          <p className="text-slate-600 text-lg">
+          <p className="text-muted-foreground text-lg">
             좋아하는 채널의 새로운 영상을 놓치지 마세요
           </p>
         </div>
 
         {/* YouTube Channel Manager */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <Card className="mb-6 border gmail-border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
               <Youtube className="w-5 h-5 text-red-600" />
               YouTube 채널 관리
             </CardTitle>
@@ -335,7 +336,7 @@ export default function HomePage() {
               <Button
                 onClick={handleAddChannel}
                 disabled={addChannelMutation.isPending}
-                className="bg-slate-900 hover:bg-slate-800 text-white whitespace-nowrap"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground whitespace-nowrap"
               >
                 {addChannelMutation.isPending ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -365,7 +366,7 @@ export default function HomePage() {
                 channels.map((channel) => (
                   <div
                     key={channel.subscriptionId}
-                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200"
+                    className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border gmail-border gmail-hover transition-colors duration-200"
                   >
                     <div className="flex items-center space-x-4">
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0 shadow-sm">
@@ -397,10 +398,10 @@ export default function HomePage() {
                         )}
                       </div>
                       <div>
-                        <h4 className="font-medium text-slate-900">
+                        <h4 className="font-medium text-foreground">
                           {channel.title}
                         </h4>
-                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                        <p className="text-sm text-muted-foreground flex items-center gap-2">
                           <span>{channel.handle}</span>
                           <span>·</span>
                           <span className="flex items-center gap-1">
@@ -444,10 +445,10 @@ export default function HomePage() {
         </Card>
 
         {/* Slack Integration */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-5 h-5 bg-purple-600 rounded flex items-center justify-center">
+        <Card className="mb-6 border gmail-border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
+              <div className="w-5 h-5 bg-primary rounded flex items-center justify-center">
                 <div className="w-3 h-3 bg-white rounded-sm"></div>
               </div>
               Slack 연동
@@ -498,7 +499,7 @@ export default function HomePage() {
                     <div className="flex flex-col sm:flex-row gap-3 justify-center">
                       <Button
                         onClick={() => window.open(SLACK_INVITE_URL, "_blank")}
-                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground"
                       >
                         <ExternalLink className="w-4 h-4 mr-2" />
                         Slack 워크스페이스 가입하기
@@ -507,7 +508,7 @@ export default function HomePage() {
                       <Button
                         onClick={() => setShowEmailInput(true)}
                         variant="outline"
-                        className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                        className="border-primary text-primary hover:bg-primary/10"
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
                         가입 완료 했어요
