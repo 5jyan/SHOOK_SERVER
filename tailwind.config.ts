@@ -7,11 +7,11 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          '"Google Sans"',
-          'Roboto',
+          '"Titillium Web"',
           '-apple-system',
           'BlinkMacSystemFont',
           '"Segoe UI"',
+          'Roboto',
           '"Helvetica Neue"',
           'Arial',
           'sans-serif',
