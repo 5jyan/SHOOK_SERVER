@@ -315,7 +315,7 @@ export default function HomePage() {
         </div>
 
         {/* YouTube Channel Manager */}
-        <Card className="mb-6 border gmail-border shadow-sm">
+        <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
               <Youtube className="w-5 h-5 text-red-600" />
@@ -445,10 +445,10 @@ export default function HomePage() {
         </Card>
 
         {/* Slack Integration */}
-        <Card className="mb-6 border gmail-border shadow-sm">
+        <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
-              <div className="w-5 h-5 bg-primary rounded flex items-center justify-center">
+              <div className="w-5 h-5 rounded flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
                 <div className="w-3 h-3 bg-white rounded-sm"></div>
               </div>
               Slack 연동
@@ -460,7 +460,7 @@ export default function HomePage() {
               <div className="bg-muted/50 border gmail-border rounded-lg p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
                       <CheckCircle className="text-white w-6 h-6" />
                     </div>
                     <div className="ml-4">
@@ -586,10 +586,10 @@ export default function HomePage() {
 
         {/* Monitored Videos */}
         {isSlackConnected && channels.length > 0 && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-600" />
+          <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
+                <Clock className="w-5 h-5" style={{color: '#7C5CFA'}} />
                 자동 처리된 영상
               </CardTitle>
             </CardHeader>
@@ -692,10 +692,10 @@ export default function HomePage() {
 
         {/* YouTube Video Summary */}
         {isSlackConnected && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="w-5 h-5 bg-red-600 rounded flex items-center justify-center">
+          <Card className="mb-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
+                <div className="w-5 h-5 rounded flex items-center justify-center" style={{backgroundColor: '#7C5CFA'}}>
                   <Youtube className="w-3 h-3 text-white" />
                 </div>
                 YouTube 영상 요약
@@ -718,7 +718,8 @@ export default function HomePage() {
                   <Button
                     onClick={handleSummarizeVideo}
                     disabled={summarizeMutation.isPending}
-                    className="bg-red-600 hover:bg-red-700 text-white whitespace-nowrap"
+                    className="whitespace-nowrap"
+                    style={{backgroundColor: '#7C5CFA', color: 'white'}}
                   >
                     {summarizeMutation.isPending ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -729,10 +730,10 @@ export default function HomePage() {
                   </Button>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="rounded-lg p-4 border gmail-border" style={{backgroundColor: '#E5E5E5'}}>
                   <div className="flex items-start">
-                    <Bot className="text-blue-500 mt-0.5 mr-3 w-4 h-4" />
-                    <div className="text-sm text-blue-700">
+                    <Bot className="mt-0.5 mr-3 w-4 h-4" style={{color: '#7C5CFA'}} />
+                    <div className="text-sm text-muted-foreground">
                       <p className="font-medium mb-2">요약 과정:</p>
                       <ol className="list-decimal list-inside space-y-1">
                         <li>YouTube 영상에서 자막을 자동으로 추출합니다</li>
@@ -749,36 +750,38 @@ export default function HomePage() {
         )}
 
         {/* Service Status */}
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
+        <div className="rounded-xl p-6 border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
           <div className="flex items-center mb-4">
-            <Bot className="text-blue-600 text-xl mr-3 w-6 h-6" />
-            <h3 className="text-lg font-semibold text-slate-900">
+            <Bot className="text-xl mr-3 w-6 h-6" style={{color: '#7C5CFA'}} />
+            <h3 className="text-lg font-medium text-foreground">
               자동화 상태
             </h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center">
-              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2" style={{backgroundColor: '#7C5CFA'}}>
                 <CheckCircle className="text-white w-4 h-4" />
               </div>
-              <p className="text-sm font-medium text-slate-900">로그인 완료</p>
+              <p className="text-sm font-medium text-foreground">로그인 완료</p>
             </div>
 
             <div className="text-center">
               <div
-                className={`w-8 h-8 ${channels.length > 0 ? "bg-green-500" : "bg-gray-300"} rounded-full flex items-center justify-center mx-auto mb-2`}
+                className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2`}
+                style={{backgroundColor: channels.length > 0 ? "#7C5CFA" : "#E5E5E5"}}
               >
                 <CheckCircle className="text-white w-4 h-4" />
               </div>
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-sm font-medium text-foreground">
                 채널 등록됨 ({channels.length}개)
               </p>
             </div>
 
             <div className="text-center">
               <div
-                className={`w-8 h-8 ${isSlackConnected ? "bg-green-500" : "bg-yellow-500"} rounded-full flex items-center justify-center mx-auto mb-2`}
+                className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2`}
+                style={{backgroundColor: isSlackConnected ? "#7C5CFA" : "#E5E5E5"}}
               >
                 {isSlackConnected ? (
                   <CheckCircle className="text-white w-4 h-4" />
@@ -786,18 +789,18 @@ export default function HomePage() {
                   <Clock className="text-white w-4 h-4" />
                 )}
               </div>
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-sm font-medium text-foreground">
                 {isSlackConnected ? "Slack 연동 완료" : "Slack 연동 대기"}
               </p>
             </div>
           </div>
 
           <div className="mt-4 text-center">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               모든 단계가 완료되면 5분마다 새로운 영상을 자동으로 확인합니다.
             </p>
             {channels.length > 0 && isSlackConnected && (
-              <p className="text-xs text-green-600 mt-2 font-medium">
+              <p className="text-xs mt-2 font-medium" style={{color: '#7C5CFA'}}>
                 ✓ 자동 모니터링이 활성화되었습니다
               </p>
             )}
