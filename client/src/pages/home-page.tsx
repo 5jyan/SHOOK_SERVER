@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import slackIcon from "@assets/icons8-새로운-slack-48_1753583884909.png";
 import {
   Youtube,
   Users,
@@ -449,7 +450,7 @@ export default function HomePage() {
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
               <img 
-                src="/attached_assets/icons8-새로운-slack-48_1753583884909.png" 
+                src={slackIcon} 
                 alt="Slack" 
                 className="w-5 h-5" 
               />
