@@ -285,13 +285,13 @@ export default function HomePage() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-muted-foreground">{user?.username}님</span>
+              <span className="text-sm text-foreground font-medium">{user?.username}님</span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
                 disabled={logoutMutation.isPending}
-                className="text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="text-foreground hover:text-foreground hover:bg-muted"
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 로그아웃
