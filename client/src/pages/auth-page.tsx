@@ -12,6 +12,7 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Redirect } from "wouter";
 import { Loader2, Youtube, Slack } from "lucide-react";
+import slackIcon from "@assets/icons8-새로운-slack-48_1753583884909.png";
 
 const loginSchema = insertUserSchema;
 const registerSchema = insertUserSchema;
@@ -46,8 +47,8 @@ export default function AuthPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
       </div>
     );
   }
@@ -61,28 +62,32 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
       {/* Left side - Authentication Forms */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           {/* Header */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">Roving Through</h1>
-            <p className="text-slate-600">YouTube 영상 요약을 Slack으로 받아보세요</p>
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <Youtube className="h-8 w-8 text-red-600" />
+              <img src={slackIcon} alt="Slack" className="w-8 h-8" />
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Roving Through</h1>
+            <p className="text-gray-600 dark:text-gray-400">YouTube 영상 요약을 Slack으로 받아보세요</p>
           </div>
 
           {/* Auth Forms */}
-          <Card className="w-full">
-            <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
+          <Card className="w-full border-gray-200 dark:border-gray-700 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-t-lg">
               <CardTitle className="text-center">
                 {activeTab === "login" ? "로그인" : "회원가입"}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-6 bg-white dark:bg-gray-800">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-6">
-                  <TabsTrigger value="login">로그인</TabsTrigger>
-                  <TabsTrigger value="register">회원가입</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-100 dark:bg-gray-700">
+                  <TabsTrigger value="login" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">로그인</TabsTrigger>
+                  <TabsTrigger value="register" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">회원가입</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="login">
@@ -93,12 +98,13 @@ export default function AuthPage() {
                         name="username"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>아이디</FormLabel>
+                            <FormLabel className="text-gray-700 dark:text-gray-300">아이디</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="아이디를 입력하세요"
                                 {...field}
                                 disabled={loginMutation.isPending}
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
                               />
                             </FormControl>
                             <FormMessage />
@@ -110,13 +116,14 @@ export default function AuthPage() {
                         name="password"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>비밀번호</FormLabel>
+                            <FormLabel className="text-gray-700 dark:text-gray-300">비밀번호</FormLabel>
                             <FormControl>
                               <Input
                                 type="password"
                                 placeholder="비밀번호를 입력하세요"
                                 {...field}
                                 disabled={loginMutation.isPending}
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
                               />
                             </FormControl>
                             <FormMessage />
@@ -125,7 +132,7 @@ export default function AuthPage() {
                       />
                       <Button
                         type="submit"
-                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                         disabled={loginMutation.isPending}
                       >
                         {loginMutation.isPending && (
@@ -145,12 +152,13 @@ export default function AuthPage() {
                         name="username"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>아이디</FormLabel>
+                            <FormLabel className="text-gray-700 dark:text-gray-300">아이디</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="아이디를 입력하세요"
                                 {...field}
                                 disabled={registerMutation.isPending}
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
                               />
                             </FormControl>
                             <FormMessage />
@@ -162,13 +170,14 @@ export default function AuthPage() {
                         name="password"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>비밀번호</FormLabel>
+                            <FormLabel className="text-gray-700 dark:text-gray-300">비밀번호</FormLabel>
                             <FormControl>
                               <Input
                                 type="password"
                                 placeholder="비밀번호를 입력하세요"
                                 {...field}
                                 disabled={registerMutation.isPending}
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
                               />
                             </FormControl>
                             <FormMessage />
@@ -177,7 +186,7 @@ export default function AuthPage() {
                       />
                       <Button
                         type="submit"
-                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                         disabled={registerMutation.isPending}
                       >
                         {registerMutation.isPending && (
@@ -195,7 +204,7 @@ export default function AuthPage() {
       </div>
 
       {/* Right side - Hero Section */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-blue-800 items-center justify-center p-8">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-600 to-purple-800 items-center justify-center p-8">
         <div className="text-center text-white space-y-8 max-w-md">
           <div className="space-y-4">
             <div className="flex justify-center space-x-4 mb-6">
@@ -203,16 +212,14 @@ export default function AuthPage() {
                 <Youtube className="w-8 h-8 text-red-400" />
               </div>
               <div className="p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                <div className="w-8 h-8 bg-purple-400 rounded flex items-center justify-center">
-                  <div className="w-5 h-5 bg-white rounded-sm"></div>
-                </div>
+                <img src={slackIcon} alt="Slack" className="w-8 h-8" />
               </div>
             </div>
             
             <h2 className="text-3xl font-bold">
               YouTube를 Slack으로
             </h2>
-            <p className="text-blue-100 text-lg">
+            <p className="text-purple-100 text-lg">
               좋아하는 채널의 새로운 영상을 놓치지 말고<br />
               자동으로 요약받아보세요
             </p>
