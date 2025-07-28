@@ -48,7 +48,7 @@ export default function AuthPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#8B5CF6]" />
       </div>
     );
   }
@@ -78,7 +78,7 @@ export default function AuthPage() {
 
           {/* Auth Forms */}
           <Card className="w-full border-gray-200 dark:border-gray-700 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-t-lg">
+            <CardHeader className="bg-[#8B5CF6] text-white rounded-t-lg">
               <CardTitle className="text-center">
                 {activeTab === "login" ? "로그인" : "회원가입"}
               </CardTitle>
@@ -86,8 +86,8 @@ export default function AuthPage() {
             <CardContent className="p-6 bg-white dark:bg-gray-800">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-100 dark:bg-gray-700">
-                  <TabsTrigger value="login" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">로그인</TabsTrigger>
-                  <TabsTrigger value="register" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">회원가입</TabsTrigger>
+                  <TabsTrigger value="login" className="data-[state=active]:bg-[#8B5CF6] data-[state=active]:text-white">로그인</TabsTrigger>
+                  <TabsTrigger value="register" className="data-[state=active]:bg-[#8B5CF6] data-[state=active]:text-white">회원가입</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="login">
@@ -104,7 +104,7 @@ export default function AuthPage() {
                                 placeholder="아이디를 입력하세요"
                                 {...field}
                                 disabled={loginMutation.isPending}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-[#8B5CF6] focus:ring-[#8B5CF6]"
                               />
                             </FormControl>
                             <FormMessage />
@@ -123,7 +123,7 @@ export default function AuthPage() {
                                 placeholder="비밀번호를 입력하세요"
                                 {...field}
                                 disabled={loginMutation.isPending}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-[#8B5CF6] focus:ring-[#8B5CF6]"
                               />
                             </FormControl>
                             <FormMessage />
@@ -132,7 +132,7 @@ export default function AuthPage() {
                       />
                       <Button
                         type="submit"
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                        className="w-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white"
                         disabled={loginMutation.isPending}
                       >
                         {loginMutation.isPending && (
@@ -158,7 +158,7 @@ export default function AuthPage() {
                                 placeholder="아이디를 입력하세요"
                                 {...field}
                                 disabled={registerMutation.isPending}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-[#8B5CF6] focus:ring-[#8B5CF6]"
                               />
                             </FormControl>
                             <FormMessage />
@@ -177,7 +177,7 @@ export default function AuthPage() {
                                 placeholder="비밀번호를 입력하세요"
                                 {...field}
                                 disabled={registerMutation.isPending}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-purple-500 focus:ring-purple-500"
+                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-[#8B5CF6] focus:ring-[#8B5CF6]"
                               />
                             </FormControl>
                             <FormMessage />
@@ -186,7 +186,7 @@ export default function AuthPage() {
                       />
                       <Button
                         type="submit"
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                        className="w-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white"
                         disabled={registerMutation.isPending}
                       >
                         {registerMutation.isPending && (
@@ -204,7 +204,7 @@ export default function AuthPage() {
       </div>
 
       {/* Right side - Hero Section */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-600 to-purple-800 items-center justify-center p-8">
+      <div className="hidden lg:flex lg:w-1/2 bg-[#8B5CF6] items-center justify-center p-8">
         <div className="text-center text-white space-y-8 max-w-md">
           <div className="space-y-4">
             <div className="flex justify-center space-x-4 mb-6">
@@ -219,7 +219,7 @@ export default function AuthPage() {
             <h2 className="text-3xl font-bold">
               YouTube를 Slack으로
             </h2>
-            <p className="text-purple-100 text-lg">
+            <p className="text-white/80 text-lg">
               좋아하는 채널의 새로운 영상을 놓치지 말고<br />
               자동으로 요약받아보세요
             </p>
@@ -227,19 +227,19 @@ export default function AuthPage() {
 
           <div className="space-y-4 text-left">
             <div className="flex items-center space-x-3">
-              <div className="w-6 h-6 bg-green-400 rounded-full flex items-center justify-center">
+              <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
                 <div className="w-3 h-3 bg-white rounded-full"></div>
               </div>
               <span>YouTube 채널 자동 모니터링</span>
             </div>
             <div className="flex items-center space-x-3">
-              <div className="w-6 h-6 bg-green-400 rounded-full flex items-center justify-center">
+              <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
                 <div className="w-3 h-3 bg-white rounded-full"></div>
               </div>
               <span>AI 기반 영상 내용 요약</span>
             </div>
             <div className="flex items-center space-x-3">
-              <div className="w-6 h-6 bg-green-400 rounded-full flex items-center justify-center">
+              <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
                 <div className="w-3 h-3 bg-white rounded-full"></div>
               </div>
               <span>Slack으로 실시간 알림</span>
