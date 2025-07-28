@@ -114,3 +114,24 @@ Design style: Gmail-inspired clean interface with purple accent colors and unifi
 - Automatic transcript extraction, AI summarization, and Slack delivery
 - Real-time UI updates via React Query
 - Enhanced channel deletion: removes from user_channels and cleans up orphaned youtube_channels records
+- Shorts video filtering: automatically excludes YouTube shorts videos from monitoring based on URL pattern
+
+## Recent Changes (2025-07-28)
+
+### Major Refactoring - Modular Architecture Implementation
+- **Server-side modularization**: Broke down monolithic `routes.ts` into organized modules:
+  - `routes/` directory with separate files for channels, slack, and summary endpoints
+  - `services/` directory for business logic (channel-service, slack-service, summary-service)
+  - `utils/` directory for common utilities (auth-utils, validation)
+- **Client-side componentization**: 
+  - Created reusable components: `ChannelCard`, `SlackSetup`, `ChannelForm`
+  - Added API service layer in `services/api.ts`
+  - Custom hooks for specific features: `use-channels.tsx`, `use-slack.tsx`
+- **Improved separation of concerns**: Clear boundaries between routing, business logic, and data access
+- **Enhanced maintainability**: Smaller, focused files with single responsibilities
+- **Better TypeScript support**: Proper typing and error handling throughout modules
+
+### YouTube Shorts Filtering
+- Implemented simple URL-based shorts detection (checks for "/shorts/" in video URL)
+- Shorts videos are automatically excluded from new video monitoring
+- Added proper logging for filtered shorts videos
