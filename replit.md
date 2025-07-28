@@ -135,3 +135,15 @@ Design style: Gmail-inspired clean interface with purple accent colors and unifi
 - Implemented simple URL-based shorts detection (checks for "/shorts/" in video URL)
 - Shorts videos are automatically excluded from new video monitoring
 - Added proper logging for filtered shorts videos
+
+### Comprehensive Error Logging System
+- **Error Logging Service**: Created centralized error logging that automatically sends all service errors to Slack "debug" channel
+- **Full Coverage**: Applied error logging across all major services (ChannelService, SlackService, YouTubeMonitor, YouTubeSummaryService)
+- **Contextual Information**: Error logs include service name, operation, user ID, and additional debugging information
+- **Real-time Debugging**: All errors are instantly visible in Slack for immediate issue identification and resolution
+
+### Slack Message Format Optimization
+- **mrkdwn Format Fix**: Updated YouTube Summary service to generate content directly in Slack mrkdwn format instead of standard markdown
+- **Improved Readability**: Headlines display as bold text (*text*), lists use proper bullet points (•), numbered lists preserved
+- **Direct Generation**: Removed post-processing markdown conversion logic - AI now generates proper Slack format directly
+- **Enhanced User Experience**: Video summaries now display with proper formatting in Slack channels

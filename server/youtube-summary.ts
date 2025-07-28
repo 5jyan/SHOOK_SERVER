@@ -61,7 +61,7 @@ export class YouTubeSummaryService {
 
       const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
       const requestHeaders = {
-        "x-api-key": "sd_ea34b72440935edf8ccf1654a043ed62",
+        "x-api-key": "sd_207eb9f552d7dfdaf11df214d1cddaf7",
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
       };
@@ -214,13 +214,7 @@ export class YouTubeSummaryService {
         `[YOUTUBE_SUMMARY] Transcript length: ${transcript.length} characters`,
       );
 
-      const prompt = `다음은 YouTube 영상(${youtubeUrl})의 자막입니다. 이 내용을 한국어로 명확하고 체계적으로 정리해주세요. 
-
-**중요**: Slack mrkdwn 형식으로 작성해주세요:
-- 제목과 소제목은 *굵은 글씨*로 감싸기 (예: *제목*)
-- 목록은 • 기호 사용
-- 번호가 있는 목록은 1. 2. 3. 형식 사용
-- 마크다운 ##이나 #같은 헤딩 기호는 사용하지 말고 *굵은 글씨*만 사용
+      const prompt = `다음은 YouTube 영상(${youtubeUrl})의 자막입니다. 이 내용을 한국어로 명확하고 체계적으로 정리해주세요. mrkdwn 형식을 사용해주세요.
 
 자막 내용:
 ${transcript}`;
