@@ -211,7 +211,7 @@ export class YouTubeMonitor {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `*요약:*\n${this.convertMarkdownToSlackMrkdwn(summary)}`,
+                  text: `*요약:*\n${summary}`,
                 },
               },
             ],
@@ -381,22 +381,5 @@ export class YouTubeMonitor {
     return this.monitorInterval !== null;
   }
 
-  /**
-   * 마크다운을 Slack mrkdwn 형식으로 변환
-   */
-  private convertMarkdownToSlackMrkdwn(markdown: string): string {
-    return markdown
-      // # 헤딩을 *굵은 글씨*로 변환
-      .replace(/^# (.+)$/gm, '*$1*')
-      // ## 헤딩을 *굵은 글씨*로 변환
-      .replace(/^## (.+)$/gm, '*$1*')
-      // ### 헤딩을 *굵은 글씨*로 변환  
-      .replace(/^### (.+)$/gm, '*$1*')
-      // 번호 목록 유지
-      .replace(/^(\d+\.\s)/gm, '$1')
-      // 대시 목록을 • 로 변환
-      .replace(/^- (.+)$/gm, '• $1')
-      // 빈 줄 유지
-      .replace(/\n\n/g, '\n\n');
-  }
+
 }
