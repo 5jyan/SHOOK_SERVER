@@ -1,6 +1,7 @@
 import { SlackService as BaseSlackService } from "../slack";
 import { storage } from "../storage";
 import { validateEmail } from "../utils/validation";
+import { errorLogger } from "./error-logging-service";
 
 class SlackServiceExtended {
   private slackService: BaseSlackService;
@@ -12,22 +13,22 @@ class SlackServiceExtended {
   async setupSlackIntegration(user: any, email: string) {
     console.log(`[SLACK_SERVICE] Setting up Slack integration for user ${user.username} with email ${email}`);
     
-    // Validate email
-    const validation = validateEmail(email);
-    if (!validation.isValid) {
-      throw new Error(validation.error);
-    }
-
-    // Check if user already has Slack setup
-    if (user.slackChannelId) {
-      return {
-        success: true,
-        message: "Slack이 이미 설정되어 있습니다.",
-        channelId: user.slackChannelId
-      };
-    }
-
     try {
+      // Validate email
+      const validation = validateEmail(email);
+      if (!validation.isValid) {
+        throw new Error(validation.error);
+      }
+
+      // Check if user already has Slack setup
+      if (user.slackChannelId) {
+        return {
+          success: true,
+          message: "Slack이 이미 설정되어 있습니다.",
+          channelId: user.slackChannelId
+        };
+      }
+
       // 1. Find user in Slack workspace
       const emailVerification = await this.slackService.verifyEmailInWorkspace(email);
       if (!emailVerification.exists || !emailVerification.userId) {
@@ -66,7 +67,12 @@ class SlackServiceExtended {
         channelName: channel.name
       };
     } catch (error) {
-      console.error(`[SLACK_SERVICE] Error setting up Slack integration:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'SlackService',
+        operation: 'setupSlackIntegration',
+        userId: user.id,
+        additionalInfo: { email, username: user.username }
+      });
       throw error;
     }
   }
@@ -124,7 +130,12 @@ class SlackServiceExtended {
         }
       }
     } catch (error) {
-      console.error(`[SLACK_SERVICE] Error sending channel summaries:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'SlackService',
+        operation: 'sendExistingChannelSummaries',
+        userId,
+        additionalInfo: { slackChannelId }
+      });
       // Don't throw error as Slack setup should still complete
     }
   }

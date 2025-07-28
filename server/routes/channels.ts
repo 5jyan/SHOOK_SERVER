@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { channelService } from "../services";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils";
+import { errorLogger } from "../services/error-logging-service";
 
 export function setupChannelRoutes(app: Express) {
   // Get user's channels
@@ -10,6 +11,11 @@ export function setupChannelRoutes(app: Express) {
       res.json(channels);
     } catch (error) {
       console.error("[CHANNELS] Error getting user channels:", error);
+      await errorLogger.logError(error as Error, {
+        service: 'ChannelRoutes',
+        operation: 'getUserChannels',
+        userId: req.user!.id
+      });
       res.status(500).json({ error: "Failed to get channels" });
     }
   });
@@ -22,6 +28,12 @@ export function setupChannelRoutes(app: Express) {
       res.json(result);
     } catch (error) {
       console.error("[CHANNELS] Error adding channel:", error);
+      await errorLogger.logError(error as Error, {
+        service: 'ChannelRoutes',
+        operation: 'addChannel',
+        userId: req.user!.id,
+        additionalInfo: { handle: req.body.handle }
+      });
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to add channel" });
     }
   });
@@ -33,6 +45,12 @@ export function setupChannelRoutes(app: Express) {
       res.json({ success: true });
     } catch (error) {
       console.error("[CHANNELS] Error deleting channel:", error);
+      await errorLogger.logError(error as Error, {
+        service: 'ChannelRoutes',
+        operation: 'deleteChannel',
+        userId: req.user!.id,
+        channelId: req.params.channelId
+      });
       res.status(500).json({ error: "Failed to delete channel" });
     }
   });
@@ -44,6 +62,11 @@ export function setupChannelRoutes(app: Express) {
       res.json(videos);
     } catch (error) {
       console.error("[CHANNEL_VIDEOS] Error getting channel videos:", error);
+      await errorLogger.logError(error as Error, {
+        service: 'ChannelRoutes',
+        operation: 'getChannelVideos',
+        userId: req.user!.id
+      });
       res.status(500).json({ error: "Failed to get channel videos" });
     }
   });

@@ -3,6 +3,7 @@ import { db } from "./db.js";
 import { youtubeChannels, userChannels, users } from "../shared/schema.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
 import { SlackService } from "./slack.js";
+import { errorLogger } from "./services/error-logging-service";
 
 interface RSSVideo {
   videoId: string;
@@ -189,6 +190,16 @@ export class YouTubeMonitor {
           console.log(`[YOUTUBE_MONITOR] Successfully sent summary to user ${user.userId}`);
         } catch (error) {
           console.error(`[YOUTUBE_MONITOR] Error sending message to user ${user.userId}:`, error);
+          await errorLogger.logError(error as Error, {
+            service: 'YouTubeMonitor',
+            operation: 'sendSlackMessage',
+            userId: user.userId,
+            channelId: channel.channelId,
+            additionalInfo: { 
+              videoId: latestVideo.videoId,
+              slackChannelId: user.slackChannelId 
+            }
+          });
         }
       }
 
@@ -204,6 +215,18 @@ export class YouTubeMonitor {
 
     } catch (error) {
       console.error(`[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`, error);
+      
+      // Slack에 에러 로깅
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeMonitor',
+        operation: 'processChannelVideo',
+        channelId: channel.channelId,
+        additionalInfo: { 
+          videoId: latestVideo.videoId,
+          videoTitle: latestVideo.title,
+          channelTitle: channel.title 
+        }
+      });
       
       // 에러 발생 시 에러 메시지 저장하고 processed = true로 설정
       await db
@@ -248,10 +271,20 @@ export class YouTubeMonitor {
 
         } catch (error) {
           console.error(`[YOUTUBE_MONITOR] Error monitoring channel ${channel.channelId}:`, error);
+          await errorLogger.logError(error as Error, {
+            service: 'YouTubeMonitor',
+            operation: 'monitorChannel',
+            channelId: channel.channelId,
+            additionalInfo: { channelTitle: channel.title }
+          });
         }
       }
     } catch (error) {
       console.error(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeMonitor',
+        operation: 'monitorAllChannels'
+      });
     }
     
     console.log(`[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`);

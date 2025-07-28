@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { errorLogger } from "./services/error-logging-service";
 
 /*
 <important_code_snippet_instructions>
@@ -148,6 +149,11 @@ export class YouTubeSummaryService {
       return transcriptText;
     } catch (error) {
       console.error(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeSummaryService',
+        operation: 'extractTranscript',
+        additionalInfo: { youtubeUrl }
+      });
       throw error;
     }
   }
@@ -188,6 +194,11 @@ ${transcript}`;
       return summary;
     } catch (error) {
       console.error(`[YOUTUBE_SUMMARY] Error summarizing transcript:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeSummaryService',
+        operation: 'summarizeTranscript',
+        additionalInfo: { youtubeUrl, transcriptLength: transcript.length }
+      });
       throw error;
     }
   }
@@ -213,6 +224,11 @@ ${transcript}`;
       };
     } catch (error) {
       console.error(`[YOUTUBE_SUMMARY] Error processing YouTube URL:`, error);
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeSummaryService',
+        operation: 'processYouTubeUrl',
+        additionalInfo: { youtubeUrl }
+      });
       throw error;
     }
   }
