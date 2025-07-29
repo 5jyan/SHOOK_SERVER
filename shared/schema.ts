@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -40,7 +40,11 @@ export const userChannels = pgTable("user_channels", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-
+export const session = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { withTimezone: true, precision: 6 }).notNull(),
+});
 
 export const usersRelations = relations(users, ({ many }) => ({
   userChannels: many(userChannels),
@@ -60,8 +64,6 @@ export const userChannelsRelations = relations(userChannels, ({ one }) => ({
     references: [youtubeChannels.channelId],
   }),
 }));
-
-
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,

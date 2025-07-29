@@ -11,6 +11,8 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+console.log('Using DATABASE_URL:', process.env.DATABASE_URL);
+
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // SQL 쿼리 로거 설정
