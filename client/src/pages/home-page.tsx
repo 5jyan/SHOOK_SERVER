@@ -281,7 +281,7 @@ export default function HomePage() {
           <div className="flex justify-between items-center h-14">
             <div className="flex items-center">
               <h1 className="text-3xl font-bold text-foreground">
-                Roving Through
+                SHOOK
               </h1>
             </div>
             <div className="flex items-center space-x-4">
