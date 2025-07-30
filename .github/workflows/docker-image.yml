@@ -51,7 +51,7 @@ jobs:
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
+          username: ${{ secrets.EC2_USERNAME }} # GitHub Secret에서 EC2 사용자 이름 가져오기
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           timeout: 300s
           script: |
@@ -82,11 +82,11 @@ jobs:
             
             # 기존 서비스 중지
             echo "⏹️ Stopping existing services..."
-            docker-compose down || true
+            docker compose down || true
             
             # 새 서비스 시작
             echo "▶️ Starting new services..."
-            docker-compose up -d
+            docker compose up -d
             
             # 잠시 대기
             echo "⏳ Waiting for services to start..."
@@ -94,11 +94,11 @@ jobs:
             
             # 컨테이너 상태 확인
             echo "✅ Checking container status..."
-            docker-compose ps
+            docker compose ps
             
             # 애플리케이션 로그 확인
             echo "📋 Recent application logs:"
-            docker-compose logs --tail 20 app
+            docker compose logs --tail 20 app
             
             # 헬스체크
             echo "🔍 Performing health check..."
@@ -108,7 +108,7 @@ jobs:
                 break
               elif [ $i -eq 10 ]; then
                 echo "❌ Health check failed after 10 attempts"
-                docker-compose logs app
+                docker compose logs app
                 exit 1
               else
                 echo "⏳ Attempt $i: Waiting for application to be ready..."
