@@ -41,3 +41,98 @@ jobs:
 
     - name: Image digest
       run: echo "Image pushed successfully"
+
+  deploy:
+      needs: build
+      runs-on: ubuntu-latest
+      
+      steps:
+      - name: Deploy to EC2 with Docker Compose
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          timeout: 300s
+          script: |
+            echo "🚀 Starting deployment process..."
+            
+            # 배포 디렉토리로 이동
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # 환경변수 파일 생성
+            echo "📝 Creating environment file..."
+            cat > .env << EOF
+            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+            SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+            SLACK_CHANNEL_ID=${{ secrets.SLACK_CHANNEL_ID }}
+            SLACK_BOT_USER_OAUTH_TOKEN=${{ secrets.SLACK_BOT_USER_OAUTH_TOKEN }}
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            EOF
+            
+            # Docker 로그인
+            echo "🔐 Logging into Docker Hub..."
+            echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+            
+            # 최신 이미지 풀
+            echo "📥 Pulling latest image..."
+            docker pull ${{ env.IMAGE_NAME }}:latest
+            
+            # 기존 서비스 중지
+            echo "⏹️ Stopping existing services..."
+            docker-compose down || true
+            
+            # 새 서비스 시작
+            echo "▶️ Starting new services..."
+            docker-compose up -d
+            
+            # 잠시 대기
+            echo "⏳ Waiting for services to start..."
+            sleep 15
+            
+            # 컨테이너 상태 확인
+            echo "✅ Checking container status..."
+            docker-compose ps
+            
+            # 애플리케이션 로그 확인
+            echo "📋 Recent application logs:"
+            docker-compose logs --tail 20 app
+            
+            # 헬스체크
+            echo "🔍 Performing health check..."
+            for i in {1..10}; do
+              if curl -f http://localhost:3000/health 2>/dev/null; then
+                echo "✅ Application is healthy!"
+                break
+              elif [ $i -eq 10 ]; then
+                echo "❌ Health check failed after 10 attempts"
+                docker-compose logs app
+                exit 1
+              else
+                echo "⏳ Attempt $i: Waiting for application to be ready..."
+                sleep 3
+              fi
+            done
+            
+            # 사용하지 않는 이미지 정리
+            echo "🧹 Cleaning up unused images..."
+            docker image prune -f
+            
+            echo "🎉 Deployment completed successfully!"
+
+  notify:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify deployment result
+      run: |
+        if [ "${{ needs.deploy.result }}" == "success" ]; then
+          echo "✅ Deployment successful"
+        else
+          echo "❌ Deployment failed"
+          exit 1
+        fi      
