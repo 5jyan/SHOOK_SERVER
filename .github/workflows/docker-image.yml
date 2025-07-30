@@ -4,10 +4,10 @@ name: Build and Deploy with Docker Compose
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # 수동 실행도 가능하게
+  workflow_dispatch: # 수동 실행도 가능하게
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/shook  # 실제 사용자명으로 변경
+  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/shook # 실제 사용자명으로 변경
   DEPLOY_PATH: ~/shook-deploy
 
 jobs:
@@ -43,84 +43,105 @@ jobs:
       run: echo "Image pushed successfully"
 
   deploy:
-      needs: build
-      runs-on: ubuntu-latest
-      
-      steps:
-      - name: Deploy to EC2 with Docker Compose
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }} # GitHub Secret에서 EC2 사용자 이름 가져오기
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
-          timeout: 300s
-          script: |
-            echo "🚀 Starting deployment process..."
-            
-            # 배포 디렉토리로 이동
-            cd ${{ env.DEPLOY_PATH }}
-            
-            # 환경변수 파일 생성
-            echo "📝 Creating environment file..."
-            cat > .env << EOF
-            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
-            SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
-            SLACK_CHANNEL_ID=${{ secrets.SLACK_CHANNEL_ID }}
-            SLACK_BOT_USER_OAUTH_TOKEN=${{ secrets.SLACK_BOT_USER_OAUTH_TOKEN }}
-            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-            EOF
-            
-            # Docker 로그인
-            echo "🔐 Logging into Docker Hub..."
-            echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
-            
-            # 최신 이미지 풀
-            echo "📥 Pulling latest image..."
-            docker pull ${{ env.IMAGE_NAME }}:latest
-            
-            # 기존 서비스 중지
-            echo "⏹️ Stopping existing services..."
-            docker compose down || true
-            
-            # 새 서비스 시작
-            echo "▶️ Starting new services..."
-            docker compose up -d
-            
-            # 잠시 대기
-            echo "⏳ Waiting for services to start..."
-            sleep 15
-            
-            # 컨테이너 상태 확인
-            echo "✅ Checking container status..."
-            docker compose ps
-            
-            # 애플리케이션 로그 확인
-            echo "📋 Recent application logs:"
-            docker compose logs --tail 20 app
-            
-            # 헬스체크
-            echo "🔍 Performing health check..."
-            for i in {1..10}; do
-              if curl -f http://localhost:3000/health 2>/dev/null; then
-                echo "✅ Application is healthy!"
-                break
-              elif [ $i -eq 10 ]; then
-                echo "❌ Health check failed after 10 attempts"
-                docker compose logs app
-                exit 1
-              else
-                echo "⏳ Attempt $i: Waiting for application to be ready..."
-                sleep 3
-              fi
-            done
-            
-            # 사용하지 않는 이미지 정리
-            echo "🧹 Cleaning up unused images..."
-            docker image prune -f
-            
-            echo "🎉 Deployment completed successfully!"
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Deploy to EC2 with Docker Compose
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }} # GitHub Secret에서 EC2 사용자 이름 가져오기
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        timeout: 300s
+        script: |
+          echo "🚀 Starting deployment process..."
+          echo "Current user: $(whoami)"
+          echo "Home directory: ~"$(pwd -P | sed "s|^$HOME/||g") # 현재 홈 디렉토리 확인
+
+          # 배포 디렉토리 확인 및 생성
+          echo "DEBUG: Checking and creating deployment directory: ${{ env.DEPLOY_PATH }}"
+          # `mkdir -p`는 디렉토리가 없으면 만들고, 있으면 아무것도 안 합니다.
+          mkdir -p "${{ env.DEPLOY_PATH }}" || { echo "ERROR: Failed to create directory ${{ env.DEPLOY_PATH }}. Check permissions for $(dirname ${{ env.DEPLOY_PATH }})"; exit 1; }
+          
+          # 배포 디렉토리로 이동
+          cd "${{ env.DEPLOY_PATH }}" || { echo "ERROR: Failed to change directory to ${{ env.DEPLOY_PATH }}. Does it exist and have correct permissions?"; exit 1; }
+          echo "DEBUG: Current working directory is now: $(pwd)"
+          
+          # 환경변수 파일 생성
+          echo "📝 Attempting to create environment file (.env)..."
+          # cat 명령이 실패할 경우를 대비해 || true 대신 에러 처리 추가
+          cat > .env << EOF || { echo "ERROR: Failed to write to .env file. Check permissions for ${{ env.DEPLOY_PATH }} or disk space."; exit 1; }
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID=${{ secrets.SLACK_CHANNEL_ID }}
+          SLACK_BOT_USER_OAUTH_TOKEN=${{ secrets.SLACK_BOT_USER_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          
+          # .env 파일 생성 여부 및 내용 확인 (🚨 중요: 문제 해결 후 이 두 줄은 반드시 제거/주석 처리하세요! 시크릿 정보 노출 위험!)
+          echo "DEBUG: Verifying .env file existence and content:"
+          ls -la .env || { echo "ERROR: .env file was NOT created or is inaccessible!"; exit 1; }
+          cat .env # 🚨 시크릿 정보가 로그에 출력됩니다!
+          
+          # Docker 로그인
+          echo "🔐 Logging into Docker Hub..."
+          echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin || { echo "ERROR: Docker login failed."; exit 1; }
+          
+          # docker-compose.yml 파일 유효성 검사 (이전 오류 해결에 중요)
+          echo "DEBUG: Validating docker-compose.yml file..."
+          cat docker-compose.yml # 🚨 docker-compose.yml 파일 내용 출력. 파일 인코딩/들여쓰기 문제 확인에 유용.
+          docker compose config || { echo "ERROR: docker-compose.yml validation failed. Check YAML syntax (indentation, tabs/spaces, hidden characters)."; exit 1; }
+          
+          # 최신 이미지 풀 (docker pull 대신 docker compose pull 권장)
+          echo "📥 Pulling latest image..."
+          docker compose pull || { echo "ERROR: Docker Compose pull failed."; exit 1; }
+          
+          # 기존 서비스 중지
+          echo "⏹️ Stopping existing services..."
+          # `docker compose down`이 실패해도 스크립트가 계속 진행되도록 || true 유지.
+          # 그러나 첫 배포 시에는 'Stopping existing services' 메시지가 항상 나오므로, 실제 오류가 아닐 수 있습니다.
+          docker compose down || echo "DEBUG: No existing services to stop, or graceful shutdown failed." 
+          
+          # 새 서비스 시작
+          echo "▶️ Starting new services..."
+          docker compose up -d || { echo "ERROR: Docker Compose up failed. Check application logs for details."; exit 1; }
+          
+          # 잠시 대기
+          echo "⏳ Waiting for services to start..."
+          sleep 15
+          
+          # 컨테이너 상태 확인
+          echo "✅ Checking container status..."
+          docker compose ps || { echo "ERROR: Docker Compose ps failed. Services might not be running."; exit 1; }
+          
+          # 애플리케이션 로그 확인
+          echo "📋 Recent application logs:"
+          docker compose logs --tail 20 app || echo "DEBUG: Could not retrieve recent application logs."
+          
+          # 헬스체크
+          echo "🔍 Performing health check..."
+          for i in {1..10}; do
+            if curl -f http://localhost:3000/health 2>/dev/null; then
+              echo "✅ Application is healthy!"
+              break
+            elif [ $i -eq 10 ]; then
+              echo "❌ Health check failed after 10 attempts"
+              docker compose logs app || echo "DEBUG: Could not retrieve application logs for healthcheck failure."
+              exit 1
+            else
+              echo "⏳ Attempt $i: Waiting for application to be ready..."
+              sleep 3
+            fi
+          done
+          
+          # 사용하지 않는 이미지 정리
+          echo "🧹 Cleaning up unused images..."
+          docker image prune -f || echo "DEBUG: Image prune command failed or nothing to prune."
+          
+          echo "🎉 Deployment completed successfully!"
 
   notify:
     needs: [build, deploy]
@@ -135,4 +156,4 @@ jobs:
         else
           echo "❌ Deployment failed"
           exit 1
-        fi      
+        fi
