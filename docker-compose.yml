@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  app:
+    # 워크플로우에 정의된 Docker Hub 이미지 태그 사용
+    image: your-dockerhub-username/shook:latest 
+    container_name: shook-app
+    restart: unless-stopped
+    ports:
+      - "80:3000"  # 호스트의 80번 포트를 컨테이너의 3000번 포트로 연결
+    env_file: 
+      - .env # GitHub Actions 스크립트가 생성한 .env 파일을 사용
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: shook-network
