@@ -63,8 +63,8 @@ jobs:
 
           script: |
             echo "🚀 Starting deployment process..."
-            echo "Current user: $(whoami)"
-            echo "Initial working directory: $(pwd)" # 스크립트 시작 시 현재 경로
+            INITIAL_DIR=$(pwd)
+            echo "Initial working directory: $INITIAL_DIR" # 스크립트 시작 시 현재 경로
 
             # 배포 디렉토리 확인 및 생성
             echo "DEBUG: Checking and creating deployment directory: ${{ env.DEPLOY_PATH }}"
@@ -72,7 +72,8 @@ jobs:
             
             # 배포 디렉토리로 이동
             cd "${{ env.DEPLOY_PATH }}" || { echo "ERROR: Failed to change directory to ${{ env.DEPLOY_PATH }}. Does it exist and have correct permissions?"; exit 1; }
-            echo "DEBUG: Current working directory AFTER CD: $(pwd)" # cd 후 현재 경로 확인
+            AFTER_CD_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER CD: $AFTER_CD_DIR" # cd 후 현재 경로 확인
             
             # 환경변수 파일 생성
             echo "📝 Attempting to create environment file (.env)..."
@@ -85,7 +86,8 @@ jobs:
             SLACK_BOT_USER_OAUTH_TOKEN=${{ secrets.SLACK_BOT_USER_OAUTH_TOKEN }}
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
             EOF
-            echo "DEBUG: Current working directory AFTER .ENV CREATION: $(pwd)" # .env 생성 후 현재 경로 확인
+            AFTER_ENV_CREATION_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER .ENV CREATION: $AFTER_ENV_CREATION_DIR" # .env 생성 후 현재 경로 확인
             
             # .env 파일 생성 여부 및 내용 확인 (🚨 중요: 문제 해결 후 이 두 줄은 반드시 제거/주석 처리하세요!)
             echo "DEBUG: Verifying .env file existence and content:"
@@ -95,28 +97,33 @@ jobs:
             # Docker 로그인
             echo "🔐 Logging into Docker Hub..."
             echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin || { echo "ERROR: Docker login failed."; exit 1; }
-            echo "DEBUG: Current working directory AFTER DOCKER LOGIN: $(pwd)" # Docker 로그인 후 현재 경로 확인
+            AFTER_DOCKER_LOGIN_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER LOGIN: $AFTER_DOCKER_LOGIN_DIR" # Docker 로그인 후 현재 경로 확인
             
             # docker-compose.yml 파일 유효성 검사
             echo "DEBUG: Validating docker-compose.yml file..."
             cat docker-compose.yml # 🚨 docker-compose.yml 파일 내용 출력!
             docker compose config || { echo "ERROR: docker-compose.yml validation failed. Check YAML syntax (indentation, tabs/spaces, hidden characters)."; exit 1; }
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE CONFIG: $(pwd)" # config 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_CONFIG_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE CONFIG: $AFTER_DOCKER_COMPOSE_CONFIG_DIR" # config 후 현재 경로 확인
             
             # 최신 이미지 풀
             echo "📥 Pulling latest image..."
             docker compose pull || { echo "ERROR: Docker Compose pull failed."; exit 1; }
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PULL: $(pwd)" # pull 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_PULL_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PULL: $AFTER_DOCKER_COMPOSE_PULL_DIR" # pull 후 현재 경로 확인
             
             # 기존 서비스 중지
             echo "⏹️ Stopping existing services..."
             docker compose down || echo "DEBUG: No existing services to stop, or graceful shutdown failed." 
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE DOWN: $(pwd)" # down 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_DOWN_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE DOWN: $AFTER_DOCKER_COMPOSE_DOWN_DIR" # down 후 현재 경로 확인
             
             # 새 서비스 시작
             echo "▶️ Starting new services..."
             docker compose up -d || { echo "ERROR: Docker Compose up failed. Check application logs for details."; exit 1; }
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE UP: $(pwd)" # up 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_UP_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE UP: $AFTER_DOCKER_COMPOSE_UP_DIR" # up 후 현재 경로 확인
             
             # 잠시 대기
             echo "⏳ Waiting for services to start..."
@@ -125,12 +132,14 @@ jobs:
             # 컨테이너 상태 확인
             echo "✅ Checking container status..."
             docker compose ps || { echo "ERROR: Docker Compose ps failed. Services might not be running."; exit 1; }
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PS: $(pwd)" # ps 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_PS_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PS: $AFTER_DOCKER_COMPOSE_PS_DIR" # ps 후 현재 경로 확인
             
             # 애플리케이션 로그 확인
             echo "📋 Recent application logs:"
             docker compose logs --tail 20 app || echo "DEBUG: Could not retrieve recent application logs."
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE LOGS: $(pwd)" # logs 후 현재 경로 확인
+            AFTER_DOCKER_COMPOSE_LOGS_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE LOGS: $AFTER_DOCKER_COMPOSE_LOGS_DIR" # logs 후 현재 경로 확인
             
             # 헬스체크
             echo "🔍 Performing health check..."
@@ -147,12 +156,14 @@ jobs:
                 sleep 3
               fi
             done
-            echo "DEBUG: Current working directory AFTER HEALTH CHECK: $(pwd)" # 헬스체크 후 현재 경로 확인
+            AFTER_HEALTH_CHECK_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER HEALTH CHECK: $AFTER_HEALTH_CHECK_DIR" # 헬스체크 후 현재 경로 확인
             
             # 사용하지 않는 이미지 정리
             echo "🧹 Cleaning up unused images..."
             docker image prune -f || echo "DEBUG: Image prune command failed or nothing to prune."
-            echo "DEBUG: Current working directory AFTER IMAGE PRUNE: $(pwd)" # prune 후 현재 경로 확인
+            AFTER_IMAGE_PRUNE_DIR=$(pwd)
+            echo "DEBUG: Current working directory AFTER IMAGE PRUNE: $AFTER_IMAGE_PRUNE_DIR" # prune 후 현재 경로 확인
             
             echo "🎉 Deployment completed successfully!"
 
