@@ -47,27 +47,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to EC2 with Docker Compose
-        uses: appleboy/ssh-action@v0.1.7
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           timeout: 300s
-          sync: true
-          source: "./docker-compose.yml"
-          target: "${{ env.DEPLOY_PATH }}"
           script: |
             echo "🚀 Starting deployment process..."
             
             # 배포 디렉토리 설정
             mkdir -p "${{ env.DEPLOY_PATH }}" || { 
-              echo "ERROR: Failed to create directory ${{ env.DEPLOY_PATH }}"; 
+              echo "ERROR: Failed to create directory"; 
               exit 1; 
             }
             
             cd "${{ env.DEPLOY_PATH }}" || { 
               echo "ERROR: Failed to change to deployment directory"; 
+              exit 1; 
+            }
+            
+            # docker-compose.yml 파일 다운로드
+            echo "📥 Downloading docker-compose.yml..."
+            curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                 -H "Accept: application/vnd.github.v3.raw" \
+                 -L "https://api.github.com/repos/${{ github.repository }}/contents/docker-compose.yml" \
+                 -o docker-compose.yml || { 
+              echo "ERROR: Failed to download docker-compose.yml"; 
               exit 1; 
             }
             
@@ -83,12 +90,6 @@ jobs:
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
             EOF
             
-            # .env 파일 생성 확인
-            if [ ! -f .env ]; then
-              echo "ERROR: Failed to create .env file"
-              exit 1
-            fi
-            
             # Docker 로그인
             echo "🔐 Logging into Docker Hub..."
             echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin || { 
@@ -96,13 +97,8 @@ jobs:
               exit 1; 
             }
             
-            # docker-compose.yml 파일 유효성 검사
+            # docker-compose.yml 유효성 검사
             echo "🔍 Validating docker-compose configuration..."
-            if [ ! -f docker-compose.yml ]; then
-              echo "ERROR: docker-compose.yml file not found"
-              exit 1
-            fi
-            
             docker compose config --quiet || { 
               echo "ERROR: Invalid docker-compose.yml syntax"; 
               exit 1; 
@@ -115,7 +111,7 @@ jobs:
               exit 1; 
             }
             
-            # 기존 서비스 중지 (에러 무시)
+            # 기존 서비스 중지
             echo "⏹️ Stopping existing services..."
             docker compose down --remove-orphans 2>/dev/null || true
             
