@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes/index";
-import { setupVite, serveStatic, log } from "./vite";
+import { serveVite } from "./vite";
 import { YouTubeMonitor } from "./youtube-monitor";
 
 const app = express();
@@ -31,7 +31,7 @@ app.use((req, res, next) => {
         logLine = logLine.slice(0, 79) + "…";
       }
 
-      log(logLine);
+      console.log(`[express] ${logLine}`);
     }
   });
 
@@ -46,34 +46,21 @@ app.use((req, res, next) => {
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
+    console.error(err);
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  log(`App environment: ${app.get("env")}`);
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
+  console.log(`[express] App environment: ${app.get("env")}`);
+  serveVite(app);
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '3000', 10);
   server.listen({
     port,
-    host: "0.0.0.0", // Listen on all available network interfaces
-    
+    host: "0.0.0.0",
   }, () => {
-    log(`serving on port ${port}`);
+    console.log(`[express] serving on port ${port}`);
     
-    // YouTube 채널 모니터링 시작
     const monitor = new YouTubeMonitor();
     monitor.startMonitoring();
-    log(`YouTube channel monitoring started`);
+    console.log(`[express] YouTube channel monitoring started`);
   });
 })();
