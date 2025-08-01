@@ -8,7 +8,7 @@ on:
 
 env:
   IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/shook # 실제 사용자명으로 변경
-  DEPLOY_PATH: ~/shook-deploy
+  DEPLOY_PATH: /home/${{ secrets.EC2_USERNAME }}/shook-deploy
 
 jobs:
   build:
