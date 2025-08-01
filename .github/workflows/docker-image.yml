@@ -4,10 +4,10 @@ name: Build and Deploy with Docker Compose
 on:
   push:
     branches: [main]
-  workflow_dispatch: # 수동 실행도 가능하게
+  workflow_dispatch:
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/shook # 실제 사용자명으로 변경
+  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/shook
   DEPLOY_PATH: /home/${{ secrets.EC2_USERNAME }}/shook-deploy
 
 jobs:
@@ -39,15 +39,12 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Image digest
-      run: echo "Image pushed successfully"
-
   deploy:
     needs: build
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code # docker-compose.yml 파일을 가져오기 위해 필요
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Deploy to EC2 with Docker Compose
@@ -58,26 +55,25 @@ jobs:
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           timeout: 300s
           sync: true
-          source: "./docker-compose.yml" # 로컬 레포지토리의 docker-compose.yml 파일
-          target: "${{ env.DEPLOY_PATH }}" # EC2 서버의 대상 디렉토리
-
+          source: "./docker-compose.yml"
+          target: "${{ env.DEPLOY_PATH }}"
           script: |
             echo "🚀 Starting deployment process..."
-            INITIAL_DIR=$(pwd)
-            echo "Initial working directory: $INITIAL_DIR" # 스크립트 시작 시 현재 경로
-
-            # 배포 디렉토리 확인 및 생성
-            echo "DEBUG: Checking and creating deployment directory: ${{ env.DEPLOY_PATH }}"
-            mkdir -p "${{ env.DEPLOY_PATH }}" || { echo "ERROR: Failed to create directory ${{ env.DEPLOY_PATH }}. Check permissions for $(dirname ${{ env.DEPLOY_PATH }})"; exit 1; }
             
-            # 배포 디렉토리로 이동
-            cd "${{ env.DEPLOY_PATH }}" || { echo "ERROR: Failed to change directory to ${{ env.DEPLOY_PATH }}. Does it exist and have correct permissions?"; exit 1; }
-            AFTER_CD_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER CD: $AFTER_CD_DIR" # cd 후 현재 경로 확인
+            # 배포 디렉토리 설정
+            mkdir -p "${{ env.DEPLOY_PATH }}" || { 
+              echo "ERROR: Failed to create directory ${{ env.DEPLOY_PATH }}"; 
+              exit 1; 
+            }
+            
+            cd "${{ env.DEPLOY_PATH }}" || { 
+              echo "ERROR: Failed to change to deployment directory"; 
+              exit 1; 
+            }
             
             # 환경변수 파일 생성
-            echo "📝 Attempting to create environment file (.env)..."
-            cat > .env << EOF || { echo "ERROR: Failed to write to .env file. Check permissions for ${{ env.DEPLOY_PATH }} or disk space."; exit 1; }
+            echo "📝 Creating environment file..."
+            cat > .env << 'EOF'
             SESSION_SECRET=${{ secrets.SESSION_SECRET }}
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
@@ -86,84 +82,83 @@ jobs:
             SLACK_BOT_USER_OAUTH_TOKEN=${{ secrets.SLACK_BOT_USER_OAUTH_TOKEN }}
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
             EOF
-            AFTER_ENV_CREATION_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER .ENV CREATION: $AFTER_ENV_CREATION_DIR" # .env 생성 후 현재 경로 확인
             
-            # .env 파일 생성 여부 및 내용 확인 (🚨 중요: 문제 해결 후 이 두 줄은 반드시 제거/주석 처리하세요!)
-            echo "DEBUG: Verifying .env file existence and content:"
-            ls -la .env || { echo "ERROR: .env file was NOT created or is inaccessible!"; exit 1; }
-            cat .env # 🚨 시크릿 정보가 로그에 출력됩니다!
+            # .env 파일 생성 확인
+            if [ ! -f .env ]; then
+              echo "ERROR: Failed to create .env file"
+              exit 1
+            fi
             
             # Docker 로그인
             echo "🔐 Logging into Docker Hub..."
-            echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin || { echo "ERROR: Docker login failed."; exit 1; }
-            AFTER_DOCKER_LOGIN_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER LOGIN: $AFTER_DOCKER_LOGIN_DIR" # Docker 로그인 후 현재 경로 확인
+            echo ${{ secrets.DOCKER_HUB_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin || { 
+              echo "ERROR: Docker login failed"; 
+              exit 1; 
+            }
             
             # docker-compose.yml 파일 유효성 검사
-            echo "DEBUG: Validating docker-compose.yml file..."
-            cat docker-compose.yml # 🚨 docker-compose.yml 파일 내용 출력!
-            docker compose config || { echo "ERROR: docker-compose.yml validation failed. Check YAML syntax (indentation, tabs/spaces, hidden characters)."; exit 1; }
-            AFTER_DOCKER_COMPOSE_CONFIG_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE CONFIG: $AFTER_DOCKER_COMPOSE_CONFIG_DIR" # config 후 현재 경로 확인
+            echo "🔍 Validating docker-compose configuration..."
+            if [ ! -f docker-compose.yml ]; then
+              echo "ERROR: docker-compose.yml file not found"
+              exit 1
+            fi
+            
+            docker compose config --quiet || { 
+              echo "ERROR: Invalid docker-compose.yml syntax"; 
+              exit 1; 
+            }
             
             # 최신 이미지 풀
-            echo "📥 Pulling latest image..."
-            docker compose pull || { echo "ERROR: Docker Compose pull failed."; exit 1; }
-            AFTER_DOCKER_COMPOSE_PULL_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PULL: $AFTER_DOCKER_COMPOSE_PULL_DIR" # pull 후 현재 경로 확인
+            echo "📥 Pulling latest images..."
+            docker compose pull || { 
+              echo "ERROR: Failed to pull Docker images"; 
+              exit 1; 
+            }
             
-            # 기존 서비스 중지
+            # 기존 서비스 중지 (에러 무시)
             echo "⏹️ Stopping existing services..."
-            docker compose down || echo "DEBUG: No existing services to stop, or graceful shutdown failed." 
-            AFTER_DOCKER_COMPOSE_DOWN_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE DOWN: $AFTER_DOCKER_COMPOSE_DOWN_DIR" # down 후 현재 경로 확인
+            docker compose down --remove-orphans 2>/dev/null || true
             
             # 새 서비스 시작
-            echo "▶️ Starting new services..."
-            docker compose up -d || { echo "ERROR: Docker Compose up failed. Check application logs for details."; exit 1; }
-            AFTER_DOCKER_COMPOSE_UP_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE UP: $AFTER_DOCKER_COMPOSE_UP_DIR" # up 후 현재 경로 확인
+            echo "▶️ Starting services..."
+            docker compose up -d || { 
+              echo "ERROR: Failed to start services"; 
+              docker compose logs --tail 50;
+              exit 1; 
+            }
             
-            # 잠시 대기
-            echo "⏳ Waiting for services to start..."
-            sleep 15
+            # 서비스 시작 대기
+            echo "⏳ Waiting for services to initialize..."
+            sleep 20
             
             # 컨테이너 상태 확인
-            echo "✅ Checking container status..."
-            docker compose ps || { echo "ERROR: Docker Compose ps failed. Services might not be running."; exit 1; }
-            AFTER_DOCKER_COMPOSE_PS_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE PS: $AFTER_DOCKER_COMPOSE_PS_DIR" # ps 후 현재 경로 확인
+            echo "✅ Checking service status..."
+            docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
             
-            # 애플리케이션 로그 확인
-            echo "📋 Recent application logs:"
-            docker compose logs --tail 20 app || echo "DEBUG: Could not retrieve recent application logs."
-            AFTER_DOCKER_COMPOSE_LOGS_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER DOCKER COMPOSE LOGS: $AFTER_DOCKER_COMPOSE_LOGS_DIR" # logs 후 현재 경로 확인
-            
-            # 헬스체크
+            # 헬스체크 수행
             echo "🔍 Performing health check..."
-            for i in {1..10}; do
-              if curl -f http://localhost:3000/health 2>/dev/null; then
+            HEALTH_CHECK_PASSED=false
+            for i in {1..12}; do
+              if curl -sf http://localhost:3000/health >/dev/null 2>&1; then
                 echo "✅ Application is healthy!"
+                HEALTH_CHECK_PASSED=true
                 break
-              elif [ $i -eq 10 ]; then
-                echo "❌ Health check failed after 10 attempts"
-                docker compose logs app || echo "DEBUG: Could not retrieve application logs for healthcheck failure."
-                exit 1
               else
-                echo "⏳ Attempt $i: Waiting for application to be ready..."
-                sleep 3
+                echo "⏳ Health check attempt $i/12..."
+                sleep 5
               fi
             done
-            AFTER_HEALTH_CHECK_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER HEALTH CHECK: $AFTER_HEALTH_CHECK_DIR" # 헬스체크 후 현재 경로 확인
+            
+            if [ "$HEALTH_CHECK_PASSED" = false ]; then
+              echo "❌ Health check failed after 12 attempts"
+              echo "📋 Application logs:"
+              docker compose logs --tail 30 app
+              exit 1
+            fi
             
             # 사용하지 않는 이미지 정리
             echo "🧹 Cleaning up unused images..."
-            docker image prune -f || echo "DEBUG: Image prune command failed or nothing to prune."
-            AFTER_IMAGE_PRUNE_DIR=$(pwd)
-            echo "DEBUG: Current working directory AFTER IMAGE PRUNE: $AFTER_IMAGE_PRUNE_DIR" # prune 후 현재 경로 확인
+            docker image prune -f >/dev/null 2>&1 || true
             
             echo "🎉 Deployment completed successfully!"
 
@@ -175,9 +170,16 @@ jobs:
     steps:
     - name: Notify deployment result
       run: |
-        if [ "${{ needs.deploy.result }}" == "success" ]; then
-          echo "✅ Deployment successful"
+        BUILD_STATUS="${{ needs.build.result }}"
+        DEPLOY_STATUS="${{ needs.deploy.result }}"
+        
+        echo "📊 Deployment Summary:"
+        echo "Build: $BUILD_STATUS"
+        echo "Deploy: $DEPLOY_STATUS"
+        
+        if [ "$BUILD_STATUS" == "success" ] && [ "$DEPLOY_STATUS" == "success" ]; then
+          echo "✅ All deployment stages completed successfully"
         else
-          echo "❌ Deployment failed"
+          echo "❌ Deployment failed - Check logs for details"
           exit 1
         fi
