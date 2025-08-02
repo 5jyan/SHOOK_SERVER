@@ -6,8 +6,10 @@ import { relations } from "drizzle-orm";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"),
   email: text("email"),
+  googleId: text("google_id").unique(),
+  authProvider: text("auth_provider").notNull().default('local'),
   slackUserId: text("slack_user_id"),
   slackChannelId: text("slack_channel_id"),
   slackJoinedAt: timestamp("slack_joined_at"),

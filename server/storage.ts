@@ -55,16 +55,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUser(id: number): Promise<User | undefined> {
+    console.log("[storage.ts]: Calling getUser");
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
+    console.log("[storage.ts]: Calling getUserByUsername");
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
+    console.log("[storage.ts]: Calling createUser");
     const [user] = await db
       .insert(users)
       .values(insertUser)
@@ -73,11 +76,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
+    console.log("[storage.ts]: Calling getUserByEmail");
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
   }
 
   async updateUserEmail(userId: number, email: string): Promise<void> {
+    console.log("[storage.ts]: Calling updateUserEmail");
     await db
       .update(users)
       .set({ email })
@@ -85,6 +90,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackJoinedAt: Date }): Promise<void> {
+    console.log("[storage.ts]: Calling updateUserSlackInfo");
     await db
       .update(users)
       .set({
@@ -96,16 +102,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
+    console.log("[storage.ts]: Calling getYoutubeChannel");
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
     return channel || undefined;
   }
 
   async getYoutubeChannelByHandle(handle: string): Promise<YoutubeChannel | undefined> {
+    console.log("[storage.ts]: Calling getYoutubeChannelByHandle");
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.handle, handle));
     return channel || undefined;
   }
 
   async createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel> {
+    console.log("[storage.ts]: Calling createOrUpdateYoutubeChannel");
     const existingChannel = await this.getYoutubeChannel(channel.channelId);
     
     if (existingChannel) {
@@ -130,6 +139,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]> {
+    console.log("[storage.ts]: Calling getUserChannels");
     const result = await db
       .select({
         channelId: youtubeChannels.channelId,
@@ -157,6 +167,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean> {
+    console.log("[storage.ts]: Calling isUserSubscribedToChannel");
     const [subscription] = await db
       .select()
       .from(userChannels)
@@ -169,6 +180,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel> {
+    console.log("[storage.ts]: Calling subscribeUserToChannel");
     const [subscription] = await db
       .insert(userChannels)
       .values({ userId, channelId })
@@ -178,6 +190,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void> {
+    console.log("[storage.ts]: Calling unsubscribeUserFromChannel");
     await db.delete(userChannels).where(
       and(
         eq(userChannels.userId, userId),
@@ -187,6 +200,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getChannelSubscriberCount(channelId: string): Promise<number> {
+    console.log("[storage.ts]: Calling getChannelSubscriberCount");
     const result = await db
       .select({ count: userChannels.id })
       .from(userChannels)
@@ -196,10 +210,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteYoutubeChannel(channelId: string): Promise<void> {
+    console.log("[storage.ts]: Calling deleteYoutubeChannel");
     await db.delete(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
   }
 
   async getChannelVideos(userId: number, limit: number = 20): Promise<YoutubeChannel[]> {
+    console.log("[storage.ts]: Calling getChannelVideos");
     // 사용자가 구독한 채널들의 최신 영상 정보를 가져옴
     const result = await db
       .select()

@@ -15,6 +15,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
+  googleLoginMutation: UseMutationResult<SelectUser, Error, { token: string }>;
 };
 
 type LoginData = Pick<InsertUser, "username" | "password">;
@@ -75,6 +76,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const googleLoginMutation = useMutation({
+    mutationFn: async ({ token }: { token: string }) => {
+      console.log("Frontend: Sending Google ID token to backend for verification:", token);
+      const res = await apiRequest("POST", "/api/auth/google/verify", { token });
+      console.log("Frontend: Received raw response from backend:", res);
+      // Check if response is OK before trying to parse JSON
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Frontend: Backend response not OK, status:", res.status, "text:", errorText);
+        throw new Error(`Backend error: ${res.status} - ${errorText}`);
+      }
+      const jsonResponse = await res.json();
+      console.log("Frontend: Parsed JSON response from backend:", jsonResponse);
+      return jsonResponse;
+    },
+    onSuccess: (user: SelectUser) => {
+      queryClient.clear();
+      queryClient.setQueryData(["/api/user"], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] }); // Invalidate user query to force re-render
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Google login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/logout");
@@ -103,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        googleLoginMutation,
       }}
     >
       {children}
@@ -117,3 +149,4 @@ export function useAuth() {
   }
   return context;
 }
+

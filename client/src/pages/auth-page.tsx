@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +21,32 @@ type LoginData = z.infer<typeof loginSchema>;
 type RegisterData = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
-  const { user, loginMutation, registerMutation, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState("login");
+  const { user, loginMutation, registerMutation, googleLoginMutation, isLoading } = useAuth();
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+
+  const handleGoogleLogin = (response: any) => {
+    googleLoginMutation.mutate({ token: response.credential });
+  };
+
+  useEffect(() => {
+    const initializeGoogleSignIn = () => {
+      if (window.google && googleButtonRef.current) {
+        window.google.accounts.id.initialize({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID as string,
+          callback: handleGoogleLogin,
+        });
+        window.google.accounts.id.renderButton(
+          googleButtonRef.current,
+          { theme: "outline", size: "large", type: "standard", text: "signin_with" } 
+        );
+      } else {
+        // window.google이 아직 로드되지 않았다면 잠시 후 다시 시도
+        setTimeout(initializeGoogleSignIn, 100);
+      }
+    };
+
+    initializeGoogleSignIn();
+  }, []);
 
   const loginForm = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
@@ -80,11 +104,12 @@ export default function AuthPage() {
           <Card className="w-full border-gray-200 dark:border-gray-700 shadow-lg">
             <CardHeader className="bg-[#8B5CF6] text-white rounded-t-lg">
               <CardTitle className="text-center">
-                {activeTab === "login" ? "로그인" : "회원가입"}
+                Login or Register
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-gray-800">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <div ref={googleButtonRef} className="flex justify-center mb-4"></div>
+              <Tabs defaultValue="login" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-100 dark:bg-gray-700">
                   <TabsTrigger value="login" className="data-[state=active]:bg-[#8B5CF6] data-[state=active]:text-white">로그인</TabsTrigger>
                   <TabsTrigger value="register" className="data-[state=active]:bg-[#8B5CF6] data-[state=active]:text-white">회원가입</TabsTrigger>
