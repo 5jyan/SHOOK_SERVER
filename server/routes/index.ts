@@ -16,6 +16,11 @@ export function registerRoutes(app: Express): Server {
   setupSlackRoutes(app);
   setupSummaryRoutes(app);
 
+  // Health check endpoint
+  app.get("/health", (req, res) => {
+    res.status(200).send("OK");
+  });
+
   const server = createServer(app);
   return server;
 }
