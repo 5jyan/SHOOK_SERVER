@@ -38,6 +38,8 @@ jobs:
           ${{ env.IMAGE_NAME }}:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        build-args: |
+          VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
 
   deploy:
     needs: build
