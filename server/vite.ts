@@ -22,7 +22,7 @@ export const serveVite = (app: express.Application) => {
     );
   } else {
     // In production, serve static files from the build directory
-    const clientBuildPath = path.resolve(__dirname, '..', 'client', 'dist');
+    const clientBuildPath = path.resolve(__dirname, '..', 'public');
     console.log(`[express] Production mode: Serving static files from ${clientBuildPath}`);
 
     if (!fs.existsSync(clientBuildPath)) {
