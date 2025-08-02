@@ -8,6 +8,8 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 FROM deps AS builder
 WORKDIR /app
 COPY . .
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 # Build the server and client
 RUN npm run build
 
