@@ -69,7 +69,7 @@ export class YouTubeMonitor {
           const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
           // RSS 피드에서 link 태그를 찾아 실제 URL 확인
-          const linkMatch = entryXml.match(/<link\s+href="([^"]*)"[^>]*>/);
+          const linkMatch = entryXml.match(/<link\s+href=\"([^\"]*)\"[^>]*>/);
           let actualUrl = videoUrl; // 기본값
 
           if (linkMatch && linkMatch[1]) {
@@ -110,6 +110,128 @@ export class YouTubeMonitor {
     }
   }
 
+  // --- Helper functions for processChannelVideo ---
+
+  private async updateChannelVideoInfo(channel: any, latestVideo: RSSVideo) {
+    await db
+      .update(youtubeChannels)
+      .set({
+        recentVideoId: latestVideo.videoId,
+        recentVideoTitle: latestVideo.title,
+        videoPublishedAt: latestVideo.publishedAt,
+        processed: false,
+        errorMessage: null,
+        caption: null,
+      })
+      .where(eq(youtubeChannels.channelId, channel.channelId));
+    console.log(
+      `[YOUTUBE_MONITOR] Updated channel ${channel.channelId} with new video info`,
+    );
+  }
+
+  private async generateSummary(videoUrl: string) {
+    console.log(
+      `[YOUTUBE_MONITOR] Extracting transcript and generating summary for: ${videoUrl}`,
+    );
+    return await this.summaryService.processYouTubeUrl(videoUrl);
+  }
+
+  private async saveSummaryToChannel(channelId: string, summary: string) {
+    await db
+      .update(youtubeChannels)
+      .set({
+        caption: summary,
+      })
+      .where(eq(youtubeChannels.channelId, channelId));
+    console.log(
+      `[YOUTUBE_MONITOR] Generated and saved summary for video: ${channelId}`,
+    );
+  }
+
+  private async findSubscribedUsers(channelId: string) {
+    const subscribedUsers = await db
+      .select({
+        userId: users.id,
+        slackChannelId: users.slackChannelId,
+      })
+      .from(userChannels)
+      .innerJoin(users, eq(userChannels.userId, users.id))
+      .where(eq(userChannels.channelId, channelId));
+    console.log(
+      `[YOUTUBE_MONITOR] Found ${subscribedUsers.length} subscribed users for channel ${channelId}`,
+    );
+    return subscribedUsers;
+  }
+
+  private formatSlackMessage(channelTitle: string, videoTitle: string, videoUrl: string, summary: string) {
+    return {
+      text: `새 영상: ${videoTitle}\n\n 요약:\n${summary}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${channelTitle}의 새 영상 알림*`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*제목:* ${videoTitle}\n*링크:* <${videoUrl}|YouTube에서 보기>`,
+          },
+        },
+        {
+          type: "divider",
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*요약:*\\n${summary}`,
+          },
+        },
+      ],
+    };
+  }
+
+  private async sendSlackNotification(
+    userSlackChannelId: string,
+    channelTitle: string,
+    latestVideo: RSSVideo,
+    summary: string,
+  ) {
+    const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
+    const slackMessage = this.formatSlackMessage(
+      channelTitle,
+      latestVideo.title,
+      videoUrl,
+      summary,
+    );
+    await this.slackService.sendMessage({
+      channel: userSlackChannelId,
+      ...slackMessage,
+    });
+    console.log(
+      `[YOUTUBE_MONITOR] Successfully sent summary to Slack channel ${userSlackChannelId}`,
+    );
+  }
+
+  private async markChannelProcessed(channelId: string, error: Error | null = null) {
+    await db
+      .update(youtubeChannels)
+      .set({
+        processed: true,
+        errorMessage: error ? error.message : null,
+      })
+      .where(eq(youtubeChannels.channelId, channelId));
+    if (error) {
+      console.error(`[YOUTUBE_MONITOR] Marked channel ${channelId} as processed with error: ${error.message}`);
+    } else {
+      console.log(`[YOUTUBE_MONITOR] Marked channel ${channelId} as processed`);
+    }
+  }
+
   // 채널의 최신 영상 정보 처리
   private async processChannelVideo(
     channel: any,
@@ -120,59 +242,15 @@ export class YouTubeMonitor {
     );
 
     try {
-      // 1. 채널 정보 업데이트 (processed = false로 설정)
-      await db
-        .update(youtubeChannels)
-        .set({
-          recentVideoId: latestVideo.videoId,
-          recentVideoTitle: latestVideo.title,
-          videoPublishedAt: latestVideo.publishedAt,
-          processed: false,
-          errorMessage: null,
-          caption: null,
-        })
-        .where(eq(youtubeChannels.channelId, channel.channelId));
+      await this.updateChannelVideoInfo(channel, latestVideo);
 
-      console.log(
-        `[YOUTUBE_MONITOR] Updated channel ${channel.channelId} with new video info`,
-      );
-
-      // 2. 자막 추출 및 요약 생성
       const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
-      console.log(
-        `[YOUTUBE_MONITOR] Extracting transcript and generating summary for: ${videoUrl}`,
-      );
+      const { transcript, summary } = await this.generateSummary(videoUrl);
 
-      const { transcript, summary } =
-        await this.summaryService.processYouTubeUrl(videoUrl);
+      await this.saveSummaryToChannel(channel.channelId, summary);
 
-      // 3. 요약본을 caption 컬럼에 저장
-      await db
-        .update(youtubeChannels)
-        .set({
-          caption: summary,
-        })
-        .where(eq(youtubeChannels.channelId, channel.channelId));
+      const subscribedUsers = await this.findSubscribedUsers(channel.channelId);
 
-      console.log(
-        `[YOUTUBE_MONITOR] Generated and saved summary for video: ${latestVideo.videoId}`,
-      );
-
-      // 4. 해당 채널을 구독한 모든 사용자 찾기
-      const subscribedUsers = await db
-        .select({
-          userId: users.id,
-          slackChannelId: users.slackChannelId,
-        })
-        .from(userChannels)
-        .innerJoin(users, eq(userChannels.userId, users.id))
-        .where(eq(userChannels.channelId, channel.channelId));
-
-      console.log(
-        `[YOUTUBE_MONITOR] Found ${subscribedUsers.length} subscribed users for channel ${channel.channelId}`,
-      );
-
-      // 5. 각 사용자의 Slack 채널로 요약 전송
       for (const user of subscribedUsers) {
         if (!user.slackChannelId) {
           console.log(
@@ -182,44 +260,11 @@ export class YouTubeMonitor {
         }
 
         try {
-          console.log(
-            `[YOUTUBE_MONITOR] Sending summary to user ${user.userId}, channel ${user.slackChannelId}`,
-          );
-
-          const slackMessage = {
-            channel: user.slackChannelId,
-            text: `새 영상: ${latestVideo.title}\n\n 요약:\n${summary}`,
-            blocks: [
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `*${channel.title}의 새 영상 알림*`,
-                },
-              },
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `*제목:* ${latestVideo.title}\n*링크:* <${videoUrl}|YouTube에서 보기>`,
-                },
-              },
-              {
-                type: "divider",
-              },
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `*요약:*\n${summary}`,
-                },
-              },
-            ],
-          };
-
-          await this.slackService.sendMessage(slackMessage);
-          console.log(
-            `[YOUTUBE_MONITOR] Successfully sent summary to user ${user.userId}`,
+          await this.sendSlackNotification(
+            user.slackChannelId,
+            channel.title,
+            latestVideo,
+            summary,
           );
         } catch (error) {
           console.error(
@@ -239,14 +284,7 @@ export class YouTubeMonitor {
         }
       }
 
-      // 6. 모든 처리 완료 후 processed = true로 설정
-      await db
-        .update(youtubeChannels)
-        .set({
-          processed: true,
-        })
-        .where(eq(youtubeChannels.channelId, channel.channelId));
-
+      await this.markChannelProcessed(channel.channelId);
       console.log(
         `[YOUTUBE_MONITOR] Successfully completed processing for video: ${latestVideo.videoId}`,
       );
@@ -256,7 +294,6 @@ export class YouTubeMonitor {
         error,
       );
 
-      // Slack에 에러 로깅
       await errorLogger.logError(error as Error, {
         service: "YouTubeMonitor",
         operation: "processChannelVideo",
@@ -268,14 +305,7 @@ export class YouTubeMonitor {
         },
       });
 
-      // 에러 발생 시 에러 메시지 저장하고 processed = true로 설정
-      await db
-        .update(youtubeChannels)
-        .set({
-          processed: true,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        })
-        .where(eq(youtubeChannels.channelId, channel.channelId));
+      await this.markChannelProcessed(channel.channelId, error as Error);
     }
   }
 
@@ -380,6 +410,4 @@ export class YouTubeMonitor {
   public isMonitoring(): boolean {
     return this.monitorInterval !== null;
   }
-
-
 }

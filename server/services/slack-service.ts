@@ -10,54 +10,82 @@ class SlackServiceExtended {
     this.slackService = new BaseSlackService();
   }
 
+  async getSlackStatus(user: any) {
+    return {
+      isConnected: !!user.slackChannelId,
+      channelId: user.slackChannelId,
+      userId: user.slackUserId,
+      joinedAt: user.slackJoinedAt
+    };
+  }
+
+  // --- Helper functions for setupSlackIntegration ---
+
+  private validateUserEmail(email: string) {
+    const validation = validateEmail(email);
+    if (!validation.isValid) {
+      throw new Error(validation.error);
+    }
+  }
+
+  private checkIfSlackAlreadySetup(user: any) {
+    if (user.slackChannelId) {
+      return {
+        success: true,
+        message: "Slack이 이미 설정되어 있습니다.",
+        channelId: user.slackChannelId
+      };
+    }
+    return null; // Slack not yet set up
+  }
+
+  private async findSlackUser(email: string) {
+    const emailVerification = await this.slackService.verifyEmailInWorkspace(email);
+    if (!emailVerification.exists || !emailVerification.userId) {
+      throw new Error(`이메일 ${email}로 Slack 워크스페이스에서 사용자를 찾을 수 없습니다. 먼저 워크스페이스에 가입해주세요.`);
+    }
+    return { id: emailVerification.userId, email };
+  }
+
+  private async createAndInviteChannel(channelName: string, username: string, slackUserId: string) {
+    const channel = await this.slackService.createPrivateChannel(channelName, username);
+    if (!channel) {
+      throw new Error("Slack 채널 생성에 실패했습니다.");
+    }
+    await this.slackService.inviteUserToChannel(channel.id, slackUserId);
+    return channel;
+  }
+
+  private async updateUserSlackInfoInDb(userId: number, slackUserId: string, slackChannelId: string) {
+    await storage.updateUserSlackInfo(userId, {
+      slackUserId: slackUserId,
+      slackChannelId: slackChannelId,
+      slackJoinedAt: new Date()
+    });
+  }
+
+  private async sendWelcomeMessageToChannel(channelId: string, username: string) {
+    await this.slackService.sendWelcomeMessage(channelId, username);
+  }
+
+  // --- Main setupSlackIntegration method ---
   async setupSlackIntegration(user: any, email: string) {
     console.log(`[SLACK_SERVICE] Setting up Slack integration for user ${user.username} with email ${email}`);
-    
+
     try {
-      // Validate email
-      const validation = validateEmail(email);
-      if (!validation.isValid) {
-        throw new Error(validation.error);
+      this.validateUserEmail(email);
+
+      const existingSetup = this.checkIfSlackAlreadySetup(user);
+      if (existingSetup) {
+        return existingSetup;
       }
 
-      // Check if user already has Slack setup
-      if (user.slackChannelId) {
-        return {
-          success: true,
-          message: "Slack이 이미 설정되어 있습니다.",
-          channelId: user.slackChannelId
-        };
-      }
-
-      // 1. Find user in Slack workspace
-      const emailVerification = await this.slackService.verifyEmailInWorkspace(email);
-      if (!emailVerification.exists || !emailVerification.userId) {
-        throw new Error(`이메일 ${email}로 Slack 워크스페이스에서 사용자를 찾을 수 없습니다. 먼저 워크스페이스에 가입해주세요.`);
-      }
-      const slackUser = { id: emailVerification.userId, email };
-
-      // 2. Create private channel
+      const slackUser = await this.findSlackUser(email);
       const channelName = `${user.username}-news`;
-      const channel = await this.slackService.createPrivateChannel(channelName, user.username);
-      
-      if (!channel) {
-        throw new Error("Slack 채널 생성에 실패했습니다.");
-      }
+      const channel = await this.createAndInviteChannel(channelName, user.username, slackUser.id);
 
-      // 3. Invite users to channel
-      await this.slackService.inviteUserToChannel(channel.id, slackUser.id);
-
-      // 4. Update user in database
-      await storage.updateUserSlackInfo(user.id, {
-        slackUserId: slackUser.id,
-        slackChannelId: channel.id,
-        slackJoinedAt: new Date()
-      });
-
-      // 5. Send welcome message
-      await this.slackService.sendWelcomeMessage(channel.id, user.username);
-
-      // 6. Send summaries of existing channels
+      await this.updateUserSlackInfoInDb(user.id, slackUser.id, channel.id);
+      await this.sendWelcomeMessageToChannel(channel.id, user.username);
       await this.sendExistingChannelSummaries(user.id, channel.id);
 
       return {
@@ -66,7 +94,8 @@ class SlackServiceExtended {
         channelId: channel.id,
         channelName: channel.name
       };
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'SlackService',
         operation: 'setupSlackIntegration',
@@ -77,12 +106,37 @@ class SlackServiceExtended {
     }
   }
 
-  async getSlackStatus(user: any) {
+  // --- Helper for sendExistingChannelSummaries ---
+  private formatSummaryMessage(channelTitle: string, videoTitle: string, caption: string, slackChannelId: string) {
     return {
-      isConnected: !!user.slackChannelId,
-      channelId: user.slackChannelId,
-      userId: user.slackUserId,
-      joinedAt: user.slackJoinedAt
+      channel: slackChannelId,
+      text: `🎥 ${channelTitle} - 최신 영상 요약\n\n📹 영상: ${videoTitle}\n\n📝 요약:\n${caption}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `🎥 *${channelTitle}* - 최신 영상 요약`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `📹 *영상:* ${videoTitle}`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `📝 *요약:*\n${caption}`
+          }
+        },
+        {
+          type: "divider"
+        }
+      ]
     };
   }
 
@@ -90,46 +144,23 @@ class SlackServiceExtended {
     try {
       const userChannels = await storage.getUserChannels(userId);
       console.log(`[SLACK_SERVICE] Found ${userChannels.length} channels to send summaries for`);
-      
+
       for (const userChannel of userChannels) {
         if (userChannel.caption && userChannel.recentVideoTitle) {
           console.log(`[SLACK_SERVICE] Sending summary for channel: ${userChannel.title}`);
-          
-          const summaryMessage = {
-            channel: slackChannelId,
-            text: `🎥 ${userChannel.title} - 최신 영상 요약\n\n📹 영상: ${userChannel.recentVideoTitle}\n\n📝 요약:\n${userChannel.caption}`,
-            blocks: [
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `🎥 *${userChannel.title}* - 최신 영상 요약`
-                }
-              },
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `📹 *영상:* ${userChannel.recentVideoTitle}`
-                }
-              },
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `📝 *요약:*\n${userChannel.caption}`
-                }
-              },
-              {
-                type: "divider"
-              }
-            ]
-          };
+
+          const summaryMessage = this.formatSummaryMessage(
+            userChannel.title,
+            userChannel.recentVideoTitle,
+            userChannel.caption,
+            slackChannelId
+          );
 
           await this.slackService.sendMessage(summaryMessage);
         }
       }
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'SlackService',
         operation: 'sendExistingChannelSummaries',

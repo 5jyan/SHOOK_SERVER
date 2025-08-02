@@ -1,6 +1,7 @@
 import { WebClient } from "@slack/web-api";
 import crypto from "crypto";
 import { storage } from "./storage";
+import { User } from "../shared/schema"; // User 타입 임포트
 
 interface SlackUser {
   id: string;
@@ -92,7 +93,7 @@ export class SlackService {
         console.log(
           `[SLACK_SERVICE] Email ${email} found in workspace with user ID: ${response.user.id}`,
         );
-        return {
+        return { 
           exists: true,
           userId: response.user.id,
           userInfo: response.user,
@@ -105,7 +106,7 @@ export class SlackService {
       }
     } catch (error) {
       console.error(
-        `[SLACK_SERVICE] Error verifying email in workspace:`,
+        `[SLACK_SERVICE] Error verifying email in workspace`,
         error,
       );
       return { exists: false };
@@ -281,6 +282,76 @@ export class SlackService {
     }
   }
 
+  // --- Message Formatting Helpers ---
+  private formatWelcomeMessage(userName: string) {
+    return {
+      text: `안녕하세요 ${userName}님! 🎉`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `안녕하세요 *${userName}*님! YouTube 영상 요약 서비스에 오신 것을 환영합니다! 🎉`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "이 채널에서 구독하신 YouTube 채널의 새로운 영상 요약을 받아보실 수 있습니다.\n\n📺 새로운 영상이 업로드되면 자동으로 요약본을 전달해드립니다.\n📝 영상 자막을 분석하여 핵심 내용을 요약해드립니다.",
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "*웹사이트에서 YouTube 채널을 추가하시면 요약 서비스가 시작됩니다!*",
+          },
+        },
+      ],
+    };
+  }
+
+  private formatVideoSummaryMessage(videoTitle: string, videoUrl: string, summary: string) {
+    return {
+      text: `새로운 영상 요약: ${videoTitle}`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "🎬 새로운 영상 요약",
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${videoTitle}*\n\n${summary}`,
+          },
+          accessory: {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "영상 보기 🎥",
+            },
+            url: videoUrl,
+            action_id: "view_video",
+          },
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `🔗 <${videoUrl}|영상 링크>`,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
   /**
    * 환영 메시지 전송
    */
@@ -289,52 +360,9 @@ export class SlackService {
       console.log(
         `[SLACK_SERVICE] Sending welcome message to channel ${channelId} for user ${userName}`,
       );
-
-      const message = {
-        channel: channelId,
-        text: `안녕하세요 ${userName}님! 🎉`,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `안녕하세요 *${userName}*님! YouTube 영상 요약 서비스에 오신 것을 환영합니다! 🎉`,
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "이 채널에서 구독하신 YouTube 채널의 새로운 영상 요약을 받아보실 수 있습니다.\n\n📺 새로운 영상이 업로드되면 자동으로 요약본을 전달해드립니다.\n📝 영상 자막을 분석하여 핵심 내용을 요약해드립니다.",
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: "*웹사이트에서 YouTube 채널을 추가하시면 요약 서비스가 시작됩니다!*",
-            },
-          },
-        ],
-      };
-
-      const response = await this.slack.chat.postMessage(message);
-
-      console.log(`[SLACK_SERVICE] chat.postMessage response:`, {
-        ok: response.ok,
-        error: response.error,
-        ts: response.ts,
-      });
-
-      if (response.ok) {
-        console.log(
-          `[SLACK_SERVICE] Welcome message sent successfully to channel ${channelId}`,
-        );
-      } else {
-        console.error(
-          `[SLACK_SERVICE] Failed to send welcome message. Error: ${response.error}`,
-        );
-      }
+      const message = this.formatWelcomeMessage(userName);
+      await this.slack.chat.postMessage({ channel: channelId, ...message });
+      console.log(`[SLACK_SERVICE] Welcome message sent successfully to channel ${channelId}`);
     } catch (error) {
       console.error(`[SLACK_SERVICE] Error sending welcome message:`, error);
     }
@@ -356,64 +384,64 @@ export class SlackService {
       console.log(`[SLACK_SERVICE] Video: ${videoTitle}`);
       console.log(`[SLACK_SERVICE] URL: ${videoUrl}`);
 
-      const message = {
-        channel: channelId,
-        text: `새로운 영상 요약: ${videoTitle}`,
-        blocks: [
-          {
-            type: "header",
-            text: {
-              type: "plain_text",
-              text: "🎬 새로운 영상 요약",
-            },
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `*${videoTitle}*\n\n${summary}`,
-            },
-            accessory: {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "영상 보기 🎥",
-              },
-              url: videoUrl,
-              action_id: "view_video",
-            },
-          },
-          {
-            type: "context",
-            elements: [
-              {
-                type: "mrkdwn",
-                text: `🔗 <${videoUrl}|영상 링크>`,
-              },
-            ],
-          },
-        ],
-      };
+      const message = this.formatVideoSummaryMessage(videoTitle, videoUrl, summary);
+      await this.slack.chat.postMessage({ channel: channelId, ...message });
 
-      const response = await this.slack.chat.postMessage(message);
-
-      console.log(`[SLACK_SERVICE] Video summary chat.postMessage response:`, {
-        ok: response.ok,
-        error: response.error,
-        ts: response.ts,
-      });
-
-      if (response.ok) {
-        console.log(
-          `[SLACK_SERVICE] Video summary sent successfully to channel ${channelId}`,
-        );
-      } else {
-        console.error(
-          `[SLACK_SERVICE] Failed to send video summary. Error: ${response.error}`,
-        );
-      }
+      console.log(`[SLACK_SERVICE] Video summary sent successfully to channel ${channelId}`);
     } catch (error) {
       console.error(`[SLACK_SERVICE] Error sending video summary:`, error);
+    }
+  }
+
+  // --- Helper functions for handleTeamJoinEvent ---
+  private async findUserInDb(email: string): Promise<User | null> {
+    const user = await storage.getUserByEmail(email);
+    if (!user) {
+      console.log(`[SLACK_SERVICE] User not found in database: ${email}`);
+      return null;
+    }
+    console.log(`[SLACK_SERVICE] Found user in database: ${user.username} (ID: ${user.id})`);
+    return user;
+  }
+
+  private async createAndInviteUserChannel(user: User, slackUserId: string) {
+    const channelName = `${user.username}-channel`;
+    const channel = await this.createPrivateChannel(channelName, user.username);
+    if (!channel) {
+      throw new Error(`Failed to create channel for user ${user.username}`);
+    }
+    await this.inviteUserToChannel(channel.id, slackUserId);
+    return channel;
+  }
+
+  private async updateDbWithSlackInfo(userId: number, slackUserId: string, slackChannelId: string) {
+    await storage.updateUserSlackInfo(userId, {
+      slackUserId: slackUserId,
+      slackChannelId: slackChannelId,
+      slackJoinedAt: new Date(),
+    });
+    console.log(`[SLACK_SERVICE] Successfully updated database with Slack info for user ${userId}`);
+  }
+
+  private async inviteAdminToChannel(channelId: string) {
+    const adminEmail = "saulpark12@gmail.com"; // Consider making this configurable
+    const adminVerification = await this.verifyEmailInWorkspace(adminEmail);
+
+    if (adminVerification.exists) {
+      console.log(`[SLACK_SERVICE] Admin email ${adminEmail} found, inviting to channel`);
+      const adminInviteSuccess = await this.inviteUserToChannel(
+        channelId,
+        adminVerification.userId!,
+      );
+      if (adminInviteSuccess) {
+        console.log(`[SLACK_SERVICE] Admin successfully added to channel`);
+      } else {
+        console.log(`[SLACK_SERVICE] Failed to add admin to channel`);
+      }
+    } else {
+      console.log(
+        `[SLACK_SERVICE] Admin email ${adminEmail} not found in workspace`,
+      );
     }
   }
 
@@ -422,89 +450,20 @@ export class SlackService {
    */
   async handleTeamJoinEvent(event: SlackTeamJoinEvent): Promise<void> {
     try {
-      console.log(
-        `[SLACK_SERVICE] Processing team join event for user: ${event.user.email}`,
-      );
-      console.log(`[SLACK_SERVICE] User details:`, {
-        id: event.user.id,
-        email: event.user.email,
-        name: event.user.name,
-        event_ts: event.event_ts,
-      });
+      console.log(`[SLACK_SERVICE] Processing team join event for user: ${event.user.email}`);
 
-      // 이메일로 우리 데이터베이스에서 사용자 찾기
-      const user = await storage.getUserByEmail(event.user.email);
+      const user = await this.findUserInDb(event.user.email);
       if (!user) {
-        console.log(
-          `[SLACK_SERVICE] User not found in database: ${event.user.email}`,
-        );
         return;
       }
 
-      console.log(
-        `[SLACK_SERVICE] Found user in database: ${user.username} (ID: ${user.id})`,
-      );
+      const channel = await this.createAndInviteUserChannel(user, event.user.id);
 
-      // 사용자 전용 채널 생성
-      const channelName = `${user.username}-channel`;
-      const channel = await this.createPrivateChannel(
-        channelName,
-        user.username,
-      );
+      await this.updateDbWithSlackInfo(user.id, event.user.id, channel.id);
+      await this.inviteAdminToChannel(channel.id);
+      await this.sendWelcomeMessage(channel.id, user.username);
 
-      if (channel) {
-        // 사용자를 채널에 초대
-        const inviteSuccess = await this.inviteUserToChannel(
-          channel.id,
-          event.user.id,
-        );
-
-        // 데이터베이스에 Slack 연동 정보 저장
-        await storage.updateUserSlackInfo(user.id, {
-          slackUserId: event.user.id,
-          slackChannelId: channel.id,
-          slackJoinedAt: new Date(),
-        });
-
-        console.log(
-          `[SLACK_SERVICE] Successfully updated database with Slack info for user ${user.username}`,
-        );
-
-        // 관리자 추가
-        console.log(`[SLACK_SERVICE] Adding admin to channel ${channel.id}`);
-        const adminEmail = "saulpark12@gmail.com";
-        const adminVerification = await this.verifyEmailInWorkspace(adminEmail);
-
-        if (adminVerification.exists) {
-          console.log(
-            `[SLACK_SERVICE] Admin email ${adminEmail} found, inviting to channel`,
-          );
-          const adminInviteSuccess = await this.inviteUserToChannel(
-            channel.id,
-            adminVerification.userId!,
-          );
-          if (adminInviteSuccess) {
-            console.log(`[SLACK_SERVICE] Admin successfully added to channel`);
-          } else {
-            console.log(`[SLACK_SERVICE] Failed to add admin to channel`);
-          }
-        } else {
-          console.log(
-            `[SLACK_SERVICE] Admin email ${adminEmail} not found in workspace`,
-          );
-        }
-
-        // 환영 메시지 전송
-        await this.sendWelcomeMessage(channel.id, user.username);
-
-        console.log(
-          `[SLACK_SERVICE] Team join event processed successfully for user ${user.username}`,
-        );
-      } else {
-        console.error(
-          `[SLACK_SERVICE] Failed to create channel for user ${user.username}`,
-        );
-      }
+      console.log(`[SLACK_SERVICE] Team join event processed successfully for user ${user.username}`);
     } catch (error) {
       console.error(`[SLACK_SERVICE] Error handling team join event:`, error);
     }

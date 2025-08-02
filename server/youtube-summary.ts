@@ -38,9 +38,74 @@ export class YouTubeSummaryService {
    */
   private extractVideoId(url: string): string | null {
     const regex =
-      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/; 
     const match = url.match(regex);
     return match ? match[1] : null;
+  }
+
+  // --- Helper functions for extractTranscript ---
+
+  private async _fetchTranscriptFromSupaData(youtubeUrl: string): Promise<string> {
+    const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
+    const requestHeaders = {
+      "x-api-key": "sd_207eb9f552d7dfdaf11df214d1cddaf7",
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
+    };
+
+    console.log(`[YOUTUBE_SUMMARY] Requesting transcript from SupaData API...`);
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: requestHeaders,
+    });
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      console.error(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
+        status: response.status,
+        statusText: response.statusText,
+        body: responseText,
+      });
+      throw new Error(`자막 추출 실패: ${response.status} - ${responseText}`);
+    }
+    return responseText;
+  }
+
+  private _parseSupaDataResponse(responseText: string): string {
+    let transcriptData;
+    try {
+      transcriptData = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error(`[YOUTUBE_SUMMARY] JSON parse error:`, parseError);
+      throw new Error(`응답 형식 오류: JSON 파싱 실패`);
+    }
+
+    if (transcriptData.error) {
+      console.error(`[YOUTUBE_SUMMARY] API returned error:`, transcriptData.error);
+      throw new Error(`SupaData API 오류: ${transcriptData.error}`);
+    }
+
+    let transcriptText = "";
+    if (transcriptData.text && transcriptData.text.trim() !== "") {
+      transcriptText = transcriptData.text;
+    } else if (
+      transcriptData.content &&
+      Array.isArray(transcriptData.content) &&
+      transcriptData.content.length > 0
+    ) {
+      const contentArray = transcriptData.content || [];
+      transcriptText = contentArray
+        .map((entry) => entry.text || "")
+        .join(" ");
+    } else {
+      throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
+    }
+
+    if (!transcriptText || transcriptText.trim() === "") {
+      throw new Error("자막 텍스트가 비어있습니다.");
+    }
+    return transcriptText;
   }
 
   /**
@@ -56,135 +121,10 @@ export class YouTubeSummaryService {
       if (!videoId) {
         throw new Error("유효하지 않은 YouTube URL입니다.");
       }
-
       console.log(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
 
-      const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
-      const requestHeaders = {
-        "x-api-key": "sd_207eb9f552d7dfdaf11df214d1cddaf7",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
-      };
-
-      console.log(`[YOUTUBE_SUMMARY] Request details:`);
-      console.log(`[YOUTUBE_SUMMARY] - Method: GET`);
-      console.log(`[YOUTUBE_SUMMARY] - URL: ${requestUrl}`);
-      console.log(`[YOUTUBE_SUMMARY] - Headers:`, requestHeaders);
-
-      const response = await fetch(requestUrl, {
-        method: "GET",
-        headers: requestHeaders,
-      });
-
-      console.log(`[YOUTUBE_SUMMARY] Response details:`);
-      console.log(
-        `[YOUTUBE_SUMMARY] - Status: ${response.status} ${response.statusText}`,
-      );
-      console.log(
-        `[YOUTUBE_SUMMARY] - Headers:`,
-        Object.fromEntries(response.headers.entries()),
-      );
-
-      const responseText = await response.text();
-      console.log(
-        `[YOUTUBE_SUMMARY] - Raw Response Body (first 500 chars): ${responseText.substring(0, 500)}`,
-      );
-      console.log(
-        `[YOUTUBE_SUMMARY] - Full Response Body Length: ${responseText.length} characters`,
-      );
-
-      if (!response.ok) {
-        console.error(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
-          status: response.status,
-          statusText: response.statusText,
-          body: responseText,
-        });
-        throw new Error(`자막 추출 실패: ${response.status} - ${responseText}`);
-      }
-
-      let transcriptData;
-      try {
-        transcriptData = JSON.parse(responseText);
-        console.log(
-          `[YOUTUBE_SUMMARY] Parsed JSON response:`,
-          JSON.stringify(transcriptData, null, 2),
-        );
-      } catch (parseError) {
-        console.error(`[YOUTUBE_SUMMARY] JSON parse error:`, parseError);
-        console.error(
-          `[YOUTUBE_SUMMARY] Response was not valid JSON: ${responseText}`,
-        );
-        throw new Error(`응답 형식 오류: JSON 파싱 실패`);
-      }
-
-      console.log(`[YOUTUBE_SUMMARY] Transcript data analysis:`, {
-        hasData: !!transcriptData,
-        hasText: !!transcriptData?.text,
-        hasContent: !!transcriptData?.content,
-        contentLength: transcriptData?.content?.length || 0,
-        dataKeys: Object.keys(transcriptData || {}),
-        error: transcriptData?.error || null,
-      });
-
-      if (transcriptData.error) {
-        console.error(
-          `[YOUTUBE_SUMMARY] API returned error:`,
-          transcriptData.error,
-        );
-        throw new Error(`SupaData API 오류: ${transcriptData.error}`);
-      }
-
-      // 자막 텍스트 추출 - content 배열에서 text 필드들을 모아서 합치기
-      let transcriptText = "";
-
-      if (transcriptData.text && transcriptData.text.trim() !== "") {
-        // 기존 방식: text 필드가 있는 경우
-        transcriptText = transcriptData.text;
-        console.log(
-          `[YOUTUBE_SUMMARY] Using direct text field: ${transcriptText.length} characters`,
-        );
-      } else if (
-        transcriptData.content &&
-        Array.isArray(transcriptData.content) &&
-        transcriptData.content.length > 0
-      ) {
-        // 새로운 방식: content 배열에서 text들을 합치기
-        console.log(
-          `[YOUTUBE_SUMMARY] Extracting text from ${transcriptData.content.length} content items`,
-        );
-
-        // content 배열에서 text 값만 추출 후, 하나의 문자열로 합치기
-        const contentArray = transcriptData.content || [];
-        transcriptText = contentArray
-          .map((entry) => entry.text || "")
-          .join(" ");
-
-        console.log(
-          `[YOUTUBE_SUMMARY] Combined content into text: ${transcriptText.length} characters`,
-        );
-        console.log(
-          `[YOUTUBE_SUMMARY] First 200 chars of combined text: ${transcriptText.substring(0, 200)}...`,
-        );
-      } else {
-        console.error(
-          `[YOUTUBE_SUMMARY] No transcript text found. Full response structure:`,
-          {
-            hasText: !!transcriptData.text,
-            hasContent: !!transcriptData.content,
-            contentIsArray: Array.isArray(transcriptData.content),
-            contentLength: transcriptData.content?.length,
-            dataKeys: Object.keys(transcriptData || {}),
-          },
-        );
-        throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");
-      }
-
-      if (!transcriptText || transcriptText.trim() === "") {
-        console.error(
-          `[YOUTUBE_SUMMARY] Empty transcript text after processing`,
-        );
-        throw new Error("자막 텍스트가 비어있습니다.");
-      }
+      const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
+      const transcriptText = this._parseSupaDataResponse(responseText);
 
       console.log(
         `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
@@ -201,6 +141,10 @@ export class YouTubeSummaryService {
     }
   }
 
+  private _buildAnthropicPrompt(transcript: string, youtubeUrl: string): string {
+    return `다음은 YouTube 영상(${youtubeUrl})의 자막입니다. 이 내용을 한국어로 명확하고 체계적으로 정리해주세요. mrkdwn 형식을 사용해주세요.\n\n자막 내용:\n${transcript}`;
+  }
+
   /**
    * Claude API를 사용하여 자막 요약
    */
@@ -214,10 +158,7 @@ export class YouTubeSummaryService {
         `[YOUTUBE_SUMMARY] Transcript length: ${transcript.length} characters`,
       );
 
-      const prompt = `다음은 YouTube 영상(${youtubeUrl})의 자막입니다. 이 내용을 한국어로 명확하고 체계적으로 정리해주세요. mrkdwn 형식을 사용해주세요.
-
-자막 내용:
-${transcript}`;
+      const prompt = this._buildAnthropicPrompt(transcript, youtubeUrl);
 
       const response = await this.anthropic.messages.create({
         model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"

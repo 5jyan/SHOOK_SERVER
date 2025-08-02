@@ -1,13 +1,15 @@
 import { storage } from "../storage";
 import { validateYouTubeHandle } from "../utils/validation";
 import { errorLogger } from "./error-logging-service";
+import { YoutubeChannel } from "../../shared/schema"; // YoutubeChannel 타입 임포트
 
 class ChannelService {
   async getUserChannels(userId: number) {
     console.log(`[CHANNEL_SERVICE] Getting channels for user ${userId}`);
     try {
       return await storage.getUserChannels(userId);
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
         operation: 'getUserChannels',
@@ -21,7 +23,8 @@ class ChannelService {
     console.log(`[CHANNEL_SERVICE] Getting channel videos for user ${userId}`);
     try {
       return await storage.getChannelVideos(userId);
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
         operation: 'getChannelVideos',
@@ -31,45 +34,65 @@ class ChannelService {
     }
   }
 
+  // --- Helper functions for addChannel ---
+
+  private validateHandle(handle: string) {
+    const validation = validateYouTubeHandle(handle);
+    if (!validation.isValid) {
+      throw new Error(validation.error);
+    }
+  }
+
+  private async getExistingChannel(handle: string): Promise<YoutubeChannel | undefined> {
+    return await storage.getYoutubeChannelByHandle(handle);
+  }
+
+  private async fetchAndSaveChannel(handle: string): Promise<string> {
+    return await this.fetchChannelFromYouTube(handle);
+  }
+
+  private async checkUserSubscription(userId: number, channelId: string) {
+    const isSubscribed = await storage.isUserSubscribedToChannel(userId, channelId);
+    if (isSubscribed) {
+      throw new Error("이미 추가된 채널입니다");
+    }
+  }
+
+  private async subscribeUser(userId: number, channelId: string) {
+    const subscription = await storage.subscribeUserToChannel(userId, channelId);
+    const channel = await storage.getYoutubeChannel(channelId);
+    return { subscription, channel };
+  }
+
+  // --- Main addChannel method ---
   async addChannel(userId: number, handle: string) {
     console.log(`[CHANNEL_SERVICE] Adding channel ${handle} for user ${userId}`);
-    
-    try {
-      // Validate handle
-      const validation = validateYouTubeHandle(handle);
-      if (!validation.isValid) {
-        throw new Error(validation.error);
-      }
 
-      // Check if channel already exists in database
-      let youtubeChannel = await storage.getYoutubeChannelByHandle(handle);
+    try {
+      this.validateHandle(handle);
+
+      let youtubeChannel = await this.getExistingChannel(handle);
       let channelId: string;
 
       if (youtubeChannel) {
         console.log(`[CHANNEL_SERVICE] Found existing channel:`, youtubeChannel);
         channelId = youtubeChannel.channelId;
       } else {
-        // Fetch from YouTube API
-        channelId = await this.fetchChannelFromYouTube(handle);
+        channelId = await this.fetchAndSaveChannel(handle);
       }
 
-      // Check if user is already subscribed
-      const isSubscribed = await storage.isUserSubscribedToChannel(userId, channelId);
-      if (isSubscribed) {
-        throw new Error("이미 추가된 채널입니다");
-      }
+      await this.checkUserSubscription(userId, channelId);
 
-      // Add subscription
-      const subscription = await storage.subscribeUserToChannel(userId, channelId);
-      const channel = await storage.getYoutubeChannel(channelId);
-      
+      const { subscription, channel } = await this.subscribeUser(userId, channelId);
+
       return {
         success: true,
         message: "채널이 성공적으로 추가되었습니다",
         channel,
         subscription
       };
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
         operation: 'addChannel',
@@ -84,7 +107,8 @@ class ChannelService {
     console.log(`[CHANNEL_SERVICE] Deleting channel ${channelId} for user ${userId}`);
     try {
       await storage.unsubscribeUserFromChannel(userId, channelId);
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
         operation: 'deleteChannel',
@@ -99,7 +123,7 @@ class ChannelService {
     try {
       const channelHandle = handle.substring(1); // Remove @ from handle
       const apiKey = process.env.YOUTUBE_API_KEY;
-      
+
       if (!apiKey) {
         throw new Error("YouTube API 키가 설정되지 않았습니다");
       }
@@ -118,7 +142,7 @@ class ChannelService {
       }
 
       const channelData = data.items[0];
-      const channelInfo = {
+      const channelInfo: YoutubeChannel = { // 타입 명시
         channelId: channelData.id,
         handle: handle,
         title: channelData.snippet.title,
@@ -133,7 +157,8 @@ class ChannelService {
       console.log(`[CHANNEL_SERVICE] Created new YouTube channel:`, channelInfo);
 
       return channelData.id;
-    } catch (error) {
+    }
+    catch (error) {
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
         operation: 'fetchChannelFromYouTube',
