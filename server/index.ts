@@ -1,12 +1,31 @@
 import 'dotenv/config';
+import { createServer } from "http";
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes/index";
-import { serveVite } from "./vite";
-import { YouTubeMonitor } from "./youtube-monitor";
+import session from "express-session";
+import passport from "passport";
+import { storage } from "./storage.js";
+import { setupPassport } from "./auth.js";
+import apiRouter from "./api/index.js";
+import { serveVite } from "./vite.js";
+import { YouTubeMonitor } from "./youtube-monitor.js";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Session and Passport middleware
+const sessionSettings: session.SessionOptions = {
+  secret: process.env.SESSION_SECRET || 'your-secret-key-here-make-it-random-and-secure-for-production',
+  resave: false,
+  saveUninitialized: false,
+  store: storage.sessionStore,
+};
+app.set("trust proxy", 1);
+app.use(session(sessionSettings));
+app.use(passport.initialize());
+app.use(passport.session());
+
+setupPassport();
 
 // Add a very early log for all POST requests
 app.post('*', (req, res, next) => {
@@ -45,7 +64,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
+  app.use("/api", apiRouter);
+
+  // Create the server after setting up routes
+  const server = createServer(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

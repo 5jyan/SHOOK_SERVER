@@ -81,10 +81,11 @@ class SlackServiceExtended {
       }
 
       const slackUser = await this.findSlackUser(email);
-      const channelName = `${user.username}-news`;
+      const channelName = `${user.username}님의_채널`;
       const channel = await this.createAndInviteChannel(channelName, user.username, slackUser.id);
 
       await this.updateUserSlackInfoInDb(user.id, slackUser.id, channel.id);
+      await this.slackService.inviteAdminToChannel(channel.id);
       await this.sendWelcomeMessageToChannel(channel.id, user.username);
       await this.sendExistingChannelSummaries(user.id, channel.id);
 

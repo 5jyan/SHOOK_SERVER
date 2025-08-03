@@ -423,7 +423,7 @@ export class SlackService {
     console.log(`[SLACK_SERVICE] Successfully updated database with Slack info for user ${userId}`);
   }
 
-  private async inviteAdminToChannel(channelId: string) {
+  public async inviteAdminToChannel(channelId: string) {
     const adminEmail = "saulpark12@gmail.com"; // Consider making this configurable
     const adminVerification = await this.verifyEmailInWorkspace(adminEmail);
 

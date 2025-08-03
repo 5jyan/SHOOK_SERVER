@@ -1,15 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { db } from '../db';
+import { db } from '../db.js';
 import { users, User } from '../../shared/schema'; // User 타입 임포트
 import { eq } from 'drizzle-orm';
 
 const router = Router();
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-// 1. Google 토큰 검증 및 payload 반환 함수
 async function verifyGoogleToken(token: string) {
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
   console.log('Backend: Verifying Google token...');
   const ticket = await client.verifyIdToken({
     idToken: token,
