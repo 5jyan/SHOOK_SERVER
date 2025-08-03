@@ -1,7 +1,7 @@
 import { WebClient } from "@slack/web-api";
 import crypto from "crypto";
-import { storage } from "./storage";
-import { User } from "../shared/schema"; // User 타입 임포트
+import { storage } from "../repositories/storage";
+import { User } from "../../shared/schema"; // User 타입 임포트
 
 interface SlackUser {
   id: string;

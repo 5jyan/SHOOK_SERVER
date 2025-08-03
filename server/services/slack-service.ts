@@ -1,9 +1,9 @@
-import { SlackService as BaseSlackService } from "../slack";
-import { storage } from "../storage";
+import { SlackService as BaseSlackService } from "../lib/slack";
+import { storage } from "../repositories/storage";
 import { validateEmail } from "../utils/validation";
 import { errorLogger } from "./error-logging-service";
 
-class SlackServiceExtended {
+export class SlackServiceExtended {
   private slackService: BaseSlackService;
 
   constructor() {
@@ -173,4 +173,4 @@ class SlackServiceExtended {
   }
 }
 
-export const slackService = new SlackServiceExtended();
+

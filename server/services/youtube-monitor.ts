@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import { db } from "./db.js";
-import { youtubeChannels, userChannels, users } from "../shared/schema.js";
+import { db } from "../lib/db.js";
+import { youtubeChannels, userChannels, users } from "../../shared/schema.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
-import { SlackService } from "./slack.js";
-import { errorLogger } from "./services/error-logging-service";
+import { SlackService } from "../lib/slack.js";
+import { errorLogger } from "./error-logging-service.js";
 
 interface RSSVideo {
   videoId: string;

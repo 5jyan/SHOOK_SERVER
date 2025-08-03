@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { db } from '../db.js';
+import { db } from '../lib/db.js';
 import { users, User } from '../../shared/schema'; // User 타입 임포트
 import { eq } from 'drizzle-orm';
 

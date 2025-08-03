@@ -1,7 +1,7 @@
 import { Router } from "express";
 import passport from "passport";
-import { storage } from "../storage.js";
-import { hashPassword } from "../auth.js";
+import { storage } from "../repositories/storage.js";
+import { hashPassword } from "../lib/auth.js";
 
 const router = Router();
 

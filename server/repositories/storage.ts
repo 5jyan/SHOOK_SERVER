@@ -9,11 +9,11 @@ import {
   type UserChannel,
   type InsertUserChannel
 } from "@shared/schema";
-import { db } from "./db";
+import { db } from "../lib/db";
 import { eq, and, isNotNull } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import { pool } from "../lib/db";
 
 const PostgresSessionStore = connectPg(session);
 

@@ -3,11 +3,11 @@ import { createServer } from "http";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
-import { storage } from "./storage.js";
-import { setupPassport } from "./auth.js";
+import { storage } from "./repositories/storage.js";
+import { setupPassport } from "./lib/auth.js";
 import apiRouter from "./api/index.js";
-import { serveVite } from "./vite.js";
-import { YouTubeMonitor } from "./youtube-monitor.js";
+import { serveVite } from "./lib/vite.js";
+import { youtubeMonitor } from "./services/index.js";
 
 const app = express();
 app.use(express.json());
@@ -91,8 +91,7 @@ app.use((req, res, next) => {
   }, () => {
     console.log(`[express] serving on port ${port}`);
     
-    const monitor = new YouTubeMonitor();
-    monitor.startMonitoring();
+    youtubeMonitor.startMonitoring();
     console.log(`[express] YouTube channel monitoring started`);
   });
 })();

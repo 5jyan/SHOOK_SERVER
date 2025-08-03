@@ -1,9 +1,9 @@
-import { storage } from "../storage";
+import { storage } from "../repositories/storage";
 import { validateYouTubeHandle } from "../utils/validation";
 import { errorLogger } from "./error-logging-service";
 import { YoutubeChannel } from "../../shared/schema"; // YoutubeChannel 타입 임포트
 
-class ChannelService {
+export class ChannelService {
   async getUserChannels(userId: number) {
     console.log(`[CHANNEL_SERVICE] Getting channels for user ${userId}`);
     try {
@@ -169,4 +169,3 @@ class ChannelService {
   }
 }
 
-export const channelService = new ChannelService();
