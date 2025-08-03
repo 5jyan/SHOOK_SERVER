@@ -29,10 +29,31 @@ This is a full-stack application designed to monitor YouTube channels, generate 
 │   ├── src/
 │   └── index.html
 ├── server/         # Node.js/Express Backend
-│   ├── routes/     # API endpoints
-│   ├── services/   # Business logic
-│   ├── index.ts    # Server entry point
-│   └── youtube-monitor.ts # Core monitoring logic
+│   ├── api/        # API endpoints (using express.Router)
+│   │   ├── auth.ts
+│   │   ├── channels.ts
+│   │   ├── google.ts
+│   │   ├── index.ts # Central API router
+│   │   ├── slack.ts
+│   │   └── summary.ts
+│   ├── services/   # Business logic and service instances
+│   │   ├── channel-service.ts
+│   │   ├── error-logging-service.ts
+│   │   ├── index.ts # Service instance management (singleton)
+│   │   ├── slack-service.ts
+│   │   ├── youtube-monitor.ts # Core monitoring logic
+│   │   └── youtube-summary.ts # AI-powered summarization
+│   ├── repositories/ # Data access layer
+│   │   └── storage.ts
+│   ├── lib/        # Shared utilities and configurations
+│   │   ├── auth.ts # Passport.js setup
+│   │   ├── db.ts   # Database connection
+│   │   ├── slack.ts # Slack API client
+│   │   └── vite.ts # Vite middleware
+│   ├── utils/      # General utility functions
+│   │   ├── auth-utils.ts
+│   │   └── validation.ts
+│   └── index.ts    # Server entry point
 ├── shared/         # Shared Drizzle DB schema
 │   └── schema.ts
 ├── package.json    # Dependencies and scripts
