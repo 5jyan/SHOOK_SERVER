@@ -5,6 +5,27 @@ import { errorLogger } from "../services/error-logging-service.js";
 
 const router = Router();
 
+// Search for channels
+router.get("/search", isAuthenticated, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query parameter must be a string.' });
+    }
+    const results = await channelService.searchChannels(query);
+    res.json(results);
+  } catch (error) {
+    console.error("[CHANNELS] Error searching channels:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'ChannelRoutes',
+      operation: 'searchChannels',
+      userId: req.user!.id,
+      additionalInfo: { query: req.query.query }
+    });
+    res.status(500).json({ error: "Failed to search channels" });
+  }
+});
+
 // Get user's channels
 router.get("/:userId", isAuthenticated, authorizeUser, async (req, res) => {
   try {
@@ -24,8 +45,9 @@ router.get("/:userId", isAuthenticated, authorizeUser, async (req, res) => {
 // Add new channel
 router.post("/", isAuthenticated, async (req, res) => {
   try {
-    const { handle } = req.body;
-    const result = await channelService.addChannel(req.user!.id, handle);
+    const { channelId } = req.body;
+    console.log("[CHANNELS] Received channelId in POST request:", channelId);
+    const result = await channelService.addChannel(req.user!.id, channelId);
     res.json(result);
   } catch (error) {
     console.error("[CHANNELS] Error adding channel:", error);
@@ -33,7 +55,7 @@ router.post("/", isAuthenticated, async (req, res) => {
       service: 'ChannelRoutes',
       operation: 'addChannel',
       userId: req.user!.id,
-      additionalInfo: { handle: req.body.handle }
+      additionalInfo: { channelId: req.body.channelId }
     });
     res.status(500).json({ error: error instanceof Error ? error.message : "Failed to add channel" });
   }

@@ -23,6 +23,11 @@ export const channelApi = {
   getChannelVideos: async (userId: string): Promise<YoutubeChannel[]> => {
     return apiRequest(`/api/channel-videos/${userId}`);
   },
+
+  searchChannels: async (query: string): Promise<YoutubeChannel[]> => {
+    const response = await apiRequest("GET", `/api/channels/search?query=${encodeURIComponent(query)}`);
+    return response.json();
+  },
 };
 
 // Slack API services

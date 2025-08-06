@@ -1,9 +1,85 @@
+import { google, youtube_v3 } from 'googleapis';
 import { storage } from "../repositories/storage";
 import { validateYouTubeHandle } from "../utils/validation";
 import { errorLogger } from "./error-logging-service";
 import { YoutubeChannel } from "../../shared/schema"; // YoutubeChannel 타입 임포트
 
 export class ChannelService {
+  private youtube: youtube_v3.Youtube;
+
+  constructor() {
+    if (!process.env.YOUTUBE_API_KEY) {
+      console.error("[CHANNEL_SERVICE] YOUTUBE_API_KEY is not set in environment variables.");
+    } else {
+      console.log("[CHANNEL_SERVICE] YOUTUBE_API_KEY is loaded.");
+    }
+    this.youtube = google.youtube({
+      version: 'v3',
+      auth: process.env.YOUTUBE_API_KEY,
+    });
+  }
+
+  async searchChannels(query: string, maxResults = 10) {
+    console.log(`[CHANNEL_SERVICE] Searching for channels with query: ${query}`);
+    try {
+      const searchParams = {
+        part: ['snippet'],
+        q: query,
+        type: ['channel'],
+        maxResults: Math.min(maxResults, 5),
+      };
+      console.log("[CHANNEL_SERVICE] YouTube search.list request params:", searchParams);
+      const searchResponse = await this.youtube.search.list(searchParams);
+      console.log("[CHANNEL_SERVICE] YouTube search.list raw response data:", JSON.stringify(searchResponse.data, null, 2));
+
+      const searchItems = searchResponse.data.items;
+      if (!searchItems || searchItems.length === 0) {
+        console.log("[CHANNEL_SERVICE] No search results found.");
+        return [];
+      }
+
+      const channelIds = searchItems.map((item) => item.id!.channelId!);
+      const channelsParams = {
+        part: ['snippet', 'statistics'],
+        id: channelIds,
+      };
+      console.log("[CHANNEL_SERVICE] YouTube channels.list request params:", channelsParams);
+      const channelsResponse = await this.youtube.channels.list(channelsParams);
+      console.log("[CHANNEL_SERVICE] YouTube channels.list raw response data:", JSON.stringify(channelsResponse.data, null, 2));
+
+      const channelItems = channelsResponse.data.items;
+      if (!channelItems) {
+        console.log("[CHANNEL_SERVICE] No detailed channel information found.");
+        return [];
+      }
+
+      const channels = searchItems.map((searchItem) => {
+        const channelDetail = channelItems.find(
+          (channel) => channel.id === searchItem.id!.channelId!
+        );
+        return {
+          channelId: searchItem.id!.channelId!,
+          handle: channelDetail?.snippet?.customUrl || '',
+          title: searchItem.snippet!.title!,
+          description: searchItem.snippet!.description || '',
+          thumbnail: searchItem.snippet!.thumbnails?.default?.url || '',
+          subscriberCount: channelDetail?.statistics?.subscriberCount || '0',
+          videoCount: channelDetail?.statistics?.videoCount || '0',
+        };
+      });
+
+      console.log("[CHANNEL_SERVICE] Formatted channels for frontend:", channels);
+      return channels;
+    } catch (error) {
+      console.error("[CHANNEL_SERVICE] Error during channel search:", error);
+      await errorLogger.logError(error as Error, {
+        service: 'ChannelService',
+        operation: 'searchChannels',
+        additionalInfo: { query },
+      });
+      throw error;
+    }
+  }
   async getUserChannels(userId: number) {
     console.log(`[CHANNEL_SERVICE] Getting channels for user ${userId}`);
     try {
@@ -36,21 +112,6 @@ export class ChannelService {
 
   // --- Helper functions for addChannel ---
 
-  private validateHandle(handle: string) {
-    const validation = validateYouTubeHandle(handle);
-    if (!validation.isValid) {
-      throw new Error(validation.error);
-    }
-  }
-
-  private async getExistingChannel(handle: string): Promise<YoutubeChannel | undefined> {
-    return await storage.getYoutubeChannelByHandle(handle);
-  }
-
-  private async fetchAndSaveChannel(handle: string): Promise<string> {
-    return await this.fetchChannelFromYouTube(handle);
-  }
-
   private async checkUserSubscription(userId: number, channelId: string) {
     const isSubscribed = await storage.isUserSubscribedToChannel(userId, channelId);
     if (isSubscribed) {
@@ -65,23 +126,20 @@ export class ChannelService {
   }
 
   // --- Main addChannel method ---
-  async addChannel(userId: number, handle: string) {
-    console.log(`[CHANNEL_SERVICE] Adding channel ${handle} for user ${userId}`);
+  async addChannel(userId: number, channelId: string) {
+    console.log(`[CHANNEL_SERVICE] addChannel received channelId: ${channelId} for user ${userId}`);
 
     try {
-      this.validateHandle(handle);
+      const channelInfo = await this.getChannelById(channelId);
 
-      let youtubeChannel = await this.getExistingChannel(handle);
-      let channelId: string;
-
-      if (youtubeChannel) {
-        console.log(`[CHANNEL_SERVICE] Found existing channel:`, youtubeChannel);
-        channelId = youtubeChannel.channelId;
-      } else {
-        channelId = await this.fetchAndSaveChannel(handle);
+      if (!channelInfo) {
+        throw new Error("채널을 찾을 수 없습니다.");
       }
 
       await this.checkUserSubscription(userId, channelId);
+
+      // Save to database if not already exists or update
+      await storage.createOrUpdateYoutubeChannel(channelInfo);
 
       const { subscription, channel } = await this.subscribeUser(userId, channelId);
 
@@ -97,7 +155,7 @@ export class ChannelService {
         service: 'ChannelService',
         operation: 'addChannel',
         userId,
-        additionalInfo: { handle }
+        additionalInfo: { channelId }
       });
       throw error;
     }
@@ -119,52 +177,33 @@ export class ChannelService {
     }
   }
 
-  private async fetchChannelFromYouTube(handle: string): Promise<string> {
+  async getChannelById(channelId: string) {
+    console.log("[CHANNEL_SERVICE] getChannelById called with channelId:", channelId);
     try {
-      const channelHandle = handle.substring(1); // Remove @ from handle
-      const apiKey = process.env.YOUTUBE_API_KEY;
+      const response = await this.youtube.channels.list({
+        part: ['snippet', 'statistics'],
+        id: channelId
+      });
 
-      if (!apiKey) {
-        throw new Error("YouTube API 키가 설정되지 않았습니다");
+      if (!response.data.items || response.data.items.length === 0) {
+        return null;
       }
 
-      const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${channelHandle}&key=${apiKey}`;
-      console.log(`[CHANNEL_SERVICE] Calling YouTube API for handle: ${channelHandle}`);
-
-      const response = await fetch(youtubeApiUrl);
-      if (!response.ok) {
-        throw new Error(`YouTube API 호출 실패: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.items || data.items.length === 0) {
-        throw new Error("채널을 찾을 수 없습니다. 핸들러를 확인해주세요.");
-      }
-
-      const channelData = data.items[0];
-      const channelInfo: YoutubeChannel = { // 타입 명시
-        channelId: channelData.id,
-        handle: handle,
-        title: channelData.snippet.title,
-        description: channelData.snippet.description || "",
-        thumbnail: channelData.snippet.thumbnails?.default?.url || "",
-        subscriberCount: channelData.statistics.subscriberCount || "0",
-        videoCount: channelData.statistics.videoCount || "0",
+      const channel = response.data.items[0];
+      return {
+        channelId: channel.id!,
+        handle: channel.snippet?.customUrl || '',
+        title: channel.snippet!.title!,
+        description: channel.snippet!.description || '',
+        thumbnail: channel.snippet!.thumbnails?.default?.url || '',
+        subscriberCount: channel.statistics?.subscriberCount || '0',
+        videoCount: channel.statistics?.videoCount || '0',
       };
 
-      // Save to database
-      await storage.createOrUpdateYoutubeChannel(channelInfo);
-      console.log(`[CHANNEL_SERVICE] Created new YouTube channel:`, channelInfo);
-
-      return channelData.id;
-    }
-    catch (error) {
-      await errorLogger.logError(error as Error, {
-        service: 'ChannelService',
-        operation: 'fetchChannelFromYouTube',
-        additionalInfo: { handle }
-      });
-      throw error;
+    } catch (error: any) {
+      console.error('[CHANNEL_SERVICE] Full error object in getChannelById:', error);
+      console.error('[CHANNEL_SERVICE] Error in getChannelById:', error.response?.data || error.message);
+      throw new Error('Failed to get channel information');
     }
   }
 }

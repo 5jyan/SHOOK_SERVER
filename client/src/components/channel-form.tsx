@@ -1,26 +1,29 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Youtube, Plus, ArrowLeft } from "lucide-react";
+import { Youtube, Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useChannelSearch } from "@/hooks/use-channel-search";
+import { YoutubeChannel } from "@shared/schema";
 
-interface ChannelFormProps {
-  onBack: () => void;
-}
-
-export function ChannelForm({ onBack }: ChannelFormProps) {
+export function ChannelForm() {
   const { toast } = useToast();
-  const [channelHandle, setChannelHandle] = useState("");
+  const {
+    searchTerm,
+    setSearchTerm,
+    channels,
+    isLoading,
+    error,
+    selectedChannel,
+    setSelectedChannel,
+    clearSearch,
+  } = useChannelSearch();
 
   const addChannelMutation = useMutation({
-    mutationFn: async (handle: string) => {
-      const response = await apiRequest("/api/channels", {
-        method: "POST",
-        body: JSON.stringify({ handle }),
-      });
+    mutationFn: async (channelId: string) => {
+      const response = await apiRequest("POST", "/api/channels", { channelId });
       return response;
     },
     onSuccess: () => {
@@ -28,10 +31,9 @@ export function ChannelForm({ onBack }: ChannelFormProps) {
         title: "채널 추가 성공",
         description: "YouTube 채널이 성공적으로 추가되었습니다.",
       });
-      setChannelHandle("");
+      clearSearch();
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       queryClient.invalidateQueries({ queryKey: ["/api/channel-videos"] });
-      onBack();
     },
     onError: (error: any) => {
       toast({
@@ -43,94 +45,100 @@ export function ChannelForm({ onBack }: ChannelFormProps) {
   });
 
   const handleAddChannel = async () => {
-    if (!channelHandle.trim()) {
+    if (!selectedChannel) {
       toast({
-        title: "핸들러 입력 필요",
-        description: "YouTube 채널 핸들러를 입력해주세요.",
+        title: "채널 선택 필요",
+        description: "먼저 검색하여 채널을 선택해주세요.",
         variant: "destructive",
       });
       return;
     }
-
-    if (!channelHandle.startsWith("@")) {
-      toast({
-        title: "올바른 형식 입력",
-        description: "핸들러는 @로 시작해야 합니다. (예: @channelname)",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    addChannelMutation.mutate(channelHandle.trim());
+    addChannelMutation.mutate(selectedChannel.channelId);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleAddChannel();
+    if (e.key === "Enter" && !isLoading && channels.length > 0) {
+      // Optionally, select the first channel or trigger a specific action
     }
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-4">
-        <div className="flex items-center gap-3">
+    <div className="space-y-4 p-1">
+      <div>
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+          채널 이름 검색
+        </label>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          추가하려는 YouTube 채널의 이름을 검색해주세요.
+        </p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="채널 이름 입력"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="pl-10"
+              disabled={isLoading || addChannelMutation.isPending}
+            />
+          </div>
           <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="p-2 h-auto"
+            onClick={handleAddChannel}
+            disabled={!selectedChannel || addChannelMutation.isPending}
+            className="flex items-center gap-2 flex-shrink-0"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <Plus className="h-4 w-4" />
+            {addChannelMutation.isPending ? "추가 중..." : "채널 추가"}
           </Button>
-          <div className="flex items-center gap-3">
-            <Youtube className="h-6 w-6 text-red-600" />
-            <CardTitle>YouTube 채널 추가</CardTitle>
-          </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-            채널 핸들러
-          </label>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-            YouTube 채널의 핸들러를 @로 시작해서 입력해주세요. (예: @channelname)
-          </p>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Youtube className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="@channelname"
-                value={channelHandle}
-                onChange={(e) => setChannelHandle(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="pl-10"
-                disabled={addChannelMutation.isPending}
-              />
-            </div>
-            <Button
-              onClick={handleAddChannel}
-              disabled={!channelHandle.trim() || addChannelMutation.isPending}
-              className="flex items-center gap-2 flex-shrink-0"
-            >
-              <Plus className="h-4 w-4" />
-              {addChannelMutation.isPending ? "추가 중..." : "채널 추가"}
-            </Button>
+        {isLoading && <p className="text-sm text-gray-500 mt-2">검색 중...</p>}
+        {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
+        {channels.length > 0 && (
+          <div className="mt-4 border rounded-md max-h-60 overflow-y-auto">
+            {channels.map((channel: YoutubeChannel) => (
+              <div
+                key={channel.channelId}
+                className={`flex items-center p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                  selectedChannel?.channelId === channel.channelId ? "bg-gray-200 dark:bg-gray-700" : ""
+                }`}
+                onClick={() => setSelectedChannel(channel)}
+              >
+                <img
+                  src={channel.thumbnail}
+                  alt={channel.title}
+                  className="w-8 h-8 rounded-full mr-2"
+                />
+                <p className="text-sm font-medium">{channel.title}</p>
+              </div>
+            ))}
           </div>
-        </div>
-        
-        <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-          <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-            💡 채널 핸들러 찾는 방법
+        )}
+      </div>
+      
+      {selectedChannel && (
+        <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
+          <h4 className="text-sm font-medium text-green-900 dark:text-green-100 mb-2">
+            선택된 채널:
           </h4>
-          <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-            <li>1. YouTube에서 원하는 채널로 이동</li>
-            <li>2. 채널 홈페이지의 URL에서 @로 시작하는 부분 확인</li>
-            <li>3. 예: youtube.com/c/channelname → @channelname</li>
-          </ol>
+          <div className="flex items-center">
+            <img
+              src={selectedChannel.thumbnail}
+              alt={selectedChannel.title}
+              className="w-10 h-10 rounded-full mr-3"
+            />
+            <div>
+              <p className="font-bold text-green-800 dark:text-green-200">
+                {selectedChannel.title}
+              </p>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                구독자: {selectedChannel.subscriberCount}
+              </p>
+            </div>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }
