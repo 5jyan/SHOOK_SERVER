@@ -23,7 +23,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserEmail(userId: number, email: string): Promise<void>;
-  updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackJoinedAt: Date }): Promise<void>;
+  updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackEmail: string; slackJoinedAt: Date }): Promise<void>;
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
@@ -89,13 +89,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId));
   }
 
-  async updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackJoinedAt: Date }): Promise<void> {
+  async updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackEmail: string; slackJoinedAt: Date }): Promise<void> {
     console.log("[storage.ts]: Calling updateUserSlackInfo");
     await db
       .update(users)
       .set({
         slackUserId: slackInfo.slackUserId,
         slackChannelId: slackInfo.slackChannelId,
+        slackEmail: slackInfo.slackEmail,
         slackJoinedAt: slackInfo.slackJoinedAt
       })
       .where(eq(users.id, userId));

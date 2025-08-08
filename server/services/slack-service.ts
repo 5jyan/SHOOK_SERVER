@@ -56,10 +56,11 @@ export class SlackServiceExtended {
     return channel;
   }
 
-  private async updateUserSlackInfoInDb(userId: number, slackUserId: string, slackChannelId: string) {
+  private async updateUserSlackInfoInDb(userId: number, slackUserId: string, slackChannelId: string, slackEmail: string) {
     await storage.updateUserSlackInfo(userId, {
       slackUserId: slackUserId,
       slackChannelId: slackChannelId,
+      slackEmail: slackEmail,
       slackJoinedAt: new Date()
     });
   }
@@ -84,7 +85,7 @@ export class SlackServiceExtended {
       const channelName = `${user.username}님의_채널`;
       const channel = await this.createAndInviteChannel(channelName, user.username, slackUser.id);
 
-      await this.updateUserSlackInfoInDb(user.id, slackUser.id, channel.id);
+      await this.updateUserSlackInfoInDb(user.id, slackUser.id, channel.id, email);
       await this.slackService.inviteAdminToChannel(channel.id);
       await this.sendWelcomeMessageToChannel(channel.id, user.username);
       await this.sendExistingChannelSummaries(user.id, channel.id);

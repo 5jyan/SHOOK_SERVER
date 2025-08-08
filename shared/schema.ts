@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   authProvider: text("auth_provider").notNull().default('local'),
   slackUserId: text("slack_user_id"),
   slackChannelId: text("slack_channel_id"),
+  slackEmail: text("slack_email"),
   slackJoinedAt: timestamp("slack_joined_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });

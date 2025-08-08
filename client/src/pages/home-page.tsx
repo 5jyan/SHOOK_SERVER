@@ -43,7 +43,7 @@ export default function HomePage() {
 
   // Slack 초대 링크를 상수로 정의합니다.
   const SLACK_INVITE_URL =
-    "https://join.slack.com/t/newsfeed-fcm6025/shared_invite/zt-38tfhkqx0-kKR5RJe43a8LbbnP4ei5ww";
+    "https://join.slack.com/t/shook-b7z7159/shared_invite/zt-3azixqjae-L3EoCGHYgX~IBJ9t4xmvpg";
 
   // Query to get user's channels
   const {
