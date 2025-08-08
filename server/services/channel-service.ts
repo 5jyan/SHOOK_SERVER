@@ -164,7 +164,18 @@ export class ChannelService {
   async deleteChannel(userId: number, channelId: string) {
     console.log(`[CHANNEL_SERVICE] Deleting channel ${channelId} for user ${userId}`);
     try {
+      // First unsubscribe the user from the channel
       await storage.unsubscribeUserFromChannel(userId, channelId);
+      
+      // Check if any users are still subscribed to this channel
+      const subscriberCount = await storage.getChannelSubscriberCount(channelId);
+      console.log(`[CHANNEL_SERVICE] Channel ${channelId} has ${subscriberCount} remaining subscribers`);
+      
+      // If no users are connected to this channel, remove it from youtube_channels table
+      if (subscriberCount === 0) {
+        console.log(`[CHANNEL_SERVICE] No users connected to channel ${channelId}, removing from youtube_channels table`);
+        await storage.deleteYoutubeChannel(channelId);
+      }
     }
     catch (error) {
       await errorLogger.logError(error as Error, {
