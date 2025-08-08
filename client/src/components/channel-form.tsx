@@ -100,8 +100,10 @@ export function ChannelForm() {
             {channels.map((channel: YoutubeChannel) => (
               <div
                 key={channel.channelId}
-                className={`flex items-center p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  selectedChannel?.channelId === channel.channelId ? "bg-gray-200 dark:bg-gray-700" : ""
+                className={`flex items-center p-2 cursor-pointer transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 ${
+                  selectedChannel?.channelId === channel.channelId 
+                    ? "bg-gray-200 dark:bg-gray-700" 
+                    : ""
                 }`}
                 onClick={() => setSelectedChannel(channel)}
               >
@@ -116,29 +118,6 @@ export function ChannelForm() {
           </div>
         )}
       </div>
-      
-      {selectedChannel && (
-        <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
-          <h4 className="text-sm font-medium text-green-900 dark:text-green-100 mb-2">
-            선택된 채널:
-          </h4>
-          <div className="flex items-center">
-            <img
-              src={selectedChannel.thumbnail}
-              alt={selectedChannel.title}
-              className="w-10 h-10 rounded-full mr-3"
-            />
-            <div>
-              <p className="font-bold text-green-800 dark:text-green-200">
-                {selectedChannel.title}
-              </p>
-              <p className="text-sm text-green-700 dark:text-green-300">
-                구독자: {selectedChannel.subscriberCount}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
