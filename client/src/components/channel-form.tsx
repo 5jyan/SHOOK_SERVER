@@ -8,7 +8,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useChannelSearch } from "@/hooks/use-channel-search";
 import { YoutubeChannel } from "@shared/schema";
 
-export function ChannelForm() {
+interface ChannelFormProps {
+  channelCount: number;
+}
+
+export function ChannelForm({ channelCount }: ChannelFormProps) {
   const { toast } = useToast();
   const {
     searchTerm,
@@ -20,6 +24,8 @@ export function ChannelForm() {
     setSelectedChannel,
     clearSearch,
   } = useChannelSearch();
+
+  const isChannelLimitReached = channelCount >= 3;
 
   const addChannelMutation = useMutation({
     mutationFn: async (channelId: string) => {
@@ -76,17 +82,17 @@ export function ChannelForm() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               type="text"
-              placeholder="채널 이름 입력"
+              placeholder={isChannelLimitReached ? "채널 추가 최대 개수에 도달했습니다." : "채널 이름 입력"}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={handleKeyPress}
               className="pl-10"
-              disabled={isLoading || addChannelMutation.isPending}
+              disabled={isLoading || addChannelMutation.isPending || isChannelLimitReached}
             />
           </div>
           <Button
             onClick={handleAddChannel}
-            disabled={!selectedChannel || addChannelMutation.isPending}
+            disabled={!selectedChannel || addChannelMutation.isPending || isChannelLimitReached}
             className="flex items-center gap-2 flex-shrink-0"
           >
             <Plus className="h-4 w-4" />

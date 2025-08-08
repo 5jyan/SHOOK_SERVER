@@ -295,7 +295,7 @@ export default function HomePage() {
             <CardContent>
               {/* Channel Add Form */}
               <div className="mb-2">
-                <ChannelForm />
+                <ChannelForm channelCount={channels.length} />
               </div>
 
               {/* Channel List */}
