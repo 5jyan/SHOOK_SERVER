@@ -134,7 +134,7 @@ export class SlackService {
         `[SLACK_SERVICE] Current time: ${time}, Request time: ${timestamp}, Difference: ${timeDiff}s`,
       );
 
-      if (timeDiff > 300) {
+      if (timeDiff > 150) {
         console.log(
           `[SLACK_SERVICE] Request timestamp too old: ${timeDiff}s > 300s`,
         );
