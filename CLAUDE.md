@@ -55,7 +55,7 @@ Located at: `Desktop\workspace\` and `Desktop\workspace2\`
 - Frontend: React 18, TypeScript, Vite, Wouter (routing), Tailwind CSS v4, Shadcn/ui, TanStack Query
 - Backend: Node.js, Express.js, TypeScript (ESM), Drizzle ORM, PostgreSQL (Neon)
 - Authentication: Passport.js with local strategy (username/password), session-based
-- External APIs: YouTube Data API v3, SupaData API, Anthropic Claude API, Slack Web API
+- External APIs: YouTube Data API v3, SupaData API, OpenAI API, Slack Web API
 
 **Directory Structure:**
 ```
@@ -123,7 +123,7 @@ Located at: `Desktop\workspace\` and `Desktop\workspace2\`
 DATABASE_URL=postgresql://...           # Neon PostgreSQL connection
 SESSION_SECRET=random_string           # Session encryption
 YOUTUBE_API_KEY=google_cloud_key      # YouTube Data API v3
-ANTHROPIC_API_KEY=claude_api_key      # Claude AI for summarization  
+OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization  
 SLACK_BOT_TOKEN=xoxb-...              # Slack Bot OAuth token
 SLACK_CHANNEL_ID=debug_channel        # For error logging
 ```
@@ -131,7 +131,7 @@ SLACK_CHANNEL_ID=debug_channel        # For error logging
 ### API Usage Patterns
 - **YouTube Data API**: Channel search, metadata retrieval, RSS feed parsing (10K daily quota)
 - **SupaData API**: Video transcript/caption extraction with retry logic (rate limited)
-- **Anthropic Claude API**: AI-powered video summarization in Korean using Claude Sonnet 4
+- **OpenAI API**: AI-powered video summarization in Korean using GPT models
 - **Slack Web API**: Bot integration for user invites, private channel creation, formatted message posting
 
 ## Development Guidelines
@@ -224,7 +224,7 @@ npm run start    # Starts production server
 2. **Content Filtering**: Skip YouTube Shorts, process only regular video uploads  
 3. **Change Detection**: Compare new video IDs with stored `recentVideoId` in database
 4. **Transcript Extraction**: Use SupaData API to get video captions/transcripts
-5. **AI Summarization**: Generate Korean summaries using Anthropic Claude API
+5. **AI Summarization**: Generate Korean summaries using OpenAI API
 6. **Slack Delivery**: Send formatted notifications to user's private Slack channels
 7. **State Persistence**: Update database with processing state and results
 

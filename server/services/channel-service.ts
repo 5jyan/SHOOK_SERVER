@@ -81,7 +81,7 @@ export class ChannelService {
     }
   }
   async getUserChannels(userId: number) {
-    console.log(`[CHANNEL_SERVICE] Getting channels for user ${userId}`);
+    console.log(`[CHANNEL_SERVICE] getUserChannels for user ${userId}`);
     try {
       return await storage.getUserChannels(userId);
     }
@@ -96,7 +96,7 @@ export class ChannelService {
   }
 
   async getChannelVideos(userId: number) {
-    console.log(`[CHANNEL_SERVICE] Getting channel videos for user ${userId}`);
+    console.log(`[CHANNEL_SERVICE] getChannelVideos for user ${userId}`);
     try {
       return await storage.getChannelVideos(userId);
     }
@@ -113,6 +113,7 @@ export class ChannelService {
   // --- Helper functions for addChannel ---
 
   private async checkUserSubscription(userId: number, channelId: string) {
+    console.log(`[CHANNEL_SERVICE] checkUserSubscription for user ${userId} and channel ${channelId}`);
     const isSubscribed = await storage.isUserSubscribedToChannel(userId, channelId);
     if (isSubscribed) {
       throw new Error("이미 추가된 채널입니다");
@@ -120,6 +121,7 @@ export class ChannelService {
   }
 
   private async subscribeUser(userId: number, channelId: string) {
+    console.log(`[CHANNEL_SERVICE] subscribeUser for user ${userId} and channel ${channelId}`);
     const subscription = await storage.subscribeUserToChannel(userId, channelId);
     const channel = await storage.getYoutubeChannel(channelId);
     return { subscription, channel };
@@ -139,6 +141,7 @@ export class ChannelService {
       await this.checkUserSubscription(userId, channelId);
 
       // Save to database if not already exists or update
+      console.log(`[CHANNEL_SERVICE] createOrUpdateYoutubeChannel for channel ${channelInfo.channelId}`);
       await storage.createOrUpdateYoutubeChannel(channelInfo);
 
       const { subscription, channel } = await this.subscribeUser(userId, channelId);
@@ -162,18 +165,20 @@ export class ChannelService {
   }
 
   async deleteChannel(userId: number, channelId: string) {
-    console.log(`[CHANNEL_SERVICE] Deleting channel ${channelId} for user ${userId}`);
+    console.log(`[CHANNEL_SERVICE] deleteChannel for user ${userId} and channel ${channelId}`);
     try {
       // First unsubscribe the user from the channel
+      console.log(`[CHANNEL_SERVICE] unsubscribeUserFromChannel for user ${userId} and channel ${channelId}`);
       await storage.unsubscribeUserFromChannel(userId, channelId);
       
       // Check if any users are still subscribed to this channel
+      console.log(`[CHANNEL_SERVICE] getChannelSubscriberCount for channel ${channelId}`);
       const subscriberCount = await storage.getChannelSubscriberCount(channelId);
       console.log(`[CHANNEL_SERVICE] Channel ${channelId} has ${subscriberCount} remaining subscribers`);
       
       // If no users are connected to this channel, remove it from youtube_channels table
       if (subscriberCount === 0) {
-        console.log(`[CHANNEL_SERVICE] No users connected to channel ${channelId}, removing from youtube_channels table`);
+        console.log(`[CHANNEL_SERVICE] deleteYoutubeChannel for channel ${channelId}`);
         await storage.deleteYoutubeChannel(channelId);
       }
     }

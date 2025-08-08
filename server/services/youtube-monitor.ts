@@ -113,6 +113,7 @@ export class YouTubeMonitor {
   // --- Helper functions for processChannelVideo ---
 
   private async updateChannelVideoInfo(channel: any, latestVideo: RSSVideo) {
+    console.log(`[YOUTUBE_MONITOR] updateChannelVideoInfo for channel ${channel.channelId}`);
     await db
       .update(youtubeChannels)
       .set({
@@ -124,9 +125,6 @@ export class YouTubeMonitor {
         caption: null,
       })
       .where(eq(youtubeChannels.channelId, channel.channelId));
-    console.log(
-      `[YOUTUBE_MONITOR] Updated channel ${channel.channelId} with new video info`,
-    );
   }
 
   private async generateSummary(videoUrl: string) {
@@ -137,18 +135,17 @@ export class YouTubeMonitor {
   }
 
   private async saveSummaryToChannel(channelId: string, summary: string) {
+    console.log(`[YOUTUBE_MONITOR] saveSummaryToChannel for channel ${channelId}`);
     await db
       .update(youtubeChannels)
       .set({
         caption: summary,
       })
       .where(eq(youtubeChannels.channelId, channelId));
-    console.log(
-      `[YOUTUBE_MONITOR] Generated and saved summary for video: ${channelId}`,
-    );
   }
 
   private async findSubscribedUsers(channelId: string) {
+    console.log(`[YOUTUBE_MONITOR] findSubscribedUsers for channel ${channelId}`);
     const subscribedUsers = await db
       .select({
         userId: users.id,
@@ -157,9 +154,6 @@ export class YouTubeMonitor {
       .from(userChannels)
       .innerJoin(users, eq(userChannels.userId, users.id))
       .where(eq(userChannels.channelId, channelId));
-    console.log(
-      `[YOUTUBE_MONITOR] Found ${subscribedUsers.length} subscribed users for channel ${channelId}`,
-    );
     return subscribedUsers;
   }
 
@@ -171,14 +165,7 @@ export class YouTubeMonitor {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${channelTitle}의 새 영상 알림*`,
-          },
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*제목:* ${videoTitle}\n*링크:* <${videoUrl}|YouTube에서 보기>`,
+            text: `*유튜버:* ${channelTitle}\n*제목:* ${videoTitle}\n*링크:* <${videoUrl}|YouTube에서 보기>`,
           },
         },
         {
@@ -188,7 +175,7 @@ export class YouTubeMonitor {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*요약:*\\n${summary}`,
+            text: `${summary}`,
           },
         },
       ],
@@ -218,6 +205,7 @@ export class YouTubeMonitor {
   }
 
   private async markChannelProcessed(channelId: string, error: Error | null = null) {
+    console.log(`[YOUTUBE_MONITOR] markChannelProcessed for channel ${channelId}`);
     await db
       .update(youtubeChannels)
       .set({
@@ -225,11 +213,6 @@ export class YouTubeMonitor {
         errorMessage: error ? error.message : null,
       })
       .where(eq(youtubeChannels.channelId, channelId));
-    if (error) {
-      console.error(`[YOUTUBE_MONITOR] Marked channel ${channelId} as processed with error: ${error.message}`);
-    } else {
-      console.log(`[YOUTUBE_MONITOR] Marked channel ${channelId} as processed`);
-    }
   }
 
   // 채널의 최신 영상 정보 처리
@@ -312,11 +295,12 @@ export class YouTubeMonitor {
   // 모든 구독 채널 모니터링
   public async monitorAllChannels(): Promise<void> {
     console.log(
-      `[YOUTUBE_MONITOR] Starting channel monitoring cycle at ${new Date().toISOString()}`,
+      `[YOUTUBE_MONITOR] monitorAllChannels at ${new Date().toISOString()}`,
     );
 
     try {
       // 모든 YouTube 채널 가져오기
+      console.log(`[YOUTUBE_MONITOR] monitorAllChannels - fetching all channels`);
       const channels = await db.select().from(youtubeChannels);
       console.log(`[YOUTUBE_MONITOR] Monitoring ${channels.length} channels`);
 

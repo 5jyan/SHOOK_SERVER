@@ -62,6 +62,10 @@ export function ChannelForm({ channelCount }: ChannelFormProps) {
     addChannelMutation.mutate(selectedChannel.channelId);
   };
 
+  const handleDoubleClick = (channel: YoutubeChannel) => {
+    addChannelMutation.mutate(channel.channelId);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !isLoading && channels.length > 0) {
       // Optionally, select the first channel or trigger a specific action
@@ -112,6 +116,7 @@ export function ChannelForm({ channelCount }: ChannelFormProps) {
                     : ""
                 }`}
                 onClick={() => setSelectedChannel(channel)}
+                onDoubleClick={() => handleDoubleClick(channel)}
               >
                 <img
                   src={channel.thumbnail}

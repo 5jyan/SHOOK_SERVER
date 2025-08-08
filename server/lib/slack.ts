@@ -399,10 +399,11 @@ export class SlackService {
     return channel;
   }
 
-  private async updateDbWithSlackInfo(userId: number, slackUserId: string, slackChannelId: string) {
+  private async updateDbWithSlackInfo(userId: number, slackUserId: string, slackChannelId: string, slackEmail: string) {
     await storage.updateUserSlackInfo(userId, {
       slackUserId: slackUserId,
       slackChannelId: slackChannelId,
+      slackEmail: slackEmail,
       slackJoinedAt: new Date(),
     });
     console.log(`[SLACK_SERVICE] Successfully updated database with Slack info for user ${userId}`);
@@ -444,7 +445,7 @@ export class SlackService {
 
       const channel = await this.createAndInviteUserChannel(user, event.user.id);
 
-      await this.updateDbWithSlackInfo(user.id, event.user.id, channel.id);
+      await this.updateDbWithSlackInfo(user.id, event.user.id, channel.id, event.user.email);
       await this.inviteAdminToChannel(channel.id);
       await this.sendWelcomeMessage(channel.id, user.username);
 

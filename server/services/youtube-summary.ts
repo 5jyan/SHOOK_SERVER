@@ -1,29 +1,29 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { errorLogger } from "./error-logging-service.js";
 import { validateYouTubeUrl } from "../utils/validation.js";
 
 // <important_do_not_delete>
-const DEFAULT_MODEL_STR = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL_STR = "gpt-5";
 // </important_do_not_delete>
 
 export class YouTubeSummaryService {
-  private anthropic: Anthropic;
+  private openai: OpenAI;
 
   constructor() {
     console.log(`[YOUTUBE_SUMMARY] Initializing YouTube Summary service...`);
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       console.error(
-        `[YOUTUBE_SUMMARY] ANTHROPIC_API_KEY environment variable is missing`,
+        `[YOUTUBE_SUMMARY] OPENAI_API_KEY environment variable is missing`,
       );
-      throw new Error("ANTHROPIC_API_KEY environment variable must be set");
+      throw new Error("OPENAI_API_KEY environment variable must be set");
     }
 
-    this.anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
-    console.log(`[YOUTUBE_SUMMARY] Anthropic client initialized successfully`);
+    console.log(`[YOUTUBE_SUMMARY] OpenAI client initialized successfully`);
   }
 
   /**
@@ -51,6 +51,7 @@ export class YouTubeSummaryService {
       method: "GET",
       headers: requestHeaders,
     });
+    console.log(`[YOUTUBE_SUMMARY] Received response from SupaData API.`);
 
     const responseText = await response.text();
 
@@ -134,28 +135,30 @@ export class YouTubeSummaryService {
     }
   }
 
-  private _buildAnthropicPrompt(transcript: string, youtubeUrl: string): string {
-    return `다음은 YouTube 영상(${youtubeUrl})의 자막입니다. 이 내용을 한국어로 명확하고 체계적으로 정리해주세요. mrkdwn 형식을 사용해주세요.\n\n자막 내용:\n${transcript}`;
+  private _buildOpenAIPrompt(transcript: string, youtubeUrl: string): string {
+    return `다음 내용을 한국어로 명확하고 체계적으로 정리해주세요. 요약 필요한 내용: ${transcript}
+    정리는 꼭 mrkdwn 형식을 사용해주세요. 예시: 1. *핵심 내용*\n - 세부 내용1\n - 세부내용2\n
+    요약 정리 내용 외 다른 내용은 모두 제거하세요.`;
   }
 
   /**
-   * Claude API를 사용하여 자막 요약
+   * OpenAI API를 사용하여 자막 요약
    */
   async summarizeTranscript(
     transcript: string,
     youtubeUrl: string,
   ): Promise<string> {
     try {
-      console.log(`[YOUTUBE_SUMMARY] Summarizing transcript with Claude...`);
+      console.log(`[YOUTUBE_SUMMARY] Summarizing transcript with OpenAI...`);
       console.log(
         `[YOUTUBE_SUMMARY] Transcript length: ${transcript.length} characters`,
       );
 
-      const prompt = this._buildAnthropicPrompt(transcript, youtubeUrl);
+      const prompt = this._buildOpenAIPrompt(transcript, youtubeUrl);
 
-      const response = await this.anthropic.messages.create({
-        model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
-        max_tokens: 4096,
+      console.log(`[YOUTUBE_SUMMARY] Requesting summary from OpenAI API...`);
+      const response = await this.openai.chat.completions.create({
+        model: DEFAULT_MODEL_STR, // "gpt-4o-mini"
         messages: [
           {
             role: "user",
@@ -163,15 +166,15 @@ export class YouTubeSummaryService {
           },
         ],
       });
+      console.log(`[YOUTUBE_SUMMARY] Received response from OpenAI API.`);
 
-      console.log(`[YOUTUBE_SUMMARY] Claude API response received`);
+      console.log(`[YOUTUBE_SUMMARY] OpenAI API response received`);
 
-      if (!response.content || response.content.length === 0) {
+      if (!response.choices || response.choices.length === 0) {
         throw new Error("요약 생성 실패");
       }
 
-      const summary =
-        response.content[0].type === "text" ? response.content[0].text : "";
+      const summary = response.choices[0].message.content || "";
       console.log(
         `[YOUTUBE_SUMMARY] Summary generated, length: ${summary.length} characters`,
       );
