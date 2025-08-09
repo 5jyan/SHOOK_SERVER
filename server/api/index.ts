@@ -3,6 +3,8 @@ import channelRoutes from "./channels.js";
 import googleRoutes from "./google.js";
 import slackRoutes from "./slack.js";
 import summaryRoutes from "./summary.js";
+import videoRoutes from "./videos.js";
+import userRoutes from "./user.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { channelService } from "../services/index.js";
 import { errorLogger } from "../services/error-logging-service.js";
@@ -11,12 +13,17 @@ import authRoutes from "./auth.js";
 
 const router = Router();
 
+console.log('✅ Main API router loaded');
+
 router.use("/", authRoutes);
 
 router.use("/channels", channelRoutes);
+console.log('📋 Registering Google routes at /auth/google');
 router.use("/auth/google", googleRoutes);
 router.use("/slack", slackRoutes);
 router.use("/summary", summaryRoutes);
+router.use("/videos", videoRoutes);
+router.use("/user", userRoutes);
 
 // GET /api/channel-videos/:userId
 router.get("/channel-videos/:userId", isAuthenticated, authorizeUser, async (req, res) => {

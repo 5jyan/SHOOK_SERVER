@@ -27,9 +27,12 @@ app.use(passport.session());
 
 setupPassport();
 
-// Add a very early log for all POST requests
-app.post('*', (req, res, next) => {
-  console.log('Backend: Received ANY POST request to', req.path, 'with body:', req.body);
+// Add logging for ALL requests
+app.use('*', (req, res, next) => {
+  console.log(`Backend: ${req.method} ${req.originalUrl} - Headers:`, JSON.stringify(req.headers, null, 2));
+  if (req.method === 'POST') {
+    console.log('Backend: POST Body:', JSON.stringify(req.body, null, 2));
+  }
   next();
 });
 

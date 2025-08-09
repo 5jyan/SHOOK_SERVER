@@ -6,6 +6,10 @@ import { eq } from 'drizzle-orm';
 
 const router = Router();
 
+console.log('✅ Google router loaded with routes:');
+console.log('- POST /verify');
+console.log('- POST /mobile/login');
+
 async function verifyGoogleToken(token: string) {
   const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
   console.log('Backend: Verifying Google token...');
@@ -73,6 +77,34 @@ router.post('/verify', async (req, res) => {
     console.error('Backend: Google verification or login error:', error);
     if (error instanceof Error) {
       res.status(400).json({ message: error.message }); // 클라이언트에게 더 구체적인 오류 메시지 전달
+    } else {
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+});
+
+// Temporary mobile login endpoint for development/testing
+router.post('/mobile/login', async (req, res) => {
+  const { email, username } = req.body;
+  console.log('Backend: Received request to /api/auth/google/mobile/login');
+  console.log('Backend: Email:', email, 'Username:', username);
+
+  try {
+    if (!email || !username) {
+      return res.status(400).json({ message: 'Email and username are required' });
+    }
+
+    // For mobile testing, use email as googleId
+    const googleId = `mobile_${email}`;
+    
+    const user = await findOrCreateUser(googleId, email, username);
+
+    await handleSessionLogin(req, res, user);
+
+  } catch (error) {
+    console.error('Backend: Mobile login error:', error);
+    if (error instanceof Error) {
+      res.status(400).json({ message: error.message });
     } else {
       res.status(500).json({ message: 'Internal server error' });
     }

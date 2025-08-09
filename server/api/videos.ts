@@ -1,0 +1,80 @@
+import { Router } from "express";
+import { isAuthenticated } from "../utils/auth-utils.js";
+// import { channelService } from "../services/index.js";
+import { storage } from "../repositories/storage.js";
+import { errorLogger } from "../services/error-logging-service.js";
+
+const router = Router();
+
+// GET /api/videos - Get all videos for authenticated user
+router.get("/", isAuthenticated, async (req, res) => {
+  const userId = req.user!.id;
+  const username = req.user!.username;
+  
+  try {
+    console.log(`[VIDEOS] Getting videos for user ${userId} (${username})`);
+    
+    // Get limit from query parameter (default: 50, max: 100)
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    console.log(`[VIDEOS] Requesting ${limit} videos`);
+    
+    // Bypass service layer to avoid circular import issues
+    const videos = await storage.getVideosForUser(userId);
+    
+    console.log(`[VIDEOS] Successfully retrieved ${videos.length} videos for user ${userId}`);
+    console.log(`[VIDEOS] Sample video data:`, videos.slice(0, 2));
+    
+    res.json(videos);
+  } catch (error) {
+    console.error(`[VIDEOS] Error getting videos for user ${userId}:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'VideosRoute',
+      operation: 'getVideos',
+      userId
+    });
+    res.status(500).json({ error: "Failed to get videos." });
+  }
+});
+
+// POST /api/videos/sample - Create sample data for testing (development only)
+router.post("/sample", isAuthenticated, async (req, res) => {
+  const userId = req.user!.id;
+  
+  try {
+    console.log(`[VIDEOS] Creating sample data for user ${userId}`);
+    
+    // This is just for testing - in real app, videos are created by the monitoring system
+    const sampleVideos = [
+      {
+        videoId: "dQw4w9WgXcQ",
+        channelId: "UCuAXFkgsw1L7xaCfnd5JJOw", // Sample channel ID
+        title: "리액트 네이티브 완전 정복하기 - 2024년 최신 가이드",
+        publishedAt: new Date("2024-01-15T08:00:00Z"),
+        summary: "리액트 네이티브의 최신 기능들과 함께 완전한 앱 개발 가이드를 제공합니다. Expo SDK 50의 새로운 기능들과 성능 최적화 방법에 대해 자세히 다룹니다.",
+        transcript: "안녕하세요 여러분, 오늘은 리액트 네이티브에 대해 알아보겠습니다...",
+        processed: true,
+        errorMessage: null
+      },
+      {
+        videoId: "abc123xyz",
+        channelId: "UCuAXFkgsw1L7xaCfnd5JJOw",
+        title: "TypeScript 고급 패턴과 실무 활용법",
+        publishedAt: new Date("2024-01-14T12:00:00Z"),
+        summary: "TypeScript의 고급 타입 시스템을 활용하여 더 안전하고 유지보수가 쉬운 코드를 작성하는 방법을 알아봅니다.",
+        transcript: "TypeScript는 JavaScript의 상위집합으로...",
+        processed: true,
+        errorMessage: null
+      }
+    ];
+    
+    res.json({ 
+      message: "Sample data creation endpoint - implement if needed for testing",
+      sampleCount: sampleVideos.length 
+    });
+  } catch (error) {
+    console.error(`[VIDEOS] Error creating sample data:`, error);
+    res.status(500).json({ error: "Failed to create sample data" });
+  }
+});
+
+export default router;

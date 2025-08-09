@@ -13,7 +13,7 @@ import {
   type InsertVideo
 } from "@shared/schema";
 import { db } from "../lib/db";
-import { eq, and, isNotNull, desc } from "drizzle-orm";
+import { eq, and, isNotNull, desc, inArray } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "../lib/db";
@@ -243,13 +243,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVideosForUser(userId: number, limit: number = 20): Promise<Video[]> {
-    console.log("[storage.ts] getVideosForUser");
-    const subscribedChannels = await db.select({ channelId: userChannels.channelId }).from(userChannels).where(eq(userChannels.userId, userId));
+    console.log(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}`);
+    
+    // First get all channels the user is subscribed to
+    const subscribedChannels = await db
+      .select({ channelId: userChannels.channelId })
+      .from(userChannels)
+      .where(eq(userChannels.userId, userId));
+    
+    console.log(`[storage.ts] User ${userId} is subscribed to ${subscribedChannels.length} channels`);
+    
     if (subscribedChannels.length === 0) {
       return [];
     }
+    
     const channelIds = subscribedChannels.map(c => c.channelId);
-    return db.select().from(videos).where(eq(videos.channelId, channelIds)).orderBy(desc(videos.publishedAt)).limit(limit);
+    console.log(`[storage.ts] Fetching videos for channels:`, channelIds);
+    
+    // Get videos from subscribed channels, ordered by publish date
+    const userVideos = await db
+      .select()
+      .from(videos)
+      .where(inArray(videos.channelId, channelIds))
+      .orderBy(desc(videos.publishedAt))
+      .limit(limit);
+    
+    console.log(`[storage.ts] Found ${userVideos.length} videos for user ${userId}`);
+    return userVideos;
   }
 
   async findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]> {
