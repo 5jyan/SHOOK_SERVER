@@ -1,9 +1,8 @@
-import { eq } from "drizzle-orm";
-import { db } from "../lib/db.js";
-import { youtubeChannels, userChannels, users } from "../../shared/schema.js";
+import { storage } from "../repositories/storage.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
 import { SlackService } from "../lib/slack.js";
 import { errorLogger } from "./error-logging-service.js";
+import { YoutubeChannel, Video } from "../../shared/schema.js";
 
 interface RSSVideo {
   videoId: string;
@@ -110,53 +109,6 @@ export class YouTubeMonitor {
     }
   }
 
-  // --- Helper functions for processChannelVideo ---
-
-  private async updateChannelVideoInfo(channel: any, latestVideo: RSSVideo) {
-    console.log(`[YOUTUBE_MONITOR] updateChannelVideoInfo for channel ${channel.channelId}`);
-    await db
-      .update(youtubeChannels)
-      .set({
-        recentVideoId: latestVideo.videoId,
-        recentVideoTitle: latestVideo.title,
-        videoPublishedAt: latestVideo.publishedAt,
-        processed: false,
-        errorMessage: null,
-        caption: null,
-      })
-      .where(eq(youtubeChannels.channelId, channel.channelId));
-  }
-
-  private async generateSummary(videoUrl: string) {
-    console.log(
-      `[YOUTUBE_MONITOR] Extracting transcript and generating summary for: ${videoUrl}`,
-    );
-    return await this.summaryService.processYouTubeUrl(videoUrl);
-  }
-
-  private async saveSummaryToChannel(channelId: string, summary: string) {
-    console.log(`[YOUTUBE_MONITOR] saveSummaryToChannel for channel ${channelId}`);
-    await db
-      .update(youtubeChannels)
-      .set({
-        caption: summary,
-      })
-      .where(eq(youtubeChannels.channelId, channelId));
-  }
-
-  private async findSubscribedUsers(channelId: string) {
-    console.log(`[YOUTUBE_MONITOR] findSubscribedUsers for channel ${channelId}`);
-    const subscribedUsers = await db
-      .select({
-        userId: users.id,
-        slackChannelId: users.slackChannelId,
-      })
-      .from(userChannels)
-      .innerJoin(users, eq(userChannels.userId, users.id))
-      .where(eq(userChannels.channelId, channelId));
-    return subscribedUsers;
-  }
-
   private formatSlackMessage(channelTitle: string, videoTitle: string, videoUrl: string, summary: string) {
     return {
       text: `새 영상: ${videoTitle}\n\n 요약:\n${summary}`,
@@ -204,20 +156,10 @@ export class YouTubeMonitor {
     );
   }
 
-  private async markChannelProcessed(channelId: string, error: Error | null = null) {
-    console.log(`[YOUTUBE_MONITOR] markChannelProcessed for channel ${channelId}`);
-    await db
-      .update(youtubeChannels)
-      .set({
-        processed: true,
-        errorMessage: error ? error.message : null,
-      })
-      .where(eq(youtubeChannels.channelId, channelId));
-  }
+  // --- Helper functions for processChannelVideo ---
 
-  // 채널의 최신 영상 정보 처리
   private async processChannelVideo(
-    channel: any,
+    channel: YoutubeChannel,
     latestVideo: RSSVideo,
   ): Promise<void> {
     console.log(
@@ -225,19 +167,29 @@ export class YouTubeMonitor {
     );
 
     try {
-      await this.updateChannelVideoInfo(channel, latestVideo);
-
       const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
-      const { transcript, summary } = await this.generateSummary(videoUrl);
+      const { transcript, summary } = await this.summaryService.processYouTubeUrl(videoUrl);
 
-      await this.saveSummaryToChannel(channel.channelId, summary);
+      const newVideo: Omit<Video, 'createdAt'> = {
+        videoId: latestVideo.videoId,
+        channelId: channel.channelId,
+        title: latestVideo.title,
+        publishedAt: latestVideo.publishedAt,
+        summary,
+        transcript,
+        processed: true,
+        errorMessage: null,
+      };
 
-      const subscribedUsers = await this.findSubscribedUsers(channel.channelId);
+      await storage.createVideo(newVideo);
+      await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
+
+      const subscribedUsers = await storage.findSubscribedUsers(channel.channelId);
 
       for (const user of subscribedUsers) {
         if (!user.slackChannelId) {
           console.log(
-            `[YOUTUBE_MONITOR] User ${user.userId} has no Slack channel, skipping`,
+            `[YOUTUBE_MONITOR] User ${user.id} has no Slack channel, skipping`,
           );
           continue;
         }
@@ -251,13 +203,13 @@ export class YouTubeMonitor {
           );
         } catch (error) {
           console.error(
-            `[YOUTUBE_MONITOR] Error sending message to user ${user.userId}:`,
+            `[YOUTUBE_MONITOR] Error sending message to user ${user.id}:`,
             error,
           );
           await errorLogger.logError(error as Error, {
             service: "YouTubeMonitor",
             operation: "sendSlackMessage",
-            userId: user.userId,
+            userId: user.id,
             channelId: channel.channelId,
             additionalInfo: {
               videoId: latestVideo.videoId,
@@ -267,10 +219,6 @@ export class YouTubeMonitor {
         }
       }
 
-      await this.markChannelProcessed(channel.channelId);
-      console.log(
-        `[YOUTUBE_MONITOR] Successfully completed processing for video: ${latestVideo.videoId}`,
-      );
     } catch (error) {
       console.error(
         `[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`,
@@ -287,8 +235,6 @@ export class YouTubeMonitor {
           channelTitle: channel.title,
         },
       });
-
-      await this.markChannelProcessed(channel.channelId, error as Error);
     }
   }
 
@@ -301,7 +247,7 @@ export class YouTubeMonitor {
     try {
       // 모든 YouTube 채널 가져오기
       console.log(`[YOUTUBE_MONITOR] monitorAllChannels - fetching all channels`);
-      const channels = await db.select().from(youtubeChannels);
+      const channels = await storage.getAllYoutubeChannels();
       console.log(`[YOUTUBE_MONITOR] Monitoring ${channels.length} channels`);
 
       for (const channel of channels) {

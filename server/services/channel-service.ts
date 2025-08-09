@@ -98,7 +98,7 @@ export class ChannelService {
   async getChannelVideos(userId: number) {
     console.log(`[CHANNEL_SERVICE] getChannelVideos for user ${userId}`);
     try {
-      return await storage.getChannelVideos(userId);
+      return await storage.getVideosForUser(userId);
     }
     catch (error) {
       await errorLogger.logError(error as Error, {

@@ -2,15 +2,18 @@ import {
   users, 
   youtubeChannels, 
   userChannels,
+  videos,
   type User, 
   type InsertUser, 
   type YoutubeChannel, 
   type InsertYoutubeChannel,
   type UserChannel,
-  type InsertUserChannel
+  type InsertUserChannel,
+  type Video,
+  type InsertVideo
 } from "@shared/schema";
 import { db } from "../lib/db";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq, and, isNotNull, desc } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "../lib/db";
@@ -29,7 +32,8 @@ export interface IStorage {
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
   getYoutubeChannelByHandle(handle: string): Promise<YoutubeChannel | undefined>;
   createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel>;
-  
+  updateChannelRecentVideo(channelId: string, videoId: string): Promise<void>;
+
   // User Channel subscription methods
   getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>;
   isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean>;
@@ -38,9 +42,13 @@ export interface IStorage {
   getChannelSubscriberCount(channelId: string): Promise<number>;
   deleteYoutubeChannel(channelId: string): Promise<void>;
   
-  // Channel videos methods
-  getChannelVideos(userId: number, limit?: number): Promise<YoutubeChannel[]>;
-  
+  // Video methods
+  createVideo(video: InsertVideo): Promise<Video>;
+  getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
+  getVideosForUser(userId: number, limit?: number): Promise<Video[]>;
+  findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]>;
+  getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
+
   sessionStore: session.Store;
 }
 
@@ -116,7 +124,7 @@ export class DatabaseStorage implements IStorage {
 
   async createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel> {
     console.log("[storage.ts] createOrUpdateYoutubeChannel");
-    const existingChannel = await this.getYoutubeChannel(channel.channelId);
+    const [existingChannel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channel.channelId));
     
     if (existingChannel) {
       // Update existing channel
@@ -139,6 +147,14 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async updateChannelRecentVideo(channelId: string, videoId: string): Promise<void> {
+    console.log("[storage.ts] updateChannelRecentVideo");
+    await db
+      .update(youtubeChannels)
+      .set({ recentVideoId: videoId, processed: true })
+      .where(eq(youtubeChannels.channelId, channelId));
+  }
+
   async getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]> {
     console.log("[storage.ts] getUserChannels");
     const result = await db
@@ -152,11 +168,7 @@ export class DatabaseStorage implements IStorage {
         videoCount: youtubeChannels.videoCount,
         updatedAt: youtubeChannels.updatedAt,
         recentVideoId: youtubeChannels.recentVideoId,
-        recentVideoTitle: youtubeChannels.recentVideoTitle,
-        videoPublishedAt: youtubeChannels.videoPublishedAt,
         processed: youtubeChannels.processed,
-        errorMessage: youtubeChannels.errorMessage,
-        caption: youtubeChannels.caption,
         subscriptionId: userChannels.id,
         subscribedAt: userChannels.createdAt
       })
@@ -212,24 +224,50 @@ export class DatabaseStorage implements IStorage {
 
   async deleteYoutubeChannel(channelId: string): Promise<void> {
     console.log("[storage.ts] deleteYoutubeChannel");
+    await db.delete(videos).where(eq(videos.channelId, channelId));
     await db.delete(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
   }
 
-  async getChannelVideos(userId: number, limit: number = 20): Promise<YoutubeChannel[]> {
-    console.log("[storage.ts] getChannelVideos");
-    // 사용자가 구독한 채널들의 최신 영상 정보를 가져옴
+  async createVideo(video: InsertVideo): Promise<Video> {
+    console.log("[storage.ts] createVideo");
+    const [newVideo] = await db
+      .insert(videos)
+      .values(video)
+      .returning();
+    return newVideo;
+  }
+
+  async getVideosByChannel(channelId: string, limit: number = 20): Promise<Video[]> {
+    console.log("[storage.ts] getVideosByChannel");
+    return db.select().from(videos).where(eq(videos.channelId, channelId)).orderBy(desc(videos.publishedAt)).limit(limit);
+  }
+
+  async getVideosForUser(userId: number, limit: number = 20): Promise<Video[]> {
+    console.log("[storage.ts] getVideosForUser");
+    const subscribedChannels = await db.select({ channelId: userChannels.channelId }).from(userChannels).where(eq(userChannels.userId, userId));
+    if (subscribedChannels.length === 0) {
+      return [];
+    }
+    const channelIds = subscribedChannels.map(c => c.channelId);
+    return db.select().from(videos).where(eq(videos.channelId, channelIds)).orderBy(desc(videos.publishedAt)).limit(limit);
+  }
+
+  async findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]> {
+    console.log("[storage.ts] findSubscribedUsers");
     const result = await db
-      .select()
-      .from(youtubeChannels)
-      .innerJoin(userChannels, eq(youtubeChannels.channelId, userChannels.channelId))
-      .where(and(
-        eq(userChannels.userId, userId),
-        isNotNull(youtubeChannels.recentVideoId) // recentVideoId가 null이 아닌 것만
-      ))
-      .orderBy(youtubeChannels.videoPublishedAt)
-      .limit(limit);
-    
-    return result.map(row => row.youtube_channels);
+      .select({
+        id: users.id,
+        slackChannelId: users.slackChannelId,
+      })
+      .from(userChannels)
+      .innerJoin(users, eq(userChannels.userId, users.id))
+      .where(eq(userChannels.channelId, channelId));
+    return result;
+  }
+
+  async getAllYoutubeChannels(): Promise<YoutubeChannel[]> {
+    console.log("[storage.ts] getAllYoutubeChannels");
+    return db.select().from(youtubeChannels);
   }
 }
 
