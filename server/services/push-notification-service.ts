@@ -179,7 +179,7 @@ export class PushNotificationService {
       allTickets.push(...mockTickets);
 
       // Check for errors in tickets
-      const errorCount = this.processTickets(allTickets);
+      const errorCount = await this.processTickets(allTickets);
       const successCount = allTickets.length - errorCount;
       
       console.log(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors out of ${allTickets.length} total`);
@@ -280,9 +280,12 @@ export class PushNotificationService {
     
     const testNotification: PushNotificationPayload = {
       title: "🔔 Shook 테스트 알림",
-      body: "푸시 알림이 정상적으로 작동합니다!",
+      body: "알림을 탭하면 요약 탭으로 이동합니다!",
       data: {
-        type: 'test',
+        type: 'test_navigation',
+        videoId: 'test-video-123',
+        channelId: 'test-channel-456', 
+        channelName: '테스트 채널',
         timestamp: new Date().toISOString()
       },
       sound: 'default',
