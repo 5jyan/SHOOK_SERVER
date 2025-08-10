@@ -201,7 +201,7 @@ export class PushNotificationService {
   }
 
   // Process push tickets and handle errors
-  private processTickets(tickets: ExpoPushTicket[]): number {
+  private async processTickets(tickets: ExpoPushTicket[]): Promise<number> {
     let errorCount = 0;
 
     for (const ticket of tickets) {
@@ -215,7 +215,12 @@ export class PushNotificationService {
           switch (errorType) {
             case 'DeviceNotRegistered':
               console.warn('🔔 [PushNotificationService] Device token is no longer valid');
-              // TODO: Mark token as inactive in database
+              // Mark token as inactive in database
+              const tokenRecord = tokens.find(t => t.token === ticket.details!.expoPushToken);
+              if (tokenRecord) {
+                await storage.markPushTokenAsInactive(tokenRecord.deviceId);
+                console.log(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
+              }
               break;
             case 'MessageTooBig':
               console.warn('🔔 [PushNotificationService] Message size exceeded limit');

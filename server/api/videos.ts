@@ -3,6 +3,7 @@ import { isAuthenticated } from "../utils/auth-utils.js";
 // import { channelService } from "../services/index.js";
 import { storage } from "../repositories/storage.js";
 import { errorLogger } from "../services/error-logging-service.js";
+import { decodeVideoHtmlEntities } from "../utils/html-decode.js";
 
 const router = Router();
 
@@ -14,15 +15,44 @@ router.get("/", isAuthenticated, async (req, res) => {
   try {
     console.log(`[VIDEOS] Getting videos for user ${userId} (${username})`);
     
+    // Check for incremental sync parameter
+    const sinceParam = req.query.since as string;
+    const since = sinceParam ? parseInt(sinceParam) : null;
+    
     // Get limit from query parameter (default: 50, max: 100)
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    console.log(`[VIDEOS] Requesting ${limit} videos`);
+    
+    if (since) {
+      console.log(`[VIDEOS] Incremental sync requested since ${new Date(since).toISOString()}`);
+      console.log(`[VIDEOS] Requesting up to ${limit} new videos`);
+    } else {
+      console.log(`[VIDEOS] Full sync requested, limit: ${limit}`);
+    }
     
     // Bypass service layer to avoid circular import issues
-    const videos = await storage.getVideosForUser(userId);
+    const rawVideos = await storage.getVideosForUser(userId, limit, since);
     
-    console.log(`[VIDEOS] Successfully retrieved ${videos.length} videos for user ${userId}`);
-    console.log(`[VIDEOS] Sample video data:`, videos.slice(0, 2));
+    console.log(`[VIDEOS] Successfully retrieved ${rawVideos.length} videos for user ${userId}`);
+    
+    if (since) {
+      console.log(`[VIDEOS] Incremental sync result: ${rawVideos.length} new videos since ${new Date(since).toISOString()}`);
+    }
+    
+    // Decode HTML entities in titles and summaries
+    const videos = decodeVideoHtmlEntities(rawVideos);
+    
+    // Log first video as sample (without full content to avoid spam)
+    if (videos.length > 0) {
+      const sampleVideo = videos[0];
+      console.log(`[VIDEOS] Sample video with channel:`, {
+        videoId: sampleVideo.videoId,
+        title: sampleVideo.title.substring(0, 50) + '...',
+        channelTitle: sampleVideo.channelTitle,
+        publishedAt: sampleVideo.publishedAt,
+        processed: sampleVideo.processed,
+        summaryLength: sampleVideo.summary?.length || 0
+      });
+    }
     
     res.json(videos);
   } catch (error) {
@@ -30,7 +60,8 @@ router.get("/", isAuthenticated, async (req, res) => {
     await errorLogger.logError(error as Error, {
       service: 'VideosRoute',
       operation: 'getVideos',
-      userId
+      userId,
+      since: sinceParam
     });
     res.status(500).json({ error: "Failed to get videos." });
   }

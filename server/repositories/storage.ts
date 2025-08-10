@@ -16,7 +16,7 @@ import {
   type InsertPushToken
 } from "@shared/schema";
 import { db } from "../lib/db";
-import { eq, and, isNotNull, desc, inArray } from "drizzle-orm";
+import { eq, and, isNotNull, desc, inArray, gte } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "../lib/db";
@@ -48,7 +48,7 @@ export interface IStorage {
   // Video methods
   createVideo(video: InsertVideo): Promise<Video>;
   getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
-  getVideosForUser(userId: number, limit?: number): Promise<Video[]>;
+  getVideosForUser(userId: number, limit?: number, since?: number | null): Promise<(Video & { channelTitle: string })[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
 
@@ -56,6 +56,7 @@ export interface IStorage {
   createPushToken(pushToken: InsertPushToken): Promise<PushToken>;
   updatePushToken(deviceId: string, pushToken: Partial<InsertPushToken>): Promise<void>;
   deletePushToken(deviceId: string): Promise<void>;
+  markPushTokenAsInactive(deviceId: string): Promise<void>;
   getPushTokensByUserId(userId: number): Promise<PushToken[]>;
   findUsersByChannelId(channelId: string): Promise<{ userId: number; pushTokens: PushToken[] }[]>;
 
@@ -252,8 +253,9 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(videos).where(eq(videos.channelId, channelId)).orderBy(desc(videos.publishedAt)).limit(limit);
   }
 
-  async getVideosForUser(userId: number, limit: number = 20): Promise<Video[]> {
-    console.log(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}`);
+  async getVideosForUser(userId: number, limit: number = 20, since?: number | null): Promise<(Video & { channelTitle: string })[]> {
+    const sinceDate = since ? new Date(since) : null;
+    console.log(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
     
     // First get all channels the user is subscribed to
     const subscribedChannels = await db
@@ -270,15 +272,74 @@ export class DatabaseStorage implements IStorage {
     const channelIds = subscribedChannels.map(c => c.channelId);
     console.log(`[storage.ts] Fetching videos for channels:`, channelIds);
     
-    // Get videos from subscribed channels, ordered by publish date
-    const userVideos = await db
-      .select()
+    // Base where clause for channel filtering
+    let baseWhereClause = inArray(videos.channelId, channelIds);
+    
+    // Build query with JOIN to include channel names
+    let query = db
+      .select({
+        videoId: videos.videoId,
+        channelId: videos.channelId,
+        title: videos.title,
+        publishedAt: videos.publishedAt,
+        summary: videos.summary,
+        transcript: videos.transcript,
+        processed: videos.processed,
+        errorMessage: videos.errorMessage,
+        createdAt: videos.createdAt,
+        channelTitle: youtubeChannels.title, // Include channel title from JOIN
+      })
       .from(videos)
-      .where(inArray(videos.channelId, channelIds))
+      .innerJoin(youtubeChannels, eq(videos.channelId, youtubeChannels.channelId))
+      .where(baseWhereClause)
       .orderBy(desc(videos.publishedAt))
       .limit(limit);
     
-    console.log(`[storage.ts] Found ${userVideos.length} videos for user ${userId}`);
+    // For incremental sync, add createdAt filter
+    if (sinceDate) {
+      console.log(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
+      query = db
+        .select({
+          videoId: videos.videoId,
+          channelId: videos.channelId,
+          title: videos.title,
+          publishedAt: videos.publishedAt,
+          summary: videos.summary,
+          transcript: videos.transcript,
+          processed: videos.processed,
+          errorMessage: videos.errorMessage,
+          createdAt: videos.createdAt,
+          channelTitle: youtubeChannels.title, // Include channel title from JOIN
+        })
+        .from(videos)
+        .innerJoin(youtubeChannels, eq(videos.channelId, youtubeChannels.channelId))
+        .where(and(
+          baseWhereClause,
+          gte(videos.createdAt as any, sinceDate)
+        ))
+        .orderBy(desc(videos.publishedAt))
+        .limit(limit);
+    }
+    
+    const userVideos = await query;
+    
+    if (sinceDate) {
+      console.log(`[storage.ts] Incremental sync found ${userVideos.length} new videos for user ${userId} since ${sinceDate.toISOString()}`);
+    } else {
+      console.log(`[storage.ts] Full sync found ${userVideos.length} videos for user ${userId}`);
+    }
+    
+    // Log sample video with channel name for debugging
+    if (userVideos.length > 0) {
+      const sampleVideo = userVideos[0];
+      console.log(`[storage.ts] Sample video with channel:`, {
+        videoId: sampleVideo.videoId,
+        title: sampleVideo.title.substring(0, 50) + '...',
+        channelTitle: sampleVideo.channelTitle,
+        publishedAt: sampleVideo.publishedAt,
+      });
+    }
+    
     return userVideos;
   }
 
@@ -325,6 +386,14 @@ export class DatabaseStorage implements IStorage {
     console.log("[storage.ts] deletePushToken");
     await db
       .delete(pushTokens)
+      .where(eq(pushTokens.deviceId, deviceId));
+  }
+
+  async markPushTokenAsInactive(deviceId: string): Promise<void> {
+    console.log("[storage.ts] markPushTokenAsInactive");
+    await db
+      .update(pushTokens)
+      .set({ isActive: false, updatedAt: new Date() })
       .where(eq(pushTokens.deviceId, deviceId));
   }
 

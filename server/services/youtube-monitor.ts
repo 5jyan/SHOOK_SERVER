@@ -1,9 +1,9 @@
 import { storage } from "../repositories/storage.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
-import { SlackService } from "../lib/slack.js";
 import { errorLogger } from "./error-logging-service.js";
 import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video } from "../../shared/schema.js";
+import { decodeYouTubeTitle } from "../utils/html-decode.js";
 
 interface RSSVideo {
   videoId: string;
@@ -14,12 +14,10 @@ interface RSSVideo {
 
 export class YouTubeMonitor {
   private summaryService: YouTubeSummaryService;
-  private slackService: SlackService;
   private monitorInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.summaryService = new YouTubeSummaryService();
-    this.slackService = new SlackService();
   }
 
   // RSS 피드에서 YouTube 영상 정보 파싱 (쇼츠 영상 제외, 가장 최신 일반 영상만 가져오기)
@@ -62,7 +60,11 @@ export class YouTubeMonitor {
 
         if (videoIdMatch && titleMatch && publishedMatch) {
           const videoId = videoIdMatch[1];
-          const title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
+          let title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
+          
+          // Decode HTML entities in the title (YouTube RSS feeds contain encoded entities like &quot;)
+          title = decodeYouTubeTitle(title);
+          
           const publishedAt = new Date(publishedMatch[1]);
 
           // 쇼츠 영상인지 확인 - URL에 "shorts"가 포함되어 있는지 체크
@@ -110,53 +112,6 @@ export class YouTubeMonitor {
     }
   }
 
-  private formatSlackMessage(channelTitle: string, videoTitle: string, videoUrl: string, summary: string) {
-    return {
-      text: `새 영상: ${videoTitle}\n\n 요약:\n${summary}`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*유튜버:* ${channelTitle}\n*제목:* ${videoTitle}\n*링크:* <${videoUrl}|YouTube에서 보기>`,
-          },
-        },
-        {
-          type: "divider",
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `${summary}`,
-          },
-        },
-      ],
-    };
-  }
-
-  private async sendSlackNotification(
-    userSlackChannelId: string,
-    channelTitle: string,
-    latestVideo: RSSVideo,
-    summary: string,
-  ) {
-    const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
-    const slackMessage = this.formatSlackMessage(
-      channelTitle,
-      latestVideo.title,
-      videoUrl,
-      summary,
-    );
-    await this.slackService.sendMessage({
-      channel: userSlackChannelId,
-      ...slackMessage,
-    });
-    console.log(
-      `[YOUTUBE_MONITOR] Successfully sent summary to Slack channel ${userSlackChannelId}`,
-    );
-  }
-
   // --- Helper functions for processChannelVideo ---
 
   private async processChannelVideo(
@@ -185,8 +140,6 @@ export class YouTubeMonitor {
       await storage.createVideo(newVideo);
       await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
 
-      const subscribedUsers = await storage.findSubscribedUsers(channel.channelId);
-
       // Send push notifications to mobile users
       console.log(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
       try {
@@ -210,40 +163,6 @@ export class YouTubeMonitor {
             videoId: latestVideo.videoId,
           },
         });
-      }
-
-      // Send Slack notifications (existing functionality)
-      for (const user of subscribedUsers) {
-        if (!user.slackChannelId) {
-          console.log(
-            `[YOUTUBE_MONITOR] User ${user.id} has no Slack channel, skipping`,
-          );
-          continue;
-        }
-
-        try {
-          await this.sendSlackNotification(
-            user.slackChannelId,
-            channel.title,
-            latestVideo,
-            summary,
-          );
-        } catch (error) {
-          console.error(
-            `[YOUTUBE_MONITOR] Error sending message to user ${user.id}:`,
-            error,
-          );
-          await errorLogger.logError(error as Error, {
-            service: "YouTubeMonitor",
-            operation: "sendSlackMessage",
-            userId: user.id,
-            channelId: channel.channelId,
-            additionalInfo: {
-              videoId: latestVideo.videoId,
-              slackChannelId: user.slackChannelId,
-            },
-          });
-        }
       }
 
     } catch (error) {

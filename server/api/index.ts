@@ -6,6 +6,7 @@ import summaryRoutes from "./summary.js";
 import videoRoutes from "./videos.js";
 import userRoutes from "./user.js";
 import pushTokenRoutes from "./push-tokens.js";
+import adminRoutes from "./admin.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { channelService } from "../services/index.js";
 import { errorLogger } from "../services/error-logging-service.js";
@@ -26,6 +27,7 @@ router.use("/summary", summaryRoutes);
 router.use("/videos", videoRoutes);
 router.use("/user", userRoutes);
 router.use("/push-tokens", pushTokenRoutes);
+router.use("/admin", adminRoutes);
 
 // GET /api/channel-videos/:userId
 router.get("/channel-videos/:userId", isAuthenticated, authorizeUser, async (req, res) => {

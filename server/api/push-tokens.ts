@@ -7,6 +7,72 @@ import type { InsertPushToken } from "@shared/schema";
 
 const router = Router();
 
+// Helper function to clean up duplicate tokens
+async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken: string) {
+  try {
+    console.log(`[PUSH-TOKENS] Cleaning up duplicate tokens for user ${userId}, device ${deviceId}`);
+    
+    const existingTokens = await storage.getPushTokensByUserId(userId);
+    
+    // Find tokens to remove:
+    // 1. Same token but different device (user might have changed device ID)
+    // 2. Same device but different token (old tokens for same device)
+    // 3. Inactive tokens older than 30 days
+    const tokensToRemove = existingTokens.filter(token => {
+      // Skip the exact match (current token for current device)
+      if (token.deviceId === deviceId && token.token === newToken) {
+        return false;
+      }
+      
+      // Remove if same token but different device
+      if (token.token === newToken && token.deviceId !== deviceId) {
+        console.log(`[PUSH-TOKENS] Found duplicate token with different device: ${token.deviceId}`);
+        return true;
+      }
+      
+      // Remove old inactive tokens (older than 30 days)
+      if (!token.isActive && token.updatedAt) {
+        const daysSinceUpdate = (Date.now() - new Date(token.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceUpdate > 30) {
+          console.log(`[PUSH-TOKENS] Found old inactive token: ${token.deviceId} (${daysSinceUpdate.toFixed(1)} days old)`);
+          return true;
+        }
+      }
+      
+      return false;
+    });
+
+    // Additionally, find any active tokens for the same deviceId but with a different token string
+    const oldTokensForSameDevice = existingTokens.filter(token => 
+      token.deviceId === deviceId && 
+      token.token !== newToken && 
+      token.isActive
+    );
+
+    for (const oldToken of oldTokensForSameDevice) {
+      console.log(`[PUSH-TOKENS] Marking old token for device ${oldToken.deviceId} as inactive: ${oldToken.token}`);
+      await storage.markPushTokenAsInactive(oldToken.deviceId);
+    }
+
+    // Combine tokens to remove and old tokens to mark inactive
+    const allTokensToProcess = [...tokensToRemove, ...oldTokensForSameDevice];
+    
+    // Remove duplicate/old tokens
+    for (const tokenToRemove of tokensToRemove) {
+      console.log(`[PUSH-TOKENS] Removing duplicate/old token: ${tokenToRemove.deviceId}`);
+      await storage.deletePushToken(tokenToRemove.deviceId);
+    }
+    
+    if (allTokensToProcess.length > 0) {
+      console.log(`[PUSH-TOKENS] Processed ${allTokensToProcess.length} duplicate/old tokens for user ${userId}`);
+    }
+    
+  } catch (error) {
+    console.error(`[PUSH-TOKENS] Error cleaning up duplicate tokens:`, error);
+    // Don't throw error - just log it, so the main token registration can continue
+  }
+}
+
 // POST /api/push-tokens - Register or update push token
 router.post("/", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
@@ -23,6 +89,9 @@ router.post("/", isAuthenticated, async (req, res) => {
       });
     }
 
+    // Clean up any duplicate or old tokens first
+    await cleanupDuplicateTokens(userId, deviceId, token);
+    
     // Check if token already exists for this device
     const existingTokens = await storage.getPushTokensByUserId(userId);
     const existingToken = existingTokens.find(t => t.deviceId === deviceId);

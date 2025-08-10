@@ -3,6 +3,7 @@ import { storage } from "../repositories/storage";
 import { validateYouTubeHandle } from "../utils/validation";
 import { errorLogger } from "./error-logging-service";
 import { YoutubeChannel } from "../../shared/schema"; // YoutubeChannel 타입 임포트
+import { decodeYouTubeTitle, decodeHtmlEntities } from "../utils/html-decode.js";
 
 export class ChannelService {
   private youtube: youtube_v3.Youtube;
@@ -60,8 +61,8 @@ export class ChannelService {
         return {
           channelId: searchItem.id!.channelId!,
           handle: channelDetail?.snippet?.customUrl || '',
-          title: searchItem.snippet!.title!,
-          description: searchItem.snippet!.description || '',
+          title: decodeYouTubeTitle(searchItem.snippet!.title!),
+          description: decodeHtmlEntities(searchItem.snippet!.description || ''),
           thumbnail: searchItem.snippet!.thumbnails?.default?.url || '',
           subscriberCount: channelDetail?.statistics?.subscriberCount || '0',
           videoCount: channelDetail?.statistics?.videoCount || '0',
@@ -209,8 +210,8 @@ export class ChannelService {
       return {
         channelId: channel.id!,
         handle: channel.snippet?.customUrl || '',
-        title: channel.snippet!.title!,
-        description: channel.snippet!.description || '',
+        title: decodeYouTubeTitle(channel.snippet!.title!),
+        description: decodeHtmlEntities(channel.snippet!.description || ''),
         thumbnail: channel.snippet!.thumbnails?.default?.url || '',
         subscriberCount: channel.statistics?.subscriberCount || '0',
         videoCount: channel.statistics?.videoCount || '0',
