@@ -2,6 +2,7 @@ import { storage } from "../repositories/storage.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
 import { SlackService } from "../lib/slack.js";
 import { errorLogger } from "./error-logging-service.js";
+import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video } from "../../shared/schema.js";
 
 interface RSSVideo {
@@ -186,6 +187,32 @@ export class YouTubeMonitor {
 
       const subscribedUsers = await storage.findSubscribedUsers(channel.channelId);
 
+      // Send push notifications to mobile users
+      console.log(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
+      try {
+        const pushNotificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
+          channel.channelId, 
+          {
+            videoId: latestVideo.videoId,
+            title: latestVideo.title,
+            channelName: channel.title,
+            summary: summary,
+          }
+        );
+        console.log(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
+      } catch (error) {
+        console.error(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
+        await errorLogger.logError(error as Error, {
+          service: "YouTubeMonitor",
+          operation: "sendPushNotifications",
+          channelId: channel.channelId,
+          additionalInfo: {
+            videoId: latestVideo.videoId,
+          },
+        });
+      }
+
+      // Send Slack notifications (existing functionality)
       for (const user of subscribedUsers) {
         if (!user.slackChannelId) {
           console.log(

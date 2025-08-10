@@ -51,6 +51,19 @@ export const userChannels = pgTable("user_channels", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Push notification tokens
+export const pushTokens = pgTable("push_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  token: text("token").notNull(),
+  deviceId: text("device_id").notNull(),
+  platform: text("platform").notNull(), // 'ios' or 'android'
+  appVersion: text("app_version").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const session = pgTable("session", {
   sid: varchar("sid").primaryKey(),
   sess: json("sess").notNull(),
@@ -59,6 +72,14 @@ export const session = pgTable("session", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   userChannels: many(userChannels),
+  pushTokens: many(pushTokens),
+}));
+
+export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [pushTokens.userId],
+    references: [users.id],
+  }),
 }));
 
 export const youtubeChannelsRelations = relations(youtubeChannels, ({ many }) => ({
@@ -102,6 +123,12 @@ export const insertUserChannelSchema = createInsertSchema(userChannels).omit({
   createdAt: true,
 });
 
+export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertYoutubeChannel = z.infer<typeof insertYoutubeChannelSchema>;
@@ -110,3 +137,5 @@ export type InsertVideo = z.infer<typeof insertVideoSchema>;
 export type Video = typeof videos.$inferSelect;
 export type InsertUserChannel = z.infer<typeof insertUserChannelSchema>;
 export type UserChannel = typeof userChannels.$inferSelect;
+export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
+export type PushToken = typeof pushTokens.$inferSelect;

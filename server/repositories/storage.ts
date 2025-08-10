@@ -3,6 +3,7 @@ import {
   youtubeChannels, 
   userChannels,
   videos,
+  pushTokens,
   type User, 
   type InsertUser, 
   type YoutubeChannel, 
@@ -10,7 +11,9 @@ import {
   type UserChannel,
   type InsertUserChannel,
   type Video,
-  type InsertVideo
+  type InsertVideo,
+  type PushToken,
+  type InsertPushToken
 } from "@shared/schema";
 import { db } from "../lib/db";
 import { eq, and, isNotNull, desc, inArray } from "drizzle-orm";
@@ -48,6 +51,13 @@ export interface IStorage {
   getVideosForUser(userId: number, limit?: number): Promise<Video[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
+
+  // Push token methods
+  createPushToken(pushToken: InsertPushToken): Promise<PushToken>;
+  updatePushToken(deviceId: string, pushToken: Partial<InsertPushToken>): Promise<void>;
+  deletePushToken(deviceId: string): Promise<void>;
+  getPushTokensByUserId(userId: number): Promise<PushToken[]>;
+  findUsersByChannelId(channelId: string): Promise<{ userId: number; pushTokens: PushToken[] }[]>;
 
   sessionStore: session.Store;
 }
@@ -288,6 +298,78 @@ export class DatabaseStorage implements IStorage {
   async getAllYoutubeChannels(): Promise<YoutubeChannel[]> {
     console.log("[storage.ts] getAllYoutubeChannels");
     return db.select().from(youtubeChannels);
+  }
+
+  // Push token methods implementation
+  async createPushToken(pushToken: InsertPushToken): Promise<PushToken> {
+    console.log("[storage.ts] createPushToken");
+    const [newPushToken] = await db
+      .insert(pushTokens)
+      .values(pushToken)
+      .returning();
+    return newPushToken;
+  }
+
+  async updatePushToken(deviceId: string, pushTokenData: Partial<InsertPushToken>): Promise<void> {
+    console.log("[storage.ts] updatePushToken");
+    await db
+      .update(pushTokens)
+      .set({
+        ...pushTokenData,
+        updatedAt: new Date(),
+      })
+      .where(eq(pushTokens.deviceId, deviceId));
+  }
+
+  async deletePushToken(deviceId: string): Promise<void> {
+    console.log("[storage.ts] deletePushToken");
+    await db
+      .delete(pushTokens)
+      .where(eq(pushTokens.deviceId, deviceId));
+  }
+
+  async getPushTokensByUserId(userId: number): Promise<PushToken[]> {
+    console.log("[storage.ts] getPushTokensByUserId");
+    return db
+      .select()
+      .from(pushTokens)
+      .where(and(eq(pushTokens.userId, userId), eq(pushTokens.isActive, true)));
+  }
+
+  async findUsersByChannelId(channelId: string): Promise<{ userId: number; pushTokens: PushToken[] }[]> {
+    console.log("[storage.ts] findUsersByChannelId");
+    
+    // Get users subscribed to this channel
+    const subscribedUsers = await db
+      .select({ userId: userChannels.userId })
+      .from(userChannels)
+      .where(eq(userChannels.channelId, channelId));
+
+    const userIds = subscribedUsers.map(u => u.userId);
+    
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    // Get active push tokens for these users
+    const tokens = await db
+      .select()
+      .from(pushTokens)
+      .where(and(inArray(pushTokens.userId, userIds), eq(pushTokens.isActive, true)));
+
+    // Group tokens by user ID
+    const userTokenMap = new Map<number, PushToken[]>();
+    tokens.forEach(token => {
+      if (!userTokenMap.has(token.userId)) {
+        userTokenMap.set(token.userId, []);
+      }
+      userTokenMap.get(token.userId)!.push(token);
+    });
+
+    return userIds.map(userId => ({
+      userId,
+      pushTokens: userTokenMap.get(userId) || []
+    }));
   }
 }
 
