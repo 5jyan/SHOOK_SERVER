@@ -275,7 +275,7 @@ export class DatabaseStorage implements IStorage {
     // Base where clause for channel filtering
     let baseWhereClause = inArray(videos.channelId, channelIds);
     
-    // Build query with JOIN to include channel names
+    // Build query with JOIN to include channel names only (thumbnails now handled by frontend)
     let query = db
       .select({
         videoId: videos.videoId,
@@ -292,7 +292,7 @@ export class DatabaseStorage implements IStorage {
       .from(videos)
       .innerJoin(youtubeChannels, eq(videos.channelId, youtubeChannels.channelId))
       .where(baseWhereClause)
-      .orderBy(desc(videos.publishedAt))
+      .orderBy(desc(videos.createdAt))
       .limit(limit);
     
     // For incremental sync, add createdAt filter
@@ -317,7 +317,7 @@ export class DatabaseStorage implements IStorage {
           baseWhereClause,
           gte(videos.createdAt as any, sinceDate)
         ))
-        .orderBy(desc(videos.publishedAt))
+        .orderBy(desc(videos.createdAt))
         .limit(limit);
     }
     
