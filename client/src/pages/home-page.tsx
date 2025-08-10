@@ -20,6 +20,8 @@ import {
   ExternalLink,
   AlertTriangle,
   ArrowLeft,
+  Play,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -160,6 +162,32 @@ export default function HomePage() {
     },
   });
 
+  // Mutation to trigger manual monitoring
+  const triggerMonitoringMutation = useMutation({
+    mutationFn: async () => {
+      console.log(`[FRONTEND] Triggering manual YouTube monitoring for user ${user?.id}`);
+      const res = await apiRequest("POST", "/api/admin/trigger-monitoring");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      console.log(`[FRONTEND] Manual monitoring trigger successful:`, data);
+      toast({
+        title: "성공",
+        description: "YouTube 모니터링이 성공적으로 실행되었습니다!",
+      });
+      // 영상 목록 새로고침
+      queryClient.invalidateQueries({ queryKey: ["/api/channel-videos", user?.id?.toString()] });
+    },
+    onError: (error: Error) => {
+      console.error(`[FRONTEND] Error triggering manual monitoring:`, error);
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleLogout = () => {
     logoutMutation.mutate();
   };
@@ -213,6 +241,19 @@ export default function HomePage() {
     }
 
     summarizeMutation.mutate(youtubeUrl);
+  };
+
+  const handleTriggerMonitoring = () => {
+    if (channels.length === 0) {
+      toast({
+        title: "알림",
+        description: "모니터링할 채널이 없습니다. 먼저 YouTube 채널을 추가해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    triggerMonitoringMutation.mutate();
   };
 
   const getThumbnailIcon = (type: string) => {
@@ -712,6 +753,56 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {/* Debug Section */}
+        {channels.length > 0 && (
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+            <Card className="border gmail-border shadow-sm" style={{backgroundColor: '#F4F4F7'}}>
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-foreground text-lg font-medium">
+                  <Settings className="w-5 h-5 text-slate-600" />
+                  디버그 도구
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-white border gmail-border rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-foreground mb-1">
+                        수동 모니터링 실행
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        등록된 모든 채널을 즉시 확인하여 새로운 영상이 있는지 검사합니다.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleTriggerMonitoring}
+                      disabled={triggerMonitoringMutation.isPending}
+                      variant="outline"
+                      className="ml-4 shrink-0"
+                    >
+                      {triggerMonitoringMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Play className="w-4 h-4 mr-2" />
+                      )}
+                      모니터링 실행
+                    </Button>
+                  </div>
+                  
+                  <div className="mt-3 text-xs text-muted-foreground bg-muted/30 rounded-md p-3">
+                    <p className="font-medium mb-1">⚠️ 주의사항:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>이 기능은 개발 및 디버그 목적으로 제공됩니다.</li>
+                      <li>자동 모니터링은 5분마다 실행되므로 일반적으로 수동 실행이 필요하지 않습니다.</li>
+                      <li>YouTube API 호출 한도를 소모하므로 필요한 경우에만 사용하세요.</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </main>
     </div>
   );
