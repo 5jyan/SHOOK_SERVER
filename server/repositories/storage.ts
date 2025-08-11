@@ -29,7 +29,6 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserEmail(userId: number, email: string): Promise<void>;
-  updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackEmail: string; slackJoinedAt: Date }): Promise<void>;
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
@@ -49,7 +48,7 @@ export interface IStorage {
   createVideo(video: InsertVideo): Promise<Video>;
   getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
   getVideosForUser(userId: number, limit?: number, since?: number | null): Promise<(Video & { channelTitle: string })[]>;
-  findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]>;
+  findSubscribedUsers(channelId: string): Promise<{ id: number }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
 
   // Push token methods
@@ -108,18 +107,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId));
   }
 
-  async updateUserSlackInfo(userId: number, slackInfo: { slackUserId: string; slackChannelId: string; slackEmail: string; slackJoinedAt: Date }): Promise<void> {
-    console.log("[storage.ts] updateUserSlackInfo");
-    await db
-      .update(users)
-      .set({
-        slackUserId: slackInfo.slackUserId,
-        slackChannelId: slackInfo.slackChannelId,
-        slackEmail: slackInfo.slackEmail,
-        slackJoinedAt: slackInfo.slackJoinedAt
-      })
-      .where(eq(users.id, userId));
-  }
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
     console.log("[storage.ts] getYoutubeChannel");
@@ -343,12 +330,11 @@ export class DatabaseStorage implements IStorage {
     return userVideos;
   }
 
-  async findSubscribedUsers(channelId: string): Promise<{ id: number; slackChannelId: string | null }[]> {
+  async findSubscribedUsers(channelId: string): Promise<{ id: number }[]> {
     console.log("[storage.ts] findSubscribedUsers");
     const result = await db
       .select({
         id: users.id,
-        slackChannelId: users.slackChannelId,
       })
       .from(userChannels)
       .innerJoin(users, eq(userChannels.userId, users.id))

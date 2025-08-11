@@ -30,19 +30,6 @@ export const channelApi = {
   },
 };
 
-// Slack API services
-export const slackApi = {
-  setupSlack: async (email: string) => {
-    return apiRequest("/api/slack/setup", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    });
-  },
-
-  getSlackStatus: async () => {
-    return apiRequest("/api/slack/status");
-  },
-};
 
 // Summary API services
 export const summaryApi = {
