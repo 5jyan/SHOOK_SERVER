@@ -105,14 +105,15 @@ export async function fixHtmlEntitiesInDatabase() {
 }
 
 // Run cleanup if this script is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  fixHtmlEntitiesInDatabase()
-    .then((result) => {
-      console.log('🎉 [HTML_ENTITY_FIX] Cleanup completed successfully:', result);
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('💥 [HTML_ENTITY_FIX] Cleanup failed:', error);
-      process.exit(1);
-    });
-}
+// Disabled for now to prevent accidental execution during server startup
+// if (import.meta.url === `file://${process.argv[1]}`) {
+//   fixHtmlEntitiesInDatabase()
+//     .then((result) => {
+//       console.log('🎉 [HTML_ENTITY_FIX] Cleanup completed successfully:', result);
+//       process.exit(0);
+//     })
+//     .catch((error) => {
+//       console.error('💥 [HTML_ENTITY_FIX] Cleanup failed:', error);
+//       process.exit(1);
+//     });
+// }
