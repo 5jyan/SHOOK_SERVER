@@ -1,7 +1,10 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, json, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+
+// Define role enum
+export const userRoleEnum = pgEnum('user_role', ['user', 'tester', 'manager']);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -10,6 +13,7 @@ export const users = pgTable("users", {
   email: text("email"),
   googleId: text("google_id").unique(),
   authProvider: text("auth_provider").notNull().default('local'),
+  role: userRoleEnum("role").notNull().default('user'),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -127,6 +131,7 @@ export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserRole = User['role'];
 export type InsertYoutubeChannel = z.infer<typeof insertYoutubeChannelSchema>;
 export type YoutubeChannel = typeof youtubeChannels.$inferSelect;
 export type InsertVideo = z.infer<typeof insertVideoSchema>;
