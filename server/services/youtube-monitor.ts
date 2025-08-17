@@ -210,6 +210,12 @@ export class YouTubeMonitor {
             continue;
           }
 
+          // RSS 성공 시 채널 활성화 상태 복구
+          if (!channel.isActive) {
+            console.log(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
+            await storage.updateChannelActiveStatus(channel.channelId, true, null);
+          }
+
           // 현재 저장된 영상 ID와 비교
           if (channel.recentVideoId === latestVideo.videoId) {
             console.log(
@@ -229,12 +235,24 @@ export class YouTubeMonitor {
             `[YOUTUBE_MONITOR] Error monitoring channel ${channel.channelId}:`,
             error,
           );
-          await errorLogger.logError(error as Error, {
-            service: "YouTubeMonitor",
-            operation: "monitorChannel",
-            channelId: channel.channelId,
-            additionalInfo: { channelTitle: channel.title },
-          });
+
+          // RSS 404 오류 처리 - 채널 비활성화
+          if (error instanceof Error && error.message.includes('404')) {
+            console.log(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
+            await storage.updateChannelActiveStatus(
+              channel.channelId, 
+              false, 
+              `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
+            );
+          } else {
+            // 다른 에러들은 기존 방식대로 로깅
+            await errorLogger.logError(error as Error, {
+              service: "YouTubeMonitor",
+              operation: "monitorChannel",
+              channelId: channel.channelId,
+              additionalInfo: { channelTitle: channel.title },
+            });
+          }
         }
       }
     } catch (error) {

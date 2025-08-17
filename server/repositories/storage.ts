@@ -426,6 +426,28 @@ export class DatabaseStorage implements IStorage {
       pushTokens: userTokenMap.get(userId) || []
     }));
   }
+
+  async updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void> {
+    console.log(`[storage.ts] updateChannelActiveStatus - channelId: ${channelId}, isActive: ${isActive}, errorMessage: ${errorMessage}`);
+    
+    const updateData: any = {
+      isActive,
+      updatedAt: new Date(),
+    };
+
+    if (!isActive && errorMessage) {
+      updateData.lastRssError = errorMessage;
+      updateData.lastRssErrorAt = new Date();
+    } else if (isActive) {
+      updateData.lastRssError = null;
+      updateData.lastRssErrorAt = null;
+    }
+
+    await db
+      .update(youtubeChannels)
+      .set(updateData)
+      .where(eq(youtubeChannels.channelId, channelId));
+  }
 }
 
 export const storage = new DatabaseStorage();
