@@ -40,8 +40,14 @@ export class YouTubeSummaryService {
 
   private async _fetchTranscriptFromSupaData(youtubeUrl: string): Promise<string> {
     const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
+    const apiKey = process.env.SUPADATA_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('SUPADATA_API_KEY 환경 변수가 설정되지 않았습니다.');
+    }
+    
     const requestHeaders = {
-      "x-api-key": "sd_207eb9f552d7dfdaf11df214d1cddaf7",
+      "x-api-key": apiKey,
       "Content-Type": "application/json",
       "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
     };
