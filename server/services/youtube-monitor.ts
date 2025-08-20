@@ -71,7 +71,7 @@ export class YouTubeMonitor {
           const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
           // RSS 피드에서 link 태그를 찾아 실제 URL 확인
-          const linkMatch = entryXml.match(/<link\s+href=\"([^\"]*)\"[^>]*>/);
+          const linkMatch = entryXml.match(/<link\s+rel="alternate"\s+href="([^"]*)"/);
           let actualUrl = videoUrl; // 기본값
 
           if (linkMatch && linkMatch[1]) {
