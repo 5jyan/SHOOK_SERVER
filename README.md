@@ -1,32 +1,28 @@
-# Shook: YouTube Channel Monitoring & Slack Notifier
+# Shook: YouTube Channel Monitoring Service
 
-Shook is a full-stack application that monitors YouTube channels for new videos, generates AI-powered summaries, and delivers them as notifications to a user's Slack workspace.
+Shook is a backend API service that monitors YouTube channels for new videos and generates AI-powered summaries.
 
 ## Key Features
 
-- **User Authentication**: Secure user sign-up and login using Google OAuth.
-- **Channel Subscriptions**: Users can subscribe to their favorite YouTube channels by providing the channel handle.
-- **Automated Video Monitoring**: A background service runs every 5 minutes to check for new video uploads from subscribed channels using their RSS feeds.
-- **AI-Powered Summarization**: When a new video is detected, the system fetches its transcript and uses the Anthropic Claude API to generate a concise summary.
-- **Slack Integration**: The generated summary, along with the video title and a link, is sent to a dedicated, private Slack channel for the user.
-- **Web Interface**: A React-based frontend provides a user-friendly interface for managing channel subscriptions.
+- **User Authentication**: Session-based authentication using Passport.js
+- **Channel Subscriptions**: Users can subscribe to their favorite YouTube channels by providing the channel handle
+- **Automated Video Monitoring**: A background service runs every 5 minutes to check for new video uploads from subscribed channels using their RSS feeds
+- **AI-Powered Summarization**: When a new video is detected, the system fetches its transcript and uses the OpenAI API to generate a concise summary
+- **REST API**: Complete API endpoints for managing users, channels, and video monitoring
 
 ## Tech Stack
 
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Shadcn/ui, TanStack Query
-- **Backend**: Node.js, Express.js, TypeScript
+- **Backend**: Node.js, Express.js, TypeScript (ESM)
 - **Database**: PostgreSQL (managed with Neon) and Drizzle ORM
-- **Authentication**: Passport.js with Google OAuth 2.0
+- **Authentication**: Passport.js with local strategy (username/password)
 - **External APIs**:
   - YouTube Data API v3
   - SupaData API (for video transcripts)
-  - Anthropic Claude API (for summarization)
-  - Slack Web API
+  - OpenAI API (for summarization)
 
 ## Project Structure
 
 ```
-├── client/         # React Frontend
 ├── server/         # Node.js/Express Backend
 ├── shared/         # Shared Drizzle DB schema
 ├── .env.example    # Example environment variables
@@ -41,9 +37,7 @@ Shook is a full-stack application that monitors YouTube channels for new videos,
 - Node.js (v18 or later)
 - npm
 - Docker (optional, for containerized deployment)
-- A registered application on Google Cloud Platform to get OAuth 2.0 credentials.
-- A Slack App with a Bot Token.
-- API keys for YouTube Data API and Anthropic Claude API.
+- API keys for YouTube Data API and OpenAI API
 
 ### Installation
 
@@ -64,16 +58,12 @@ Shook is a full-stack application that monitors YouTube channels for new videos,
     cp .env.example .env
     ```
 2.  Open the `.env` file and fill in the required environment variables:
-    - `DATABASE_URL`: Your PostgreSQL connection string (e.g., from Neon).
-    - `GOOGLE_CLIENT_ID`: Your Google OAuth Client ID.
-    - `GOOGLE_CLIENT_SECRET`: Your Google OAuth Client Secret.
-    - `SESSION_SECRET`: A long, random string for session encryption.
-    - `SLACK_BOT_TOKEN`: Your Slack bot user OAuth token.
-    - `SLACK_SIGNING_SECRET`: Your Slack app's signing secret.
-    - `YOUTUBE_API_KEY`: Your YouTube Data API key.
-    - `ANTHROPIC_API_KEY`: Your Anthropic Claude API key.
-    - `PORT`: The port for the server to run on (defaults to 3000).
-    - `NODE_ENV`: Set to `development` for local development.
+    - `DATABASE_URL`: Your PostgreSQL connection string (e.g., from Neon)
+    - `SESSION_SECRET`: A long, random string for session encryption
+    - `YOUTUBE_API_KEY`: Your YouTube Data API key
+    - `OPENAI_API_KEY`: Your OpenAI API key
+    - `PORT`: The port for the server to run on (defaults to 3000)
+    - `NODE_ENV`: Set to `development` for local development
 
 ### Database Migration
 
@@ -85,21 +75,21 @@ npm run db:push
 
 ### Running the Application
 
-Start both the frontend and backend servers in development mode:
+Start the backend server in development mode:
 
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173` (Vite's default port for the client).
+The API server will be available at `http://localhost:3000`.
 
 ## Available Scripts
 
-- `npm run dev`: Starts the development server for both client and server with hot-reloading.
-- `npm run build`: Builds the client and server for production.
-- `npm run start`: Starts the production server (requires a prior build).
-- `npm run db:push`: Pushes database schema changes to your PostgreSQL database.
-- `npm run check`: Runs the TypeScript compiler to check for type errors.
+- `npm run dev`: Starts the development server with hot-reloading
+- `npm run build`: Builds the server for production
+- `npm run start`: Starts the production server (requires a prior build)
+- `npm run db:push`: Pushes database schema changes to your PostgreSQL database
+- `npm run check`: Runs the TypeScript compiler to check for type errors
 
 ## Docker Deployment
 

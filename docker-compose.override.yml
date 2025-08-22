@@ -4,7 +4,5 @@ services:
   app:
     build:
       context: .
-      args:
-        - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
     ports:
       - "3000:3000"

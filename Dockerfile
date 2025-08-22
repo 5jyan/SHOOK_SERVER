@@ -8,9 +8,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-ARG VITE_GOOGLE_CLIENT_ID
-ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
-# Build the server and client
+# Build the server
 RUN npm run build
 
 # Stage 3: Production image
@@ -24,8 +22,8 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 
-# Copy built server and client from 'builder' stage
-# Assuming the build script outputs to 'dist/server' and 'dist/public'
+# Copy built server from 'builder' stage  
+# Build script outputs to 'dist/server'
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/shared ./shared
 

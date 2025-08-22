@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains multiple TypeScript/React projects primarily located in `Documents\workspace\`. The main active project is **Shook** - a YouTube channel monitoring and Slack notification system that monitors YouTube channels for new videos, generates AI-powered summaries, and delivers them to Slack workspaces.
+This repository contains multiple TypeScript/React projects primarily located in `Documents\workspace\`. The main active project is **Shook** - a YouTube channel monitoring system that monitors YouTube channels for new videos and generates AI-powered summaries.
 
 **Current Working Directory**: `C:\Users\saulpark\Documents\workspace\Shook\` (Windows environment)
 
@@ -55,7 +55,7 @@ Located at: `Desktop\workspace\` and `Desktop\workspace2\`
 - Frontend: React 18, TypeScript, Vite, Wouter (routing), Tailwind CSS v4, Shadcn/ui, TanStack Query
 - Backend: Node.js, Express.js, TypeScript (ESM), Drizzle ORM, PostgreSQL (Neon)
 - Authentication: Passport.js with local strategy (username/password), session-based
-- External APIs: YouTube Data API v3, SupaData API, OpenAI API, Slack Web API
+- External APIs: YouTube Data API v3, SupaData API, OpenAI API
 
 **Directory Structure:**
 ```
@@ -81,17 +81,17 @@ Located at: `Desktop\workspace\` and `Desktop\workspace2\`
 - **Service Layer**: Business logic separated into services with singleton pattern
 - **Repository Pattern**: Data access abstracted in repositories (`server/repositories/storage.ts`)
 - **Background Monitoring**: YouTube RSS feed monitoring service runs every 5 minutes
-- **Error Logging**: Centralized error logging service that sends errors to Slack
+- **Error Logging**: Centralized error logging service
 - **Session Management**: PostgreSQL-backed sessions with connect-pg-simple
 
 **Critical Architectural Patterns:**
-- **YouTube Monitoring Pipeline**: RSS parsing → Content filtering (no Shorts) → Transcript extraction → AI summarization → Slack delivery
+- **YouTube Monitoring Pipeline**: RSS parsing → Content filtering (no Shorts) → Transcript extraction → AI summarization
 - **Channel Lifecycle Management**: Auto-cleanup of `youtube_channels` when no users remain subscribed
-- **Service Dependencies**: YouTubeMonitor depends on YouTubeSummaryService and SlackService
-- **Error Recovery**: Comprehensive error handling with Slack notifications for all service failures
+- **Service Dependencies**: YouTubeMonitor depends on YouTubeSummaryService
+- **Error Recovery**: Comprehensive error handling for all service failures
 
 **Database Schema (PostgreSQL with Drizzle ORM):**
-- `users` - User accounts with Slack integration (slackUserId, slackChannelId, slackJoinedAt)
+- `users` - User accounts with authentication details
 - `youtube_channels` - Shared channel metadata with video tracking (recentVideoId, processed, caption)
 - `user_channels` - Many-to-many subscription mapping with auto-cleanup logic
 - `session` - PostgreSQL session store for authentication
@@ -124,15 +124,12 @@ DATABASE_URL=postgresql://...           # Neon PostgreSQL connection
 SESSION_SECRET=random_string           # Session encryption
 YOUTUBE_API_KEY=google_cloud_key      # YouTube Data API v3
 OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization  
-SLACK_BOT_TOKEN=xoxb-...              # Slack Bot OAuth token
-SLACK_CHANNEL_ID=debug_channel        # For error logging
 ```
 
 ### API Usage Patterns
 - **YouTube Data API**: Channel search, metadata retrieval, RSS feed parsing (10K daily quota)
 - **SupaData API**: Video transcript/caption extraction with retry logic (rate limited)
 - **OpenAI API**: AI-powered video summarization in Korean using GPT models
-- **Slack Web API**: Bot integration for user invites, private channel creation, formatted message posting
 
 ## Development Guidelines
 
@@ -142,7 +139,7 @@ SLACK_CHANNEL_ID=debug_channel        # For error logging
 - Be cautious of data loss warnings during schema changes
 
 ### Error Handling & Monitoring
-- All service errors automatically sent to Slack debug channel
+- Centralized error logging with console output
 - Use centralized error logging service in `server/services/error-logging-service.ts`
 - Implement proper error boundaries in React components
 
@@ -197,7 +194,6 @@ npm run start    # Starts production server
 
 1. **API Quota Exceeded**: YouTube API 403 errors - check Google Cloud Console quotas
 2. **Database Connection Issues**: Verify DATABASE_URL and Neon database status  
-3. **Slack Integration Problems**: Check bot permissions and token validity
 4. **Build Failures**: Run `npm run check` for TypeScript errors first
 5. **Vite Proxy Issues**: Backend must be running on port 3000 for development
 
@@ -225,11 +221,10 @@ npm run start    # Starts production server
 3. **Change Detection**: Compare new video IDs with stored `recentVideoId` in database
 4. **Transcript Extraction**: Use SupaData API to get video captions/transcripts
 5. **AI Summarization**: Generate Korean summaries using OpenAI API
-6. **Slack Delivery**: Send formatted notifications to user's private Slack channels
 7. **State Persistence**: Update database with processing state and results
 
 **Error Handling Strategy:**
-- All service errors automatically logged to designated Slack debug channel
+- All service errors automatically logged to console
 - Graceful degradation when external APIs are unavailable
 - Retry logic for transient failures with exponential backoff
 - Detailed error context (service, operation, user ID, additional metadata)

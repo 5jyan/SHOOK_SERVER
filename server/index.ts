@@ -6,7 +6,6 @@ import passport from "passport";
 import { storage } from "./repositories/storage.js";
 import { setupPassport } from "./lib/auth.js";
 import apiRouter from "./api/index.js";
-import { serveVite } from "./lib/vite.js";
 import { youtubeMonitor } from "./services/index.js";
 
 const app = express();
@@ -82,10 +81,6 @@ app.use((req, res, next) => {
 
   console.log(`[express] App environment: ${app.get("env")}`);
 
-  // Only serve Vite in production mode
-  if (process.env.NODE_ENV === 'production') {
-    serveVite(app);
-  }
 
   const port = parseInt(process.env.PORT || '3000', 10);
   server.listen({

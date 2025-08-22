@@ -1,55 +1,45 @@
-# Project Overview: Shook - YouTube Channel Monitoring & Slack Notifier
+# Project Overview: Shook - YouTube Channel Monitoring Service
 
-This is a full-stack application designed to monitor YouTube channels, generate AI-powered summaries of new videos, and deliver them as notifications to a user's Slack workspace.
+This is a backend API service designed to monitor YouTube channels and generate AI-powered summaries of new videos.
 
 ## Key Features
 
-- **User Registration & Channel Management**: Users can sign up and subscribe to their favorite YouTube channels via their handles.
-- **Automated Video Monitoring**: A background service runs every 5 minutes to check for new video uploads from the subscribed channels using RSS feeds.
-- **AI-Powered Summarization**: Upon detecting a new video, the system fetches its transcript and uses the Anthropic Claude API to create a concise summary.
-- **Slack Integration**: The generated summary, along with the video title and thumbnail, is sent to a dedicated, private Slack channel for the user.
-- **Web Interface**: A React-based frontend provides a user-friendly interface for managing channel subscriptions.
+- **User Registration & Channel Management**: Users can sign up and subscribe to their favorite YouTube channels via their handles
+- **Automated Video Monitoring**: A background service runs every 5 minutes to check for new video uploads from the subscribed channels using RSS feeds
+- **AI-Powered Summarization**: Upon detecting a new video, the system fetches its transcript and uses the OpenAI API to create a concise summary
+- **REST API**: Complete API endpoints for managing users, channels, and video monitoring
 
 ## Tech Stack
 
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Shadcn/ui, TanStack Query
-- **Backend**: Node.js, Express.js, TypeScript
+- **Backend**: Node.js, Express.js, TypeScript (ESM)
 - **Database**: PostgreSQL (managed with Neon) and Drizzle ORM
 - **Authentication**: Passport.js (local username/password strategy)
 - **External APIs**:
   - YouTube Data API v3 (for channel metadata)
   - SupaData API (for video transcripts)
-  - Anthropic Claude API (for summarization)
-  - Slack Web API (for notifications)
+  - OpenAI API (for summarization)
 
 ## Project Structure
 
 ```
-├── client/         # React Frontend
-│   ├── src/
-│   └── index.html
 ├── server/         # Node.js/Express Backend
 │   ├── api/        # API endpoints (using express.Router)
 │   │   ├── auth.ts
 │   │   ├── channels.ts
 │   │   ├── google.ts
 │   │   ├── index.ts # Central API router
-│   │   ├── slack.ts
 │   │   └── summary.ts
 │   ├── services/   # Business logic and service instances
 │   │   ├── channel-service.ts
 │   │   ├── error-logging-service.ts
 │   │   ├── index.ts # Service instance management (singleton)
-│   │   ├── slack-service.ts
 │   │   ├── youtube-monitor.ts # Core monitoring logic
 │   │   └── youtube-summary.ts # AI-powered summarization
 │   ├── repositories/ # Data access layer
 │   │   └── storage.ts
 │   ├── lib/        # Shared utilities and configurations
 │   │   ├── auth.ts # Passport.js setup
-│   │   ├── db.ts   # Database connection
-│   │   ├── slack.ts # Slack API client
-│   │   └── vite.ts # Vite middleware
+│   │   └── db.ts   # Database connection
 │   ├── utils/      # General utility functions
 │   │   ├── auth-utils.ts
 │   │   └── validation.ts
@@ -67,7 +57,7 @@ This is a full-stack application designed to monitor YouTube channels, generate 
     npm install
     ```
 2.  **Set up Environment Variables**:
-    Create a `.env` file based on the required variables listed in `PROJECT_HANDOVER.md`. This includes API keys for YouTube, Anthropic, and Slack, as well as the database connection string.
+    Create a `.env` file based on the required variables. This includes API keys for YouTube and OpenAI, as well as the database connection string.
 3.  **Run the Development Server**:
     ```bash
     npm run dev
