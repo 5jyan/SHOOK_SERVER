@@ -3,7 +3,7 @@ import { errorLogger } from "./error-logging-service.js";
 import { validateYouTubeUrl } from "../utils/validation.js";
 
 // <important_do_not_delete>
-const DEFAULT_MODEL_STR = "gpt-5";
+const DEFAULT_MODEL_STR = "gpt-5-mini";
 // </important_do_not_delete>
 
 export class YouTubeSummaryService {
