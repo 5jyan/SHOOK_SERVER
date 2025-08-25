@@ -7,6 +7,7 @@ import { storage } from "./repositories/storage.js";
 import { setupPassport } from "./lib/auth.js";
 import apiRouter from "./api/index.js";
 import { youtubeMonitor } from "./services/index.js";
+import { logWithTimestamp, errorWithTimestamp } from "./utils/timestamp.js";
 
 const app = express();
 app.use(express.json());
@@ -28,9 +29,9 @@ setupPassport();
 
 // Add logging for ALL requests
 app.use('*', (req, res, next) => {
-  console.log(`Backend: ${req.method} ${req.originalUrl} - Headers:`, JSON.stringify(req.headers, null, 2));
+  logWithTimestamp(`Backend: ${req.method} ${req.originalUrl} - Headers:`, JSON.stringify(req.headers, null, 2));
   if (req.method === 'POST') {
-    console.log('Backend: POST Body:', JSON.stringify(req.body, null, 2));
+    logWithTimestamp('Backend: POST Body:', JSON.stringify(req.body, null, 2));
   }
   next();
 });
@@ -58,7 +59,7 @@ app.use((req, res, next) => {
         logLine = logLine.slice(0, 79) + "…";
       }
 
-      console.log(`[express] ${logLine}`);
+      logWithTimestamp(`[express] ${logLine}`);
     }
   });
 
@@ -76,10 +77,10 @@ app.use((req, res, next) => {
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    console.error(err);
+    errorWithTimestamp("Express error:", err);
   });
 
-  console.log(`[express] App environment: ${app.get("env")}`);
+  logWithTimestamp(`[express] App environment: ${app.get("env")}`);
 
 
   const port = parseInt(process.env.PORT || '3000', 10);
@@ -87,9 +88,9 @@ app.use((req, res, next) => {
     port,
     host: "0.0.0.0",
   }, () => {
-    console.log(`[express] serving on port ${port}`);
+    logWithTimestamp(`[express] serving on port ${port}`);
     
     youtubeMonitor.startMonitoring();
-    console.log(`[express] YouTube channel monitoring started`);
+    logWithTimestamp(`[express] YouTube channel monitoring started`);
   });
 })();

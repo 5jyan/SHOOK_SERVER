@@ -20,6 +20,7 @@ import { eq, and, isNotNull, desc, inArray, gte } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "../lib/db";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -73,19 +74,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    console.log("[storage.ts] getUser");
+    logWithTimestamp("[storage.ts] getUser");
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    console.log("[storage.ts] getUserByUsername");
+    logWithTimestamp("[storage.ts] getUserByUsername");
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    console.log("[storage.ts] createUser");
+    logWithTimestamp("[storage.ts] createUser");
     const [user] = await db
       .insert(users)
       .values(insertUser)
@@ -94,13 +95,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    console.log("[storage.ts] getUserByEmail");
+    logWithTimestamp("[storage.ts] getUserByEmail");
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
   }
 
   async updateUserEmail(userId: number, email: string): Promise<void> {
-    console.log("[storage.ts] updateUserEmail");
+    logWithTimestamp("[storage.ts] updateUserEmail");
     await db
       .update(users)
       .set({ email })
@@ -109,19 +110,19 @@ export class DatabaseStorage implements IStorage {
 
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
-    console.log("[storage.ts] getYoutubeChannel");
+    logWithTimestamp("[storage.ts] getYoutubeChannel");
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
     return channel || undefined;
   }
 
   async getYoutubeChannelByHandle(handle: string): Promise<YoutubeChannel | undefined> {
-    console.log("[storage.ts] getYoutubeChannelByHandle");
+    logWithTimestamp("[storage.ts] getYoutubeChannelByHandle");
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.handle, handle));
     return channel || undefined;
   }
 
   async createOrUpdateYoutubeChannel(channel: InsertYoutubeChannel): Promise<YoutubeChannel> {
-    console.log("[storage.ts] createOrUpdateYoutubeChannel");
+    logWithTimestamp("[storage.ts] createOrUpdateYoutubeChannel");
     const [existingChannel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channel.channelId));
     
     if (existingChannel) {
@@ -146,7 +147,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateChannelRecentVideo(channelId: string, videoId: string): Promise<void> {
-    console.log("[storage.ts] updateChannelRecentVideo");
+    logWithTimestamp("[storage.ts] updateChannelRecentVideo");
     await db
       .update(youtubeChannels)
       .set({ recentVideoId: videoId, processed: true })
@@ -154,7 +155,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]> {
-    console.log("[storage.ts] getUserChannels");
+    logWithTimestamp("[storage.ts] getUserChannels");
     const result = await db
       .select({
         channelId: youtubeChannels.channelId,
@@ -178,7 +179,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean> {
-    console.log("[storage.ts] isUserSubscribedToChannel");
+    logWithTimestamp("[storage.ts] isUserSubscribedToChannel");
     const [subscription] = await db
       .select()
       .from(userChannels)
@@ -191,7 +192,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel> {
-    console.log("[storage.ts] subscribeUserToChannel");
+    logWithTimestamp("[storage.ts] subscribeUserToChannel");
     const [subscription] = await db
       .insert(userChannels)
       .values({ userId, channelId })
@@ -201,7 +202,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async unsubscribeUserFromChannel(userId: number, channelId: string): Promise<void> {
-    console.log("[storage.ts] unsubscribeUserFromChannel");
+    logWithTimestamp("[storage.ts] unsubscribeUserFromChannel");
     await db.delete(userChannels).where(
       and(
         eq(userChannels.userId, userId),
@@ -211,7 +212,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getChannelSubscriberCount(channelId: string): Promise<number> {
-    console.log("[storage.ts] getChannelSubscriberCount");
+    logWithTimestamp("[storage.ts] getChannelSubscriberCount");
     const result = await db
       .select({ count: userChannels.id })
       .from(userChannels)
@@ -221,13 +222,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteYoutubeChannel(channelId: string): Promise<void> {
-    console.log("[storage.ts] deleteYoutubeChannel");
+    logWithTimestamp("[storage.ts] deleteYoutubeChannel");
     await db.delete(videos).where(eq(videos.channelId, channelId));
     await db.delete(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
   }
 
   async createVideo(video: InsertVideo): Promise<Video> {
-    console.log("[storage.ts] createVideo");
+    logWithTimestamp("[storage.ts] createVideo");
     const [newVideo] = await db
       .insert(videos)
       .values(video)
@@ -236,13 +237,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVideosByChannel(channelId: string, limit: number = 20): Promise<Video[]> {
-    console.log("[storage.ts] getVideosByChannel");
+    logWithTimestamp("[storage.ts] getVideosByChannel");
     return db.select().from(videos).where(eq(videos.channelId, channelId)).orderBy(desc(videos.publishedAt)).limit(limit);
   }
 
   async getVideosForUser(userId: number, limit: number = 20, since?: number | null): Promise<(Video & { channelTitle: string })[]> {
     const sinceDate = since ? new Date(since) : null;
-    console.log(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
+    logWithTimestamp(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
     
     // First get all channels the user is subscribed to
     const subscribedChannels = await db
@@ -250,14 +251,14 @@ export class DatabaseStorage implements IStorage {
       .from(userChannels)
       .where(eq(userChannels.userId, userId));
     
-    console.log(`[storage.ts] User ${userId} is subscribed to ${subscribedChannels.length} channels`);
+    logWithTimestamp(`[storage.ts] User ${userId} is subscribed to ${subscribedChannels.length} channels`);
     
     if (subscribedChannels.length === 0) {
       return [];
     }
     
     const channelIds = subscribedChannels.map(c => c.channelId);
-    console.log(`[storage.ts] Fetching videos for channels:`, channelIds);
+    logWithTimestamp(`[storage.ts] Fetching videos for channels:`, channelIds);
     
     // Base where clause for channel filtering
     let baseWhereClause = inArray(videos.channelId, channelIds);
@@ -284,7 +285,7 @@ export class DatabaseStorage implements IStorage {
     
     // For incremental sync, add createdAt filter
     if (sinceDate) {
-      console.log(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
+      logWithTimestamp(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
       query = db
         .select({
           videoId: videos.videoId,
@@ -311,15 +312,15 @@ export class DatabaseStorage implements IStorage {
     const userVideos = await query;
     
     if (sinceDate) {
-      console.log(`[storage.ts] Incremental sync found ${userVideos.length} new videos for user ${userId} since ${sinceDate.toISOString()}`);
+      logWithTimestamp(`[storage.ts] Incremental sync found ${userVideos.length} new videos for user ${userId} since ${sinceDate.toISOString()}`);
     } else {
-      console.log(`[storage.ts] Full sync found ${userVideos.length} videos for user ${userId}`);
+      logWithTimestamp(`[storage.ts] Full sync found ${userVideos.length} videos for user ${userId}`);
     }
     
     // Log sample video with channel name for debugging
     if (userVideos.length > 0) {
       const sampleVideo = userVideos[0];
-      console.log(`[storage.ts] Sample video with channel:`, {
+      logWithTimestamp(`[storage.ts] Sample video with channel:`, {
         videoId: sampleVideo.videoId,
         title: sampleVideo.title.substring(0, 50) + '...',
         channelTitle: sampleVideo.channelTitle,
@@ -331,7 +332,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findSubscribedUsers(channelId: string): Promise<{ id: number }[]> {
-    console.log("[storage.ts] findSubscribedUsers");
+    logWithTimestamp("[storage.ts] findSubscribedUsers");
     const result = await db
       .select({
         id: users.id,
@@ -343,13 +344,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllYoutubeChannels(): Promise<YoutubeChannel[]> {
-    console.log("[storage.ts] getAllYoutubeChannels");
+    logWithTimestamp("[storage.ts] getAllYoutubeChannels");
     return db.select().from(youtubeChannels);
   }
 
   // Push token methods implementation
   async createPushToken(pushToken: InsertPushToken): Promise<PushToken> {
-    console.log("[storage.ts] createPushToken");
+    logWithTimestamp("[storage.ts] createPushToken");
     const [newPushToken] = await db
       .insert(pushTokens)
       .values(pushToken)
@@ -358,7 +359,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePushToken(deviceId: string, pushTokenData: Partial<InsertPushToken>): Promise<void> {
-    console.log("[storage.ts] updatePushToken");
+    logWithTimestamp("[storage.ts] updatePushToken");
     await db
       .update(pushTokens)
       .set({
@@ -369,14 +370,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePushToken(deviceId: string): Promise<void> {
-    console.log("[storage.ts] deletePushToken");
+    logWithTimestamp("[storage.ts] deletePushToken");
     await db
       .delete(pushTokens)
       .where(eq(pushTokens.deviceId, deviceId));
   }
 
   async markPushTokenAsInactive(deviceId: string): Promise<void> {
-    console.log("[storage.ts] markPushTokenAsInactive");
+    logWithTimestamp("[storage.ts] markPushTokenAsInactive");
     await db
       .update(pushTokens)
       .set({ isActive: false, updatedAt: new Date() })
@@ -384,7 +385,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPushTokensByUserId(userId: number): Promise<PushToken[]> {
-    console.log("[storage.ts] getPushTokensByUserId");
+    logWithTimestamp("[storage.ts] getPushTokensByUserId");
     return db
       .select()
       .from(pushTokens)
@@ -392,7 +393,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findUsersByChannelId(channelId: string): Promise<{ userId: number; pushTokens: PushToken[] }[]> {
-    console.log("[storage.ts] findUsersByChannelId");
+    logWithTimestamp("[storage.ts] findUsersByChannelId");
     
     // Get users subscribed to this channel
     const subscribedUsers = await db
@@ -428,7 +429,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void> {
-    console.log(`[storage.ts] updateChannelActiveStatus - channelId: ${channelId}, isActive: ${isActive}, errorMessage: ${errorMessage}`);
+    logWithTimestamp(`[storage.ts] updateChannelActiveStatus - channelId: ${channelId}, isActive: ${isActive}, errorMessage: ${errorMessage}`);
     
     const updateData: any = {
       isActive,

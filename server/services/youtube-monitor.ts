@@ -4,6 +4,7 @@ import { errorLogger } from "./error-logging-service.js";
 import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 interface RSSVideo {
   videoId: string;
@@ -27,7 +28,7 @@ export class YouTubeMonitor {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
 
     try {
-      console.log(`[YOUTUBE_MONITOR] Fetching RSS for channel: ${channelId}`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Fetching RSS for channel: ${channelId}`);
       const response = await fetch(rssUrl);
 
       if (!response.ok) {
@@ -35,7 +36,7 @@ export class YouTubeMonitor {
       }
 
       const xmlText = await response.text();
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`,
       );
 
@@ -43,7 +44,7 @@ export class YouTubeMonitor {
       const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
 
       if (!entryMatches || entryMatches.length === 0) {
-        console.log(
+        logWithTimestamp(
           `[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`,
         );
         return null;
@@ -80,13 +81,13 @@ export class YouTubeMonitor {
 
           // URL에 "shorts"가 포함되어 있으면 쇼츠로 간주
           if (actualUrl.includes("/shorts/")) {
-            console.log(
+            logWithTimestamp(
               `[YOUTUBE_MONITOR] Skipping shorts video: ${title} (${videoId}) - URL contains 'shorts'`,
             );
             continue;
           }
 
-          console.log(
+          logWithTimestamp(
             `[YOUTUBE_MONITOR] Latest non-shorts video from channel ${channelId}: ${title} (${videoId})`,
           );
 
@@ -99,12 +100,12 @@ export class YouTubeMonitor {
         }
       }
 
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_MONITOR] No non-shorts videos found in RSS feed for channel ${channelId}`,
       );
       return null;
     } catch (error) {
-      console.error(
+      errorWithTimestamp(
         `[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`,
         error,
       );
@@ -118,7 +119,7 @@ export class YouTubeMonitor {
     channel: YoutubeChannel,
     latestVideo: RSSVideo,
   ): Promise<void> {
-    console.log(
+    logWithTimestamp(
       `[YOUTUBE_MONITOR] Processing new video for channel ${channel.title}: ${latestVideo.title}`,
     );
 
@@ -141,7 +142,7 @@ export class YouTubeMonitor {
       await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
 
       // Send push notifications to mobile users
-      console.log(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
       try {
         const pushNotificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
           channel.channelId, 
@@ -152,9 +153,9 @@ export class YouTubeMonitor {
             summary: summary,
           }
         );
-        console.log(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
+        logWithTimestamp(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
       } catch (error) {
-        console.error(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
+        errorWithTimestamp(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
         await errorLogger.logError(error as Error, {
           service: "YouTubeMonitor",
           operation: "sendPushNotifications",
@@ -166,7 +167,7 @@ export class YouTubeMonitor {
       }
 
     } catch (error) {
-      console.error(
+      errorWithTimestamp(
         `[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`,
         error,
       );
@@ -186,15 +187,15 @@ export class YouTubeMonitor {
 
   // 모든 구독 채널 모니터링
   public async monitorAllChannels(): Promise<void> {
-    console.log(
+    logWithTimestamp(
       `[YOUTUBE_MONITOR] monitorAllChannels at ${new Date().toISOString()}`,
     );
 
     try {
       // 모든 YouTube 채널 가져오기
-      console.log(`[YOUTUBE_MONITOR] monitorAllChannels - fetching all channels`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] monitorAllChannels - fetching all channels`);
       const channels = await storage.getAllYoutubeChannels();
-      console.log(`[YOUTUBE_MONITOR] Monitoring ${channels.length} channels`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring ${channels.length} channels`);
 
       for (const channel of channels) {
         try {
@@ -204,7 +205,7 @@ export class YouTubeMonitor {
           );
 
           if (!latestVideo) {
-            console.log(
+            logWithTimestamp(
               `[YOUTUBE_MONITOR] No videos found for channel: ${channel.title}`,
             );
             continue;
@@ -212,33 +213,33 @@ export class YouTubeMonitor {
 
           // RSS 성공 시 채널 활성화 상태 복구
           if (!channel.isActive) {
-            console.log(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
+            logWithTimestamp(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
             await storage.updateChannelActiveStatus(channel.channelId, true, null);
           }
 
           // 현재 저장된 영상 ID와 비교
           if (channel.recentVideoId === latestVideo.videoId) {
-            console.log(
+            logWithTimestamp(
               `[YOUTUBE_MONITOR] No new video for channel ${channel.title} (latest: ${latestVideo.videoId})`,
             );
             continue;
           }
 
-          console.log(
+          logWithTimestamp(
             `[YOUTUBE_MONITOR] New video detected for channel ${channel.title}: ${latestVideo.title} (${latestVideo.videoId})`,
           );
 
           // 새 영상 처리
           await this.processChannelVideo(channel, latestVideo);
         } catch (error) {
-          console.error(
+          errorWithTimestamp(
             `[YOUTUBE_MONITOR] Error monitoring channel ${channel.channelId}:`,
             error,
           );
 
           // RSS 404 오류 처리 - 채널 비활성화
           if (error instanceof Error && error.message.includes('404')) {
-            console.log(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
+            logWithTimestamp(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
             await storage.updateChannelActiveStatus(
               channel.channelId, 
               false, 
@@ -256,14 +257,14 @@ export class YouTubeMonitor {
         }
       }
     } catch (error) {
-      console.error(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
       await errorLogger.logError(error as Error, {
         service: "YouTubeMonitor",
         operation: "monitorAllChannels",
       });
     }
 
-    console.log(
+    logWithTimestamp(
       `[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`,
     );
   }
@@ -271,11 +272,11 @@ export class YouTubeMonitor {
   // 5분 간격 모니터링 시작
   public startMonitoring(): void {
     if (this.monitorInterval) {
-      console.log(`[YOUTUBE_MONITOR] Monitoring already running`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring already running`);
       return;
     }
 
-    console.log(
+    logWithTimestamp(
       `[YOUTUBE_MONITOR] Starting YouTube channel monitoring (5-minute intervals)`,
     );
 
@@ -296,7 +297,7 @@ export class YouTubeMonitor {
     if (this.monitorInterval) {
       clearInterval(this.monitorInterval);
       this.monitorInterval = null;
-      console.log(`[YOUTUBE_MONITOR] YouTube channel monitoring stopped`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] YouTube channel monitoring stopped`);
     }
   }
 

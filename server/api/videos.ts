@@ -4,6 +4,7 @@ import { isAuthenticated } from "../utils/auth-utils.js";
 import { storage } from "../repositories/storage.js";
 import { errorLogger } from "../services/error-logging-service.js";
 import { decodeVideoHtmlEntities } from "../utils/html-decode.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get("/", isAuthenticated, async (req, res) => {
   const username = req.user!.username;
   
   try {
-    console.log(`[VIDEOS] Getting videos for user ${userId} (${username})`);
+    logWithTimestamp(`[VIDEOS] Getting videos for user ${userId} (${username})`);
     
     // Check for incremental sync parameter
     const sinceParam = req.query.since as string;
@@ -23,19 +24,19 @@ router.get("/", isAuthenticated, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     
     if (since) {
-      console.log(`[VIDEOS] Incremental sync requested since ${new Date(since).toISOString()}`);
-      console.log(`[VIDEOS] Requesting up to ${limit} new videos`);
+      logWithTimestamp(`[VIDEOS] Incremental sync requested since ${new Date(since).toISOString()}`);
+      logWithTimestamp(`[VIDEOS] Requesting up to ${limit} new videos`);
     } else {
-      console.log(`[VIDEOS] Full sync requested, limit: ${limit}`);
+      logWithTimestamp(`[VIDEOS] Full sync requested, limit: ${limit}`);
     }
     
     // Bypass service layer to avoid circular import issues
     const rawVideos = await storage.getVideosForUser(userId, limit, since);
     
-    console.log(`[VIDEOS] Successfully retrieved ${rawVideos.length} videos for user ${userId}`);
+    logWithTimestamp(`[VIDEOS] Successfully retrieved ${rawVideos.length} videos for user ${userId}`);
     
     if (since) {
-      console.log(`[VIDEOS] Incremental sync result: ${rawVideos.length} new videos since ${new Date(since).toISOString()}`);
+      logWithTimestamp(`[VIDEOS] Incremental sync result: ${rawVideos.length} new videos since ${new Date(since).toISOString()}`);
     }
     
     // Decode HTML entities in titles and summaries
@@ -44,7 +45,7 @@ router.get("/", isAuthenticated, async (req, res) => {
     // Log first video as sample (without full content to avoid spam)
     if (videos.length > 0) {
       const sampleVideo = videos[0];
-      console.log(`[VIDEOS] Sample video with channel:`, {
+      logWithTimestamp(`[VIDEOS] Sample video with channel:`, {
         videoId: sampleVideo.videoId,
         title: sampleVideo.title.substring(0, 50) + '...',
         channelTitle: sampleVideo.channelTitle,
@@ -56,7 +57,7 @@ router.get("/", isAuthenticated, async (req, res) => {
     
     res.json(videos);
   } catch (error) {
-    console.error(`[VIDEOS] Error getting videos for user ${userId}:`, error);
+    errorWithTimestamp(`[VIDEOS] Error getting videos for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'VideosRoute',
       operation: 'getVideos',
@@ -72,7 +73,7 @@ router.post("/sample", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
   
   try {
-    console.log(`[VIDEOS] Creating sample data for user ${userId}`);
+    logWithTimestamp(`[VIDEOS] Creating sample data for user ${userId}`);
     
     // This is just for testing - in real app, videos are created by the monitoring system
     const sampleVideos = [
@@ -103,7 +104,7 @@ router.post("/sample", isAuthenticated, async (req, res) => {
       sampleCount: sampleVideos.length 
     });
   } catch (error) {
-    console.error(`[VIDEOS] Error creating sample data:`, error);
+    errorWithTimestamp(`[VIDEOS] Error creating sample data:`, error);
     res.status(500).json({ error: "Failed to create sample data" });
   }
 });

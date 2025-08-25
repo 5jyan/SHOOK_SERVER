@@ -1,6 +1,8 @@
+import { getKoreanTimestamp, logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+
 class ErrorLoggingService {
   constructor() {
-    console.log("[ERROR_LOGGING] Error logging service initialized (console only)");
+    logWithTimestamp("[ERROR_LOGGING] Error logging service initialized (console only)");
   }
 
   async logError(error: Error, context?: {
@@ -11,20 +13,19 @@ class ErrorLoggingService {
     additionalInfo?: any;
   }) {
     try {
-      const timestamp = new Date().toISOString();
+      const timestamp = getKoreanTimestamp();
       const errorMessage = this.formatErrorMessage(error, context, timestamp);
       
-      console.error(`[ERROR_LOGGING] ${errorMessage}`);
+      console.error(`${timestamp} [ERROR_LOGGING] ${errorMessage}`);
     } catch (loggingError) {
-      console.error(`[ERROR_LOGGING] Failed to log error:`, loggingError);
+      errorWithTimestamp(`[ERROR_LOGGING] Failed to log error:`, loggingError);
       // 로깅 실패해도 원본 에러는 여전히 콘솔에 출력
-      console.error(`[ORIGINAL_ERROR]`, error);
+      errorWithTimestamp(`[ORIGINAL_ERROR]`, error);
     }
   }
 
   private formatErrorMessage(error: Error, context?: any, timestamp?: string): string {
     let message = `🚨 서비스 에러 발생\n`;
-    message += `시간: ${timestamp}\n`;
     message += `서비스: ${context?.service || 'Unknown'}\n`;
     message += `작업: ${context?.operation || 'Unknown'}\n`;
     message += `사용자 ID: ${context?.userId || 'N/A'}\n`;
@@ -44,11 +45,11 @@ class ErrorLoggingService {
   async logCustomMessage(message: string, level: 'info' | 'warning' | 'error' = 'info') {
     try {
       const emoji = level === 'error' ? '🚨' : level === 'warning' ? '⚠️' : 'ℹ️';
-      const timestamp = new Date().toISOString();
+      const timestamp = getKoreanTimestamp();
       
-      console.log(`[ERROR_LOGGING] ${emoji} ${level.toUpperCase()}: ${message} (${timestamp})`);
+      console.log(`${timestamp} [ERROR_LOGGING] ${emoji} ${level.toUpperCase()}: ${message}`);
     } catch (error) {
-      console.error(`[ERROR_LOGGING] Failed to log custom message:`, error);
+      errorWithTimestamp(`[ERROR_LOGGING] Failed to log custom message:`, error);
     }
   }
 }

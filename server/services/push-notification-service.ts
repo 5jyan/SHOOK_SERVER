@@ -3,6 +3,7 @@ import { Expo, ExpoPushMessage, ExpoPushTicket, ExpoPushReceipt } from "expo-ser
 import { storage } from "../repositories/storage.js";
 import { errorLogger } from "./error-logging-service.js";
 import type { PushToken } from "@shared/schema";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 export interface PushNotificationPayload {
   title: string;
@@ -26,12 +27,12 @@ export class PushNotificationService {
       accessToken: process.env.EXPO_ACCESS_TOKEN, // Optional: for higher rate limits
       useFcmV1: true, // Use FCM v1 API (recommended)
     });
-    console.log('🔔 [PushNotificationService] Initialized');
+    logWithTimestamp('🔔 [PushNotificationService] Initialized');
   }
 
   // Send push notification to specific user
   async sendToUser(userId: number, notification: PushNotificationPayload): Promise<boolean> {
-    console.log(`🔔 [PushNotificationService] Sending notification to user ${userId}`);
+    logWithTimestamp(`🔔 [PushNotificationService] Sending notification to user ${userId}`);
     
     try {
       // Get all active push tokens for this user
@@ -42,13 +43,13 @@ export class PushNotificationService {
         return false;
       }
 
-      console.log(`🔔 [PushNotificationService] Found ${pushTokens.length} push tokens for user ${userId}`);
+      logWithTimestamp(`🔔 [PushNotificationService] Found ${pushTokens.length} push tokens for user ${userId}`);
 
       // Send to all user's devices
       const result = await this.sendToTokens(pushTokens, notification);
       return result;
     } catch (error) {
-      console.error(`🔔 [PushNotificationService] Error sending to user ${userId}:`, error);
+      errorWithTimestamp(`🔔 [PushNotificationService] Error sending to user ${userId}:`, error);
       await errorLogger.logError(error as Error, {
         service: 'PushNotificationService',
         operation: 'sendToUser',
@@ -61,7 +62,7 @@ export class PushNotificationService {
 
   // Send push notification to all users subscribed to a channel
   async sendToChannelSubscribers(channelId: string, notification: PushNotificationPayload): Promise<number> {
-    console.log(`🔔 [PushNotificationService] Sending notification to subscribers of channel ${channelId}`);
+    logWithTimestamp(`🔔 [PushNotificationService] Sending notification to subscribers of channel ${channelId}`);
     
     try {
       // Get users and their push tokens for this channel
@@ -77,7 +78,7 @@ export class PushNotificationService {
       // Send to each user
       for (const userWithTokens of usersWithTokens) {
         if (userWithTokens.pushTokens.length > 0) {
-          console.log(`🔔 [PushNotificationService] Sending to user ${userWithTokens.userId} with ${userWithTokens.pushTokens.length} tokens`);
+          logWithTimestamp(`🔔 [PushNotificationService] Sending to user ${userWithTokens.userId} with ${userWithTokens.pushTokens.length} tokens`);
           const success = await this.sendToTokens(userWithTokens.pushTokens, notification);
           if (success) {
             successCount++;
@@ -85,10 +86,10 @@ export class PushNotificationService {
         }
       }
 
-      console.log(`🔔 [PushNotificationService] Successfully sent notifications to ${successCount}/${usersWithTokens.length} users for channel ${channelId}`);
+      logWithTimestamp(`🔔 [PushNotificationService] Successfully sent notifications to ${successCount}/${usersWithTokens.length} users for channel ${channelId}`);
       return successCount;
     } catch (error) {
-      console.error(`🔔 [PushNotificationService] Error sending to channel subscribers:`, error);
+      errorWithTimestamp(`🔔 [PushNotificationService] Error sending to channel subscribers:`, error);
       await errorLogger.logError(error as Error, {
         service: 'PushNotificationService',
         operation: 'sendToChannelSubscribers',
@@ -101,7 +102,7 @@ export class PushNotificationService {
 
   // Send push notification to specific tokens
   private async sendToTokens(tokens: PushToken[], notification: PushNotificationPayload): Promise<boolean> {
-    console.log(`🔔 [PushNotificationService] Sending to ${tokens.length} tokens`);
+    logWithTimestamp(`🔔 [PushNotificationService] Sending to ${tokens.length} tokens`);
     
     try {
       // Filter valid Expo push tokens (including development mock tokens)
@@ -144,7 +145,7 @@ export class PushNotificationService {
 
       // Log mock messages for development
       if (mockMessages.length > 0) {
-        console.log(`🔔 [PushNotificationService] Mock notifications (development):`, mockMessages.map(msg => ({
+        logWithTimestamp(`🔔 [PushNotificationService] Mock notifications (development):`, mockMessages.map(msg => ({
           token: msg.to.substring(0, 30) + '...',
           title: msg.title,
           body: msg.body
@@ -157,15 +158,15 @@ export class PushNotificationService {
       if (realMessages.length > 0) {
         // Send in chunks (Expo recommends chunks of 100)
         const chunks = this.expo.chunkPushNotifications(realMessages);
-        console.log(`🔔 [PushNotificationService] Sending ${chunks.length} real chunks`);
+        logWithTimestamp(`🔔 [PushNotificationService] Sending ${chunks.length} real chunks`);
         
         for (const chunk of chunks) {
           try {
             const tickets = await this.expo.sendPushNotificationsAsync(chunk);
             allTickets.push(...tickets);
-            console.log(`🔔 [PushNotificationService] Sent chunk with ${chunk.length} messages, got ${tickets.length} tickets`);
+            logWithTimestamp(`🔔 [PushNotificationService] Sent chunk with ${chunk.length} messages, got ${tickets.length} tickets`);
           } catch (error) {
-            console.error('🔔 [PushNotificationService] Error sending chunk:', error);
+            errorWithTimestamp('🔔 [PushNotificationService] Error sending chunk:', error);
           }
         }
       }
@@ -182,14 +183,14 @@ export class PushNotificationService {
       const errorCount = await this.processTickets(allTickets);
       const successCount = allTickets.length - errorCount;
       
-      console.log(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors out of ${allTickets.length} total`);
+      logWithTimestamp(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors out of ${allTickets.length} total`);
 
       // Later, we can implement receipt checking for delivery confirmation
       // this.checkReceipts(allTickets);
 
       return successCount > 0;
     } catch (error) {
-      console.error('🔔 [PushNotificationService] Error in sendToTokens:', error);
+      errorWithTimestamp('🔔 [PushNotificationService] Error in sendToTokens:', error);
       await errorLogger.logError(error as Error, {
         service: 'PushNotificationService',
         operation: 'sendToTokens',
@@ -206,7 +207,7 @@ export class PushNotificationService {
 
     for (const ticket of tickets) {
       if (ticket.status === 'error') {
-        console.error(`🔔 [PushNotificationService] Push ticket error:`, ticket.message);
+        errorWithTimestamp(`🔔 [PushNotificationService] Push ticket error:`, ticket.message);
         
         // Handle specific error types
         if (ticket.details && ticket.details.error) {
@@ -219,7 +220,7 @@ export class PushNotificationService {
               const tokenRecord = tokens.find(t => t.token === ticket.details!.expoPushToken);
               if (tokenRecord) {
                 await storage.markPushTokenAsInactive(tokenRecord.deviceId);
-                console.log(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
+                logWithTimestamp(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
               }
               break;
             case 'MessageTooBig':
@@ -232,14 +233,14 @@ export class PushNotificationService {
               console.warn('🔔 [PushNotificationService] Invalid sender ID');
               break;
             case 'InvalidCredentials':
-              console.error('🔔 [PushNotificationService] Invalid push credentials');
+              errorWithTimestamp('🔔 [PushNotificationService] Invalid push credentials');
               break;
           }
         }
         
         errorCount++;
       } else if (ticket.status === 'ok') {
-        console.log(`🔔 [PushNotificationService] Push ticket success: ${ticket.id}`);
+        logWithTimestamp(`🔔 [PushNotificationService] Push ticket success: ${ticket.id}`);
       }
     }
 
@@ -258,9 +259,9 @@ export class PushNotificationService {
           const receipt = receipts[receiptId];
           
           if (receipt.status === 'ok') {
-            console.log(`🔔 [PushNotificationService] Receipt ${receiptId}: delivered successfully`);
+            logWithTimestamp(`🔔 [PushNotificationService] Receipt ${receiptId}: delivered successfully`);
           } else if (receipt.status === 'error') {
-            console.error(`🔔 [PushNotificationService] Receipt ${receiptId} error:`, receipt.message);
+            errorWithTimestamp(`🔔 [PushNotificationService] Receipt ${receiptId} error:`, receipt.message);
             
             if (receipt.details && receipt.details.error === 'DeviceNotRegistered') {
               // TODO: Remove the token from database
@@ -270,13 +271,13 @@ export class PushNotificationService {
         }
       }
     } catch (error) {
-      console.error('🔔 [PushNotificationService] Error checking receipts:', error);
+      errorWithTimestamp('🔔 [PushNotificationService] Error checking receipts:', error);
     }
   }
 
   // Test notification (useful for debugging)
   async sendTestNotification(userId: number): Promise<boolean> {
-    console.log(`🔔 [PushNotificationService] Sending test notification to user ${userId}`);
+    logWithTimestamp(`🔔 [PushNotificationService] Sending test notification to user ${userId}`);
     
     const testNotification: PushNotificationPayload = {
       title: "🔔 Shook 테스트 알림",
@@ -302,7 +303,7 @@ export class PushNotificationService {
     channelName: string;
     summary: string;
   }): Promise<number> {
-    console.log(`🔔 [PushNotificationService] Sending new video summary notification for channel ${channelId}`);
+    logWithTimestamp(`🔔 [PushNotificationService] Sending new video summary notification for channel ${channelId}`);
     
     const notification: PushNotificationPayload = {
       title: `📺 ${videoData.channelName}`,

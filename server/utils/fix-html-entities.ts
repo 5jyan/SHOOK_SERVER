@@ -6,16 +6,17 @@
 import { db } from "../lib/db.js";
 import { videos, youtubeChannels } from "../../shared/schema.js";
 import { decodeYouTubeTitle, decodeYouTubeSummary, decodeHtmlEntities } from "./html-decode.js";
+import { logWithTimestamp, errorWithTimestamp } from "./timestamp.js";
 
 export async function fixHtmlEntitiesInDatabase() {
-  console.log('🔧 [HTML_ENTITY_FIX] Starting database cleanup...');
+  logWithTimestamp('🔧 [HTML_ENTITY_FIX] Starting database cleanup...');
   
   let videosFixed = 0;
   let channelsFixed = 0;
   
   try {
     // Fix HTML entities in video titles and summaries
-    console.log('📹 [HTML_ENTITY_FIX] Processing videos...');
+    logWithTimestamp('📹 [HTML_ENTITY_FIX] Processing videos...');
     const allVideos = await db.select().from(videos);
     
     for (const video of allVideos) {
@@ -27,7 +28,7 @@ export async function fixHtmlEntitiesInDatabase() {
       if (decodedTitle !== video.title) {
         updates.title = decodedTitle;
         needsUpdate = true;
-        console.log(`📹 [HTML_ENTITY_FIX] Video ${video.videoId}: "${video.title}" → "${decodedTitle}"`);
+        logWithTimestamp(`📹 [HTML_ENTITY_FIX] Video ${video.videoId}: "${video.title}" → "${decodedTitle}"`);
       }
       
       // Check if summary contains HTML entities
@@ -36,7 +37,7 @@ export async function fixHtmlEntitiesInDatabase() {
         if (decodedSummary !== video.summary) {
           updates.summary = decodedSummary;
           needsUpdate = true;
-          console.log(`📹 [HTML_ENTITY_FIX] Video ${video.videoId}: Summary updated (${video.summary.length} chars)`);
+          logWithTimestamp(`📹 [HTML_ENTITY_FIX] Video ${video.videoId}: Summary updated (${video.summary.length} chars)`);
         }
       }
       
@@ -51,7 +52,7 @@ export async function fixHtmlEntitiesInDatabase() {
     }
     
     // Fix HTML entities in channel titles and descriptions
-    console.log('📺 [HTML_ENTITY_FIX] Processing channels...');
+    logWithTimestamp('📺 [HTML_ENTITY_FIX] Processing channels...');
     const allChannels = await db.select().from(youtubeChannels);
     
     for (const channel of allChannels) {
@@ -63,7 +64,7 @@ export async function fixHtmlEntitiesInDatabase() {
       if (decodedTitle !== channel.title) {
         updates.title = decodedTitle;
         needsUpdate = true;
-        console.log(`📺 [HTML_ENTITY_FIX] Channel ${channel.channelId}: "${channel.title}" → "${decodedTitle}"`);
+        logWithTimestamp(`📺 [HTML_ENTITY_FIX] Channel ${channel.channelId}: "${channel.title}" → "${decodedTitle}"`);
       }
       
       // Check if description contains HTML entities
@@ -72,7 +73,7 @@ export async function fixHtmlEntitiesInDatabase() {
         if (decodedDescription !== channel.description) {
           updates.description = decodedDescription;
           needsUpdate = true;
-          console.log(`📺 [HTML_ENTITY_FIX] Channel ${channel.channelId}: Description updated`);
+          logWithTimestamp(`📺 [HTML_ENTITY_FIX] Channel ${channel.channelId}: Description updated`);
         }
       }
       
@@ -86,10 +87,10 @@ export async function fixHtmlEntitiesInDatabase() {
       }
     }
     
-    console.log(`✅ [HTML_ENTITY_FIX] Database cleanup completed!`);
-    console.log(`📊 [HTML_ENTITY_FIX] Summary:`);
-    console.log(`   - Videos fixed: ${videosFixed}/${allVideos.length}`);
-    console.log(`   - Channels fixed: ${channelsFixed}/${allChannels.length}`);
+    logWithTimestamp(`✅ [HTML_ENTITY_FIX] Database cleanup completed!`);
+    logWithTimestamp(`📊 [HTML_ENTITY_FIX] Summary:`);
+    logWithTimestamp(`   - Videos fixed: ${videosFixed}/${allVideos.length}`);
+    logWithTimestamp(`   - Channels fixed: ${channelsFixed}/${allChannels.length}`);
     
     return {
       videosProcessed: allVideos.length,
@@ -99,7 +100,7 @@ export async function fixHtmlEntitiesInDatabase() {
     };
     
   } catch (error) {
-    console.error('❌ [HTML_ENTITY_FIX] Error during database cleanup:', error);
+    errorWithTimestamp('❌ [HTML_ENTITY_FIX] Error during database cleanup:', error);
     throw error;
   }
 }
@@ -109,11 +110,11 @@ export async function fixHtmlEntitiesInDatabase() {
 // if (import.meta.url === `file://${process.argv[1]}`) {
 //   fixHtmlEntitiesInDatabase()
 //     .then((result) => {
-//       console.log('🎉 [HTML_ENTITY_FIX] Cleanup completed successfully:', result);
+//       logWithTimestamp('🎉 [HTML_ENTITY_FIX] Cleanup completed successfully:', result);
 //       process.exit(0);
 //     })
 //     .catch((error) => {
-//       console.error('💥 [HTML_ENTITY_FIX] Cleanup failed:', error);
+//       errorWithTimestamp('💥 [HTML_ENTITY_FIX] Cleanup failed:', error);
 //       process.exit(1);
 //     });
 // }

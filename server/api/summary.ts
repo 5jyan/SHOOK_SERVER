@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { summaryService } from "../services/index.js";
 import { isAuthenticated } from "../utils/auth-utils.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.post("/generate", isAuthenticated, async (req, res) => {
     const result = await summaryService.generateSummary(url);
     res.json(result);
   } catch (error) {
-    console.error("[SUMMARY] Error generating summary:", error);
+    errorWithTimestamp("[SUMMARY] Error generating summary:", error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : "요약 생성 중 오류가 발생했습니다." 
     });
@@ -24,7 +25,7 @@ router.get("/status/:videoId", isAuthenticated, async (req, res) => {
     const status = await summaryService.getSummaryStatus(req.params.videoId);
     res.json(status);
   } catch (error) {
-    console.error("[SUMMARY] Error getting summary status:", error);
+    errorWithTimestamp("[SUMMARY] Error getting summary status:", error);
     res.status(500).json({ error: "Failed to get summary status" });
   }
 });

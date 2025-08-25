@@ -3,6 +3,8 @@
  * Handles common HTML entities that appear in YouTube titles and descriptions
  */
 
+import { logWithTimestamp } from "./timestamp.js";
+
 // Common HTML entity mappings
 const HTML_ENTITIES: Record<string, string> = {
   '&quot;': '"',
@@ -97,9 +99,9 @@ export function decodeHtmlEntities(str: string): string {
 export function decodeYouTubeTitle(title: string): string {
   if (!title) return title;
 
-  console.log(`[html-decode] Original title: "${title}"`);
+  logWithTimestamp(`[html-decode] Original title: "${title}"`);
   const decoded = decodeHtmlEntities(title);
-  console.log(`[html-decode] Decoded title: "${decoded}"`);
+  logWithTimestamp(`[html-decode] Decoded title: "${decoded}"`);
   
   return decoded;
 }
@@ -115,7 +117,7 @@ export function decodeYouTubeSummary(summary: string): string {
   const decoded = decodeHtmlEntities(summary);
   
   // Log only first 100 chars to avoid spam
-  console.log(`[html-decode] Summary decoded: "${decoded.substring(0, 100)}${decoded.length > 100 ? '...' : ''}"`);
+  logWithTimestamp(`[html-decode] Summary decoded: "${decoded.substring(0, 100)}${decoded.length > 100 ? '...' : ''}"`);
   
   return decoded;
 }

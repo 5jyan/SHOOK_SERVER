@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { errorLogger } from "./error-logging-service.js";
 import { validateYouTubeUrl } from "../utils/validation.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 // <important_do_not_delete>
 const DEFAULT_MODEL_STR = "gpt-5-mini";
@@ -10,10 +11,10 @@ export class YouTubeSummaryService {
   private openai: OpenAI;
 
   constructor() {
-    console.log(`[YOUTUBE_SUMMARY] Initializing YouTube Summary service...`);
+    logWithTimestamp(`[YOUTUBE_SUMMARY] Initializing YouTube Summary service...`);
 
     if (!process.env.OPENAI_API_KEY) {
-      console.error(
+      errorWithTimestamp(
         `[YOUTUBE_SUMMARY] OPENAI_API_KEY environment variable is missing`,
       );
       throw new Error("OPENAI_API_KEY environment variable must be set");
@@ -23,7 +24,7 @@ export class YouTubeSummaryService {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    console.log(`[YOUTUBE_SUMMARY] OpenAI client initialized successfully`);
+    logWithTimestamp(`[YOUTUBE_SUMMARY] OpenAI client initialized successfully`);
   }
 
   /**
@@ -52,17 +53,17 @@ export class YouTubeSummaryService {
       "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
     };
 
-    console.log(`[YOUTUBE_SUMMARY] Requesting transcript from SupaData API...`);
+    logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting transcript from SupaData API...`);
     const response = await fetch(requestUrl, {
       method: "GET",
       headers: requestHeaders,
     });
-    console.log(`[YOUTUBE_SUMMARY] Received response from SupaData API.`);
+    logWithTimestamp(`[YOUTUBE_SUMMARY] Received response from SupaData API.`);
 
     const responseText = await response.text();
 
     if (!response.ok) {
-      console.error(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
         status: response.status,
         statusText: response.statusText,
         body: responseText,
@@ -77,12 +78,12 @@ export class YouTubeSummaryService {
     try {
       transcriptData = JSON.parse(responseText);
     } catch (parseError) {
-      console.error(`[YOUTUBE_SUMMARY] JSON parse error:`, parseError);
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] JSON parse error:`, parseError);
       throw new Error(`응답 형식 오류: JSON 파싱 실패`);
     }
 
     if (transcriptData.error) {
-      console.error(`[YOUTUBE_SUMMARY] API returned error:`, transcriptData.error);
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] API returned error:`, transcriptData.error);
       throw new Error(`SupaData API 오류: ${transcriptData.error}`);
     }
 
@@ -113,7 +114,7 @@ export class YouTubeSummaryService {
    */
   async extractTranscript(youtubeUrl: string): Promise<string> {
     try {
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_SUMMARY] Extracting transcript for URL: ${youtubeUrl}`,
       );
 
@@ -121,17 +122,17 @@ export class YouTubeSummaryService {
       if (!videoId) {
         throw new Error("유효하지 않은 YouTube URL입니다.");
       }
-      console.log(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
 
       const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
       const transcriptText = this._parseSupaDataResponse(responseText);
 
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
       );
       return transcriptText;
     } catch (error) {
-      console.error(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
       await errorLogger.logError(error as Error, {
         service: "YouTubeSummaryService",
         operation: "extractTranscript",
@@ -155,14 +156,14 @@ export class YouTubeSummaryService {
     youtubeUrl: string,
   ): Promise<string> {
     try {
-      console.log(`[YOUTUBE_SUMMARY] Summarizing transcript with OpenAI...`);
-      console.log(
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Summarizing transcript with OpenAI...`);
+      logWithTimestamp(
         `[YOUTUBE_SUMMARY] Transcript length: ${transcript.length} characters`,
       );
 
       const prompt = this._buildOpenAIPrompt(transcript, youtubeUrl);
 
-      console.log(`[YOUTUBE_SUMMARY] Requesting summary from OpenAI API...`);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting summary from OpenAI API...`);
       const response = await this.openai.chat.completions.create({
         model: DEFAULT_MODEL_STR, // "gpt-4o-mini"
         messages: [
@@ -172,22 +173,22 @@ export class YouTubeSummaryService {
           },
         ],
       });
-      console.log(`[YOUTUBE_SUMMARY] Received response from OpenAI API.`);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Received response from OpenAI API.`);
 
-      console.log(`[YOUTUBE_SUMMARY] OpenAI API response received`);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] OpenAI API response received`);
 
       if (!response.choices || response.choices.length === 0) {
         throw new Error("요약 생성 실패");
       }
 
       const summary = response.choices[0].message.content || "";
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_SUMMARY] Summary generated, length: ${summary.length} characters`,
       );
 
       return summary;
     } catch (error) {
-      console.error(`[YOUTUBE_SUMMARY] Error summarizing transcript:`, error);
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] Error summarizing transcript:`, error);
       await errorLogger.logError(error as Error, {
         service: "YouTubeSummaryService",
         operation: "summarizeTranscript",
@@ -204,7 +205,7 @@ export class YouTubeSummaryService {
     youtubeUrl: string,
   ): Promise<{ transcript: string; summary: string }> {
     try {
-      console.log(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl}`);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl}`);
 
       // 1. 자막 추출
       const transcript = await this.extractTranscript(youtubeUrl);
@@ -212,7 +213,7 @@ export class YouTubeSummaryService {
       // 2. 요약 생성
       const summary = await this.summarizeTranscript(transcript, youtubeUrl);
 
-      console.log(
+      logWithTimestamp(
         `[YOUTUBE_SUMMARY] YouTube URL processing completed successfully`,
       );
 
@@ -221,7 +222,7 @@ export class YouTubeSummaryService {
         summary,
       };
     } catch (error) {
-      console.error(`[YOUTUBE_SUMMARY] Error processing YouTube URL:`, error);
+      errorWithTimestamp(`[YOUTUBE_SUMMARY] Error processing YouTube URL:`, error);
       await errorLogger.logError(error as Error, {
         service: "YouTubeSummaryService",
         operation: "processYouTubeUrl",
@@ -233,7 +234,7 @@ export class YouTubeSummaryService {
 
   
   async generateSummary(url: string) {
-    console.log(`[SUMMARY_SERVICE] Generating summary for URL: ${url}`);
+    logWithTimestamp(`[SUMMARY_SERVICE] Generating summary for URL: ${url}`);
     
     // Validate URL
     const validation = validateYouTubeUrl(url);
@@ -249,7 +250,7 @@ export class YouTubeSummaryService {
         summary: result.summary
       };
     } catch (error) {
-      console.error(`[SUMMARY_SERVICE] Error generating summary:`, error);
+      errorWithTimestamp(`[SUMMARY_SERVICE] Error generating summary:`, error);
       // errorLogger 사용
       await errorLogger.logError(error as Error, {
         service: 'SummaryService',

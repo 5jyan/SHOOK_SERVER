@@ -9,17 +9,18 @@ import adminRoutes from "./admin.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { channelService } from "../services/index.js";
 import { errorLogger } from "../services/error-logging-service.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 import authRoutes from "./auth.js";
 
 const router = Router();
 
-console.log('✅ Main API router loaded');
+logWithTimestamp('✅ Main API router loaded');
 
 router.use("/", authRoutes);
 
 router.use("/channels", channelRoutes);
-console.log('📋 Registering Google routes at /auth/google');
+logWithTimestamp('📋 Registering Google routes at /auth/google');
 router.use("/auth/google", googleRoutes);
 router.use("/summary", summaryRoutes);
 router.use("/videos", videoRoutes);
@@ -33,7 +34,7 @@ router.get("/channel-videos/:userId", isAuthenticated, authorizeUser, async (req
     const videos = await channelService.getChannelVideos(req.user!.id);
     res.json(videos);
   } catch (error) {
-    console.error("[CHANNEL_VIDEOS] Error getting channel videos:", error);
+    errorWithTimestamp("[CHANNEL_VIDEOS] Error getting channel videos:", error);
     await errorLogger.logError(error as Error, {
       service: 'ChannelVideosRoute',
       operation: 'getChannelVideos',

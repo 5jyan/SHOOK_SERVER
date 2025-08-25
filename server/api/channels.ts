@@ -2,6 +2,7 @@ import { Router } from "express";
 import { channelService } from "../services/index.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { errorLogger } from "../services/error-logging-service.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get("/search", isAuthenticated, async (req, res) => {
     const results = await channelService.searchChannels(query);
     res.json(results);
   } catch (error) {
-    console.error("[CHANNELS] Error searching channels:", error);
+    errorWithTimestamp("[CHANNELS] Error searching channels:", error);
     await errorLogger.logError(error as Error, {
       service: 'ChannelRoutes',
       operation: 'searchChannels',
@@ -32,7 +33,7 @@ router.get("/:userId", isAuthenticated, authorizeUser, async (req, res) => {
     const channels = await channelService.getUserChannels(req.user!.id);
     res.json(channels);
   } catch (error) {
-    console.error("[CHANNELS] Error getting user channels:", error);
+    errorWithTimestamp("[CHANNELS] Error getting user channels:", error);
     await errorLogger.logError(error as Error, {
       service: 'ChannelRoutes',
       operation: 'getUserChannels',
@@ -46,11 +47,11 @@ router.get("/:userId", isAuthenticated, authorizeUser, async (req, res) => {
 router.post("/", isAuthenticated, async (req, res) => {
   try {
     const { channelId } = req.body;
-    console.log("[CHANNELS] Received channelId in POST request:", channelId);
+    logWithTimestamp("[CHANNELS] Received channelId in POST request:", channelId);
     const result = await channelService.addChannel(req.user!.id, channelId);
     res.json(result);
   } catch (error) {
-    console.error("[CHANNELS] Error adding channel:", error);
+    errorWithTimestamp("[CHANNELS] Error adding channel:", error);
     await errorLogger.logError(error as Error, {
       service: 'ChannelRoutes',
       operation: 'addChannel',
@@ -67,7 +68,7 @@ router.delete("/:channelId", isAuthenticated, async (req, res) => {
     await channelService.deleteChannel(req.user!.id, req.params.channelId);
     res.json({ success: true });
   } catch (error) {
-    console.error("[CHANNELS] Error deleting channel:", error);
+    errorWithTimestamp("[CHANNELS] Error deleting channel:", error);
     await errorLogger.logError(error as Error, {
       service: 'ChannelRoutes',
       operation: 'deleteChannel',

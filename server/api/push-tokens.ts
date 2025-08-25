@@ -4,13 +4,14 @@ import { storage } from "../repositories/storage.js";
 import { errorLogger } from "../services/error-logging-service.js";
 import { pushNotificationService } from "../services/push-notification-service.js";
 import type { InsertPushToken } from "@shared/schema";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
 // Helper function to clean up duplicate tokens
 async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken: string) {
   try {
-    console.log(`[PUSH-TOKENS] Cleaning up duplicate tokens for user ${userId}, device ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Cleaning up duplicate tokens for user ${userId}, device ${deviceId}`);
     
     const existingTokens = await storage.getPushTokensByUserId(userId);
     
@@ -26,7 +27,7 @@ async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken
       
       // Remove if same token but different device
       if (token.token === newToken && token.deviceId !== deviceId) {
-        console.log(`[PUSH-TOKENS] Found duplicate token with different device: ${token.deviceId}`);
+        logWithTimestamp(`[PUSH-TOKENS] Found duplicate token with different device: ${token.deviceId}`);
         return true;
       }
       
@@ -34,7 +35,7 @@ async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken
       if (!token.isActive && token.updatedAt) {
         const daysSinceUpdate = (Date.now() - new Date(token.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
         if (daysSinceUpdate > 30) {
-          console.log(`[PUSH-TOKENS] Found old inactive token: ${token.deviceId} (${daysSinceUpdate.toFixed(1)} days old)`);
+          logWithTimestamp(`[PUSH-TOKENS] Found old inactive token: ${token.deviceId} (${daysSinceUpdate.toFixed(1)} days old)`);
           return true;
         }
       }
@@ -50,7 +51,7 @@ async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken
     );
 
     for (const oldToken of oldTokensForSameDevice) {
-      console.log(`[PUSH-TOKENS] Marking old token for device ${oldToken.deviceId} as inactive: ${oldToken.token}`);
+      logWithTimestamp(`[PUSH-TOKENS] Marking old token for device ${oldToken.deviceId} as inactive: ${oldToken.token}`);
       await storage.markPushTokenAsInactive(oldToken.deviceId);
     }
 
@@ -59,16 +60,16 @@ async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken
     
     // Remove duplicate/old tokens
     for (const tokenToRemove of tokensToRemove) {
-      console.log(`[PUSH-TOKENS] Removing duplicate/old token: ${tokenToRemove.deviceId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Removing duplicate/old token: ${tokenToRemove.deviceId}`);
       await storage.deletePushToken(tokenToRemove.deviceId);
     }
     
     if (allTokensToProcess.length > 0) {
-      console.log(`[PUSH-TOKENS] Processed ${allTokensToProcess.length} duplicate/old tokens for user ${userId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Processed ${allTokensToProcess.length} duplicate/old tokens for user ${userId}`);
     }
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error cleaning up duplicate tokens:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error cleaning up duplicate tokens:`, error);
     // Don't throw error - just log it, so the main token registration can continue
   }
 }
@@ -79,7 +80,7 @@ router.post("/", isAuthenticated, async (req, res) => {
   const { token, deviceId, platform, appVersion } = req.body;
   
   try {
-    console.log(`[PUSH-TOKENS] Registering push token for user ${userId}, device: ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Registering push token for user ${userId}, device: ${deviceId}`);
     
     // Validate required fields
     if (!token || !deviceId || !platform || !appVersion) {
@@ -104,7 +105,7 @@ router.post("/", isAuthenticated, async (req, res) => {
         appVersion,
         isActive: true
       });
-      console.log(`[PUSH-TOKENS] Updated existing push token for device: ${deviceId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Updated existing push token for device: ${deviceId}`);
     } else {
       // Create new token
       const newPushToken: InsertPushToken = {
@@ -117,7 +118,7 @@ router.post("/", isAuthenticated, async (req, res) => {
       };
       
       await storage.createPushToken(newPushToken);
-      console.log(`[PUSH-TOKENS] Created new push token for device: ${deviceId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Created new push token for device: ${deviceId}`);
     }
 
     res.json({ 
@@ -126,7 +127,7 @@ router.post("/", isAuthenticated, async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error registering push token for user ${userId}:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error registering push token for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'PushTokensRoute',
       operation: 'registerPushToken',
@@ -147,7 +148,7 @@ router.put("/:deviceId", isAuthenticated, async (req, res) => {
   const { token, platform, appVersion } = req.body;
   
   try {
-    console.log(`[PUSH-TOKENS] Updating push token for user ${userId}, device: ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Updating push token for user ${userId}, device: ${deviceId}`);
     
     // Validate that user owns this device token
     const existingTokens = await storage.getPushTokensByUserId(userId);
@@ -168,14 +169,14 @@ router.put("/:deviceId", isAuthenticated, async (req, res) => {
       isActive: true
     });
 
-    console.log(`[PUSH-TOKENS] Successfully updated push token for device: ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Successfully updated push token for device: ${deviceId}`);
     res.json({ 
       success: true, 
       message: "Push token updated successfully" 
     });
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error updating push token for user ${userId}:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error updating push token for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'PushTokensRoute',
       operation: 'updatePushToken',
@@ -195,7 +196,7 @@ router.delete("/:deviceId", isAuthenticated, async (req, res) => {
   const { deviceId } = req.params;
   
   try {
-    console.log(`[PUSH-TOKENS] Deleting push token for user ${userId}, device: ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Deleting push token for user ${userId}, device: ${deviceId}`);
     
     // Validate that user owns this device token
     const existingTokens = await storage.getPushTokensByUserId(userId);
@@ -211,14 +212,14 @@ router.delete("/:deviceId", isAuthenticated, async (req, res) => {
     // Delete token
     await storage.deletePushToken(deviceId);
 
-    console.log(`[PUSH-TOKENS] Successfully deleted push token for device: ${deviceId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Successfully deleted push token for device: ${deviceId}`);
     res.json({ 
       success: true, 
       message: "Push token deleted successfully" 
     });
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error deleting push token for user ${userId}:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error deleting push token for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'PushTokensRoute',
       operation: 'deletePushToken',
@@ -237,11 +238,11 @@ router.get("/", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
   
   try {
-    console.log(`[PUSH-TOKENS] Getting push tokens for user ${userId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Getting push tokens for user ${userId}`);
     
     const pushTokens = await storage.getPushTokensByUserId(userId);
 
-    console.log(`[PUSH-TOKENS] Found ${pushTokens.length} push tokens for user ${userId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Found ${pushTokens.length} push tokens for user ${userId}`);
     res.json({ 
       success: true, 
       data: pushTokens.map(token => ({
@@ -258,7 +259,7 @@ router.get("/", isAuthenticated, async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error getting push tokens for user ${userId}:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error getting push tokens for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'PushTokensRoute',
       operation: 'getPushTokens',
@@ -276,18 +277,18 @@ router.post("/test", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
   
   try {
-    console.log(`[PUSH-TOKENS] Sending test notification to user ${userId}`);
+    logWithTimestamp(`[PUSH-TOKENS] Sending test notification to user ${userId}`);
     
     const success = await pushNotificationService.sendTestNotification(userId);
     
     if (success) {
-      console.log(`[PUSH-TOKENS] Test notification sent successfully to user ${userId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Test notification sent successfully to user ${userId}`);
       res.json({ 
         success: true, 
         message: "Test notification sent successfully" 
       });
     } else {
-      console.log(`[PUSH-TOKENS] Failed to send test notification to user ${userId}`);
+      logWithTimestamp(`[PUSH-TOKENS] Failed to send test notification to user ${userId}`);
       res.status(400).json({ 
         success: false, 
         error: "No active push tokens found or notification failed" 
@@ -295,7 +296,7 @@ router.post("/test", isAuthenticated, async (req, res) => {
     }
     
   } catch (error) {
-    console.error(`[PUSH-TOKENS] Error sending test notification to user ${userId}:`, error);
+    errorWithTimestamp(`[PUSH-TOKENS] Error sending test notification to user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
       service: 'PushTokensRoute',
       operation: 'sendTestNotification',
