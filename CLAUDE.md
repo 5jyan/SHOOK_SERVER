@@ -4,27 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains multiple TypeScript/React projects primarily located in `Documents\workspace\`. The main active project is **Shook** - a YouTube channel monitoring system that monitors YouTube channels for new videos and generates AI-powered summaries.
+This repository contains the **Shook Server** - a backend API service that monitors YouTube channels for new videos and generates AI-powered summaries. This is a server-only project built with Node.js/Express and TypeScript.
 
-**Current Working Directory**: `C:\Users\saulpark\Documents\workspace\Shook\` (Windows environment)
+**Current Working Directory**: `C:\Users\saulpark\Documents\workspace\shook_server\` (Windows environment)
 
 ## Common Development Commands
 
-### Shook Project (Primary Active Project)
-Navigate to: `Documents\workspace\Shook\`
-
 ```bash
 # Development
-npm run dev              # Start both client (Vite) and server (Express) concurrently
-npm run dev:client      # Start only the frontend (Vite dev server)  
-npm run dev:server      # Start only the backend (Express with tsx watch)
+npm run dev              # Start development server with tsx watch (hot-reload)
 
 # Build & Production
-npm run build           # Build client and server for production
+npm run build           # Build server for production using esbuild
 npm run start           # Start production server (requires prior build)
 
 # Database Operations
-npm run db:push         # Apply database schema changes using Drizzle
+npm run db:push         # Apply database schema changes using Drizzle Kit
 
 # Type Checking
 npm run check           # Run TypeScript compiler to check for type errors
@@ -33,88 +28,101 @@ npm run check           # Run TypeScript compiler to check for type errors
 npm install             # Install all dependencies
 ```
 
-### Roving-Through Project
-Navigate to: `Documents\workspace\Roving-Through\Roving-Through\`
+## Docker Commands
 
 ```bash
-npm run dev             # Start development server
-npm run build           # Build for production
-npm run db:push         # Apply database schema changes
-```
+# Build and run with Docker
+docker build . -t shook-app
+docker run -p 3000:3000 --env-file .env shook-app
 
-### Browser Extensions (Chrome Extensions)
-Located at: `Desktop\workspace\` and `Desktop\workspace2\`
-- Simple HTML/JS Chrome extensions
-- Load as unpacked extensions in Chrome developer mode
+# Using Docker Compose
+docker-compose up
+```
 
 ## Architecture & Project Structure
 
-### Shook (Main Project) - Full-Stack TypeScript Application
+### Shook Server - Backend API Service
 
 **Tech Stack:**
-- Frontend: React 18, TypeScript, Vite, Wouter (routing), Tailwind CSS v4, Shadcn/ui, TanStack Query
-- Backend: Node.js, Express.js, TypeScript (ESM), Drizzle ORM, PostgreSQL (Neon)
-- Authentication: Passport.js with local strategy (username/password), session-based
-- External APIs: YouTube Data API v3, SupaData API, OpenAI API
+- Backend: Node.js 22, Express.js, TypeScript (ESM), Drizzle ORM, PostgreSQL (Neon)
+- Authentication: Passport.js with local strategy + Google OAuth, session-based
+- External APIs: YouTube Data API v3, SupaData API, OpenAI API, Google APIs, Expo Push Notifications
+- Build: esbuild for production bundling, tsx for development
+- Deployment: Docker with multi-stage builds
 
 **Directory Structure:**
 ```
-├── client/              # React frontend
-│   ├── src/
-│   │   ├── components/  # Reusable components (including shadcn/ui)
-│   │   ├── pages/       # Page components
-│   │   ├── hooks/       # Custom React hooks
-│   │   ├── services/    # API service layer
-│   │   └── lib/         # Utilities and configurations
-├── server/              # Express backend
-│   ├── api/             # API endpoints (Express routers)
-│   ├── services/        # Business logic and service instances
+├── server/              # Express backend API
+│   ├── api/             # API route handlers (Express routers)
+│   │   ├── auth.ts      # Authentication endpoints
+│   │   ├── channels.ts  # YouTube channel management
+│   │   ├── videos.ts    # Video data endpoints
+│   │   ├── user.ts      # User management
+│   │   ├── push-tokens.ts # Mobile push notification tokens
+│   │   └── admin.ts     # Administrative endpoints
+│   ├── services/        # Business logic layer
+│   │   ├── youtube-monitor.ts      # Background YouTube RSS monitoring
+│   │   ├── youtube-summary.ts     # AI video summarization
+│   │   ├── channel-service.ts     # Channel operations
+│   │   ├── push-notification-service.ts # Mobile notifications
+│   │   └── error-logging-service.ts     # Centralized logging
 │   ├── repositories/    # Data access layer
-│   ├── lib/             # Shared utilities and configurations
-│   └── utils/           # General utility functions
+│   │   └── storage.ts   # Database operations and session store
+│   ├── lib/             # Core configurations
+│   │   ├── auth.ts      # Passport.js configuration
+│   │   └── db.ts        # Database connection setup
+│   └── utils/           # Utility functions
 ├── shared/              # Shared database schema (Drizzle ORM)
-└── package.json         # Monorepo dependencies and scripts
+│   └── schema.ts        # PostgreSQL tables with Zod validation
+├── dist/                # Production build output
+├── Dockerfile           # Multi-stage Docker build
+├── docker-compose.yml   # Container orchestration
+└── package.json         # ESM project configuration
 ```
 
 **Key Backend Architecture:**
 - **Modular API Routes**: Each feature has its own router file in `server/api/`
-- **Service Layer**: Business logic separated into services with singleton pattern
+- **Service Layer**: Business logic separated into services with singleton pattern (`server/services/index.ts`)
 - **Repository Pattern**: Data access abstracted in repositories (`server/repositories/storage.ts`)
 - **Background Monitoring**: YouTube RSS feed monitoring service runs every 5 minutes
-- **Error Logging**: Centralized error logging service
+- **Error Logging**: Centralized error logging service with console output and structured logging
 - **Session Management**: PostgreSQL-backed sessions with connect-pg-simple
+- **Mobile Support**: Push notification service for Expo-based mobile apps
 
 **Critical Architectural Patterns:**
-- **YouTube Monitoring Pipeline**: RSS parsing → Content filtering (no Shorts) → Transcript extraction → AI summarization
+- **YouTube Monitoring Pipeline**: RSS parsing → Content filtering (no Shorts) → Transcript extraction → AI summarization → Push notifications
 - **Channel Lifecycle Management**: Auto-cleanup of `youtube_channels` when no users remain subscribed
-- **Service Dependencies**: YouTubeMonitor depends on YouTubeSummaryService
-- **Error Recovery**: Comprehensive error handling for all service failures
+- **Service Dependencies**: YouTubeMonitor depends on YouTubeSummaryService and PushNotificationService
+- **Error Recovery**: Comprehensive error handling for all service failures with detailed logging
+- **Multi-Auth Support**: Local username/password and Google OAuth authentication
 
 **Database Schema (PostgreSQL with Drizzle ORM):**
-- `users` - User accounts with authentication details
-- `youtube_channels` - Shared channel metadata with video tracking (recentVideoId, processed, caption)
+- `users` - User accounts with authentication details, roles (user/tester/manager), Google OAuth support
+- `youtube_channels` - Shared channel metadata with video tracking (recentVideoId, processed, isActive)
+- `videos` - Individual video records with summaries, transcripts, and processing status
 - `user_channels` - Many-to-many subscription mapping with auto-cleanup logic
+- `push_tokens` - Mobile device push notification tokens for Expo
 - `session` - PostgreSQL session store for authentication
 
 ### Development Environment Configuration
 
 **TypeScript Configuration:**
-- Monorepo setup with path aliases: `@/*` for client, `@shared/*` for shared
-- Strict mode enabled with ESNext modules
-- Bundle resolution for Vite compatibility
+- ESNext modules with strict mode enabled
+- Path aliases: `@shared/*` for shared database schema
+- Bundle resolution for esbuild compatibility
+- Node.js types and allowImportingTsExtensions enabled
 
-**Vite Configuration:**
-- React plugin with runtime error overlay (@replit/vite-plugin-runtime-error-modal)
-- API proxy to Express backend on port 3000 (`/api/*` routes)
-- Path aliases matching TypeScript configuration (`@/*`, `@shared/*`)
-- Tailwind CSS v4 with @tailwindcss/vite plugin
-- Special handling for Replit deployment (cartographer plugin)
+**Build Configuration:**
+- **Development**: tsx watch for hot-reloading with `npm run dev`
+- **Production**: esbuild bundles server to `dist/server/index.js` in ESM format
+- **Docker**: Multi-stage build for optimized container size
 
 **Database Configuration:**
 - Drizzle ORM with PostgreSQL dialect and Neon serverless driver
 - Schema defined in `shared/schema.ts` with Zod validation schemas
 - Push-based migrations (no SQL migration files) - use `npm run db:push`
 - Connection pooling through @neondatabase/serverless
+- Session store using connect-pg-simple
 
 ## External Service Integration
 
@@ -123,13 +131,19 @@ Located at: `Desktop\workspace\` and `Desktop\workspace2\`
 DATABASE_URL=postgresql://...           # Neon PostgreSQL connection
 SESSION_SECRET=random_string           # Session encryption
 YOUTUBE_API_KEY=google_cloud_key      # YouTube Data API v3
-OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization  
+OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization
+GOOGLE_CLIENT_ID=google_oauth_client  # Google OAuth for authentication
+GOOGLE_CLIENT_SECRET=google_oauth_secret
+PORT=3000                            # Server port (optional)
+NODE_ENV=development                 # Environment setting
 ```
 
 ### API Usage Patterns
 - **YouTube Data API**: Channel search, metadata retrieval, RSS feed parsing (10K daily quota)
 - **SupaData API**: Video transcript/caption extraction with retry logic (rate limited)
 - **OpenAI API**: AI-powered video summarization in Korean using GPT models
+- **Google OAuth**: User authentication via Google accounts
+- **Expo Push Notifications**: Mobile app notifications via Expo's service
 
 ## Development Guidelines
 
@@ -139,17 +153,18 @@ OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization
 - Be cautious of data loss warnings during schema changes
 
 ### Error Handling & Monitoring
-- Centralized error logging with console output
+- Centralized error logging with console output and structured logging
 - Use centralized error logging service in `server/services/error-logging-service.ts`
-- Implement proper error boundaries in React components
+- All service errors include timestamps and detailed context
 
 ### Code Patterns
-- **React**: Use TanStack Query for server state, React Hook Form + Zod for forms, Wouter for routing
-- **Frontend Architecture**: Custom hooks for domain logic, service layer for API calls, Shadcn/ui for components
-- **Backend**: Express routers with middleware stack (auth → authorization → business logic)
-- **Service Layer**: Singleton pattern with dependency injection, centralized error handling
+- **API Layer**: Express routers with middleware stack (auth → authorization → business logic)
+- **Service Layer**: Singleton pattern with dependency injection, services exported from `server/services/index.ts`
 - **Database**: Drizzle ORM with type-safe queries and relations, no raw SQL
-- **Authentication**: Session-based auth with Passport.js local strategy and PostgreSQL session store
+- **Authentication**: Session-based auth with Passport.js (local strategy + Google OAuth) and PostgreSQL session store
+- **Error Handling**: Centralized error logging service with structured logging and timestamps
+- **Background Jobs**: YouTube monitoring service runs continuously with interval scheduling
+- **Mobile Integration**: Expo push notification service for cross-platform mobile notifications
 
 ### External API Considerations
 - Monitor API quotas (YouTube has 10K daily limit)
@@ -168,63 +183,67 @@ OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization
 
 ### Production Build Process
 ```bash
-npm run build    # Vite build (client) + esbuild (server) 
+npm run build    # esbuild bundles server to dist/server/index.js
 npm run start    # Starts production server
 ```
 
 **Build Architecture:**
-- **Client Build**: Vite builds React app to `dist/public/` (static assets)
 - **Server Build**: esbuild bundles Express app to `dist/server/index.js` (ESM format)
-- **Asset Serving**: Production Express server serves Vite-built static files
 - **Environment**: Production build uses NODE_ENV=production with optimizations
+- **Assets**: No static assets - this is a backend-only API server
 
 ### Docker Support
-- Dockerfile and docker-compose.yml present in Shook project
-- Multi-stage build for optimized container size
-- Supports containerized deployment with proper environment variable injection
-- Production container runs on port 3000
+- Multi-stage Dockerfile optimized for Node.js 22 Alpine
+- `docker-compose.yml` for local development and production deployment
+- Production container exposes port 3000
+- Environment variables injected via `--env-file .env` or docker-compose
 
 ### Background Services & Production Considerations
-- **YouTube Monitoring**: Service must run continuously with 5-minute intervals
+- **YouTube Monitoring**: Service must run continuously with 5-minute intervals (starts automatically)
 - **Database**: Neon serverless with connection pooling (no manual connection management)
 - **Session Management**: Persistent PostgreSQL-backed sessions survive server restarts
 - **Process Management**: Consider PM2 for production process management and auto-restart
+- **Mobile Notifications**: Expo push notification service handles mobile app notifications
 
 ## Common Issues & Troubleshooting
 
 1. **API Quota Exceeded**: YouTube API 403 errors - check Google Cloud Console quotas
 2. **Database Connection Issues**: Verify DATABASE_URL and Neon database status  
-4. **Build Failures**: Run `npm run check` for TypeScript errors first
-5. **Vite Proxy Issues**: Backend must be running on port 3000 for development
+3. **Build Failures**: Run `npm run check` for TypeScript errors first
+4. **Google OAuth Issues**: Verify GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set
+5. **Push Notification Failures**: Check Expo push notification token validity and service status
+6. **YouTube Monitoring Stopped**: Check service logs for RSS feed errors or API failures
 
-## File Patterns & Locations
+## Key Configuration Files
 
-**Primary Project Location**: `C:\Users\saulpark\Documents\workspace\Shook\` (Windows environment)
-
-**Key Configuration Files:**
-- `tsconfig.json` - Monorepo TypeScript configuration with path aliases
-- `vite.config.ts` - Frontend build and development proxy configuration  
+- `tsconfig.json` - TypeScript configuration with ESNext modules and path aliases
 - `drizzle.config.ts` - Database ORM configuration and schema management
-- `package.json` - ESM module configuration with concurrency scripts
+- `package.json` - ESM module configuration with build scripts
 - `shared/schema.ts` - Drizzle database schema with Zod validation
+- `Dockerfile` - Multi-stage Docker build configuration
+- `docker-compose.yml` - Container orchestration for development/production
 - `.env` - Environment variables (not committed, use `.env.example` as template)
-
-**Other Projects** (secondary/inactive):
-- `Documents\workspace\Roving-Through\Roving-Through\` - Similar stack with different domain
-- `Desktop\workspace\` and `Desktop\workspace2\` - Simple Chrome extensions
 
 ## YouTube Monitoring Service Architecture
 
 **Core Processing Pipeline:**
-1. **RSS Polling**: Fetch XML feeds every 5 minutes for all subscribed channels
+1. **RSS Polling**: Fetch XML feeds every 5 minutes for all subscribed channels using `youtube-monitor.ts`
 2. **Content Filtering**: Skip YouTube Shorts, process only regular video uploads  
 3. **Change Detection**: Compare new video IDs with stored `recentVideoId` in database
 4. **Transcript Extraction**: Use SupaData API to get video captions/transcripts
-5. **AI Summarization**: Generate Korean summaries using OpenAI API
+5. **AI Summarization**: Generate Korean summaries using OpenAI API via `youtube-summary.ts`
+6. **Mobile Notifications**: Send push notifications to subscribed users via Expo service
 7. **State Persistence**: Update database with processing state and results
 
+**Service Architecture:**
+- **YouTubeMonitor**: Main orchestrator service that coordinates the monitoring pipeline
+- **YouTubeSummaryService**: Handles video transcript fetching and AI summarization
+- **PushNotificationService**: Manages mobile push notifications via Expo
+- **ChannelService**: Handles channel management and subscription logic
+- **ErrorLoggingService**: Centralized logging with structured output and timestamps
+
 **Error Handling Strategy:**
-- All service errors automatically logged to console
+- All service errors automatically logged to console with timestamps
 - Graceful degradation when external APIs are unavailable
 - Retry logic for transient failures with exponential backoff
 - Detailed error context (service, operation, user ID, additional metadata)
