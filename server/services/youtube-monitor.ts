@@ -123,10 +123,49 @@ export class YouTubeMonitor {
       `[YOUTUBE_MONITOR] Processing new video for channel ${channel.title}: ${latestVideo.title}`,
     );
 
+    let transcript: string | null = null;
+    let summary: string | null = null;
+    let errorMessage: string | null = null;
+    let processed = false;
+
     try {
       const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
-      const { transcript, summary } = await this.summaryService.processYouTubeUrl(videoUrl);
+      const result = await this.summaryService.processYouTubeUrl(videoUrl);
+      
+      transcript = result.transcript;
+      summary = result.summary;
+      processed = true;
 
+      logWithTimestamp(`[YOUTUBE_MONITOR] Successfully processed video with transcript and summary`);
+    } catch (error) {
+      errorWithTimestamp(
+        `[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`,
+        error,
+      );
+
+      // 자막 관련 에러인지 확인
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes('자막이 없거나') || errorMsg.includes('자막을 가져올 수 없습니다')) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Video has no subtitles, saving basic info only`);
+        errorMessage = '자막이 없는 영상';
+      } else {
+        // 다른 에러의 경우 로깅
+        errorMessage = `처리 실패: ${errorMsg}`;
+        await errorLogger.logError(error as Error, {
+          service: "YouTubeMonitor",
+          operation: "processChannelVideo",
+          channelId: channel.channelId,
+          additionalInfo: {
+            videoId: latestVideo.videoId,
+            videoTitle: latestVideo.title,
+            channelTitle: channel.title,
+          },
+        });
+      }
+    }
+
+    // 자막 유무에 관계없이 항상 영상 정보 저장
+    try {
       const newVideo: Omit<Video, 'createdAt'> = {
         videoId: latestVideo.videoId,
         channelId: channel.channelId,
@@ -134,52 +173,53 @@ export class YouTubeMonitor {
         publishedAt: latestVideo.publishedAt,
         summary,
         transcript,
-        processed: true,
-        errorMessage: null,
+        processed,
+        errorMessage,
       };
 
       await storage.createVideo(newVideo);
       await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
 
-      // Send push notifications to mobile users
-      logWithTimestamp(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
-      try {
-        const pushNotificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
-          channel.channelId, 
-          {
-            videoId: latestVideo.videoId,
-            title: latestVideo.title,
-            channelName: channel.title,
-            summary: summary,
-          }
-        );
-        logWithTimestamp(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
-      } catch (error) {
-        errorWithTimestamp(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
-        await errorLogger.logError(error as Error, {
-          service: "YouTubeMonitor",
-          operation: "sendPushNotifications",
-          channelId: channel.channelId,
-          additionalInfo: {
-            videoId: latestVideo.videoId,
-          },
-        });
+      logWithTimestamp(`[YOUTUBE_MONITOR] Video saved to database, recentVideoId updated`);
+
+      // 요약이 성공한 경우에만 푸시 알림 전송
+      if (processed && summary) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
+        try {
+          const pushNotificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
+            channel.channelId, 
+            {
+              videoId: latestVideo.videoId,
+              title: latestVideo.title,
+              channelName: channel.title,
+              summary: summary,
+            }
+          );
+          logWithTimestamp(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
+        } catch (error) {
+          errorWithTimestamp(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
+          await errorLogger.logError(error as Error, {
+            service: "YouTubeMonitor",
+            operation: "sendPushNotifications",
+            channelId: channel.channelId,
+            additionalInfo: {
+              videoId: latestVideo.videoId,
+            },
+          });
+        }
+      } else {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping push notifications (no summary available)`);
       }
 
-    } catch (error) {
-      errorWithTimestamp(
-        `[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`,
-        error,
-      );
-
-      await errorLogger.logError(error as Error, {
+    } catch (dbError) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error saving video to database:`, dbError);
+      await errorLogger.logError(dbError as Error, {
         service: "YouTubeMonitor",
-        operation: "processChannelVideo",
+        operation: "saveVideoToDatabase",
         channelId: channel.channelId,
         additionalInfo: {
           videoId: latestVideo.videoId,
           videoTitle: latestVideo.title,
-          channelTitle: channel.title,
         },
       });
     }
