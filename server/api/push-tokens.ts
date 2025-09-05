@@ -8,8 +8,8 @@ import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
-// Helper function to clean up duplicate tokens
-async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken: string) {
+// Helper function to clean up duplicate tokens and return existing tokens
+async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken: string): Promise<any[]> {
   try {
     logWithTimestamp(`[PUSH-TOKENS] Cleaning up duplicate tokens for user ${userId}, device ${deviceId}`);
     
@@ -68,9 +68,12 @@ async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken
       logWithTimestamp(`[PUSH-TOKENS] Processed ${allTokensToProcess.length} duplicate/old tokens for user ${userId}`);
     }
     
+    return existingTokens;
   } catch (error) {
     errorWithTimestamp(`[PUSH-TOKENS] Error cleaning up duplicate tokens:`, error);
     // Don't throw error - just log it, so the main token registration can continue
+    // Return empty array on error so main function can continue
+    return [];
   }
 }
 
@@ -90,11 +93,8 @@ router.post("/", isAuthenticated, async (req, res) => {
       });
     }
 
-    // Clean up any duplicate or old tokens first
-    await cleanupDuplicateTokens(userId, deviceId, token);
-    
-    // Check if token already exists for this device
-    const existingTokens = await storage.getPushTokensByUserId(userId);
+    // Clean up any duplicate or old tokens first and get existing tokens
+    const existingTokens = await cleanupDuplicateTokens(userId, deviceId, token);
     const existingToken = existingTokens.find(t => t.deviceId === deviceId);
 
     if (existingToken) {
@@ -198,21 +198,29 @@ router.delete("/:deviceId", isAuthenticated, async (req, res) => {
   try {
     logWithTimestamp(`[PUSH-TOKENS] Deleting push token for user ${userId}, device: ${deviceId}`);
     
+    // Get all tokens for better logging
+    const allTokens = await storage.getPushTokensByUserId(userId);
+    logWithTimestamp(`[PUSH-TOKENS] User ${userId} currently has ${allTokens.length} active tokens`);
+    
     // Validate that user owns this device token
-    const existingTokens = await storage.getPushTokensByUserId(userId);
-    const existingToken = existingTokens.find(t => t.deviceId === deviceId);
+    const existingToken = allTokens.find(t => t.deviceId === deviceId);
     
     if (!existingToken) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Push token not found for this device" 
+      logWithTimestamp(`[PUSH-TOKENS] Token not found for device ${deviceId}, considering as already deleted`);
+      // Consider this success - token is already gone
+      return res.json({ 
+        success: true, 
+        message: "Push token already deleted or not found" 
       });
     }
 
-    // Delete token
+    // Delete the token directly (no need to mark inactive first)
     await storage.deletePushToken(deviceId);
-
     logWithTimestamp(`[PUSH-TOKENS] Successfully deleted push token for device: ${deviceId}`);
+    
+    // Log the change without additional DB query (use cached count)
+    logWithTimestamp(`[PUSH-TOKENS] User ${userId} now has ${allTokens.length - 1} active tokens (was ${allTokens.length})`);
+
     res.json({ 
       success: true, 
       message: "Push token deleted successfully" 
@@ -272,6 +280,58 @@ router.get("/", isAuthenticated, async (req, res) => {
   }
 });
 
+// POST /api/push/unregister - Alternative unregister endpoint (more explicit)  
+router.post("/unregister", isAuthenticated, async (req, res) => {
+  const userId = req.user!.id;
+  const { deviceId } = req.body;
+  
+  try {
+    logWithTimestamp(`[PUSH-TOKENS] Unregistering push token for user ${userId}, device: ${deviceId}`);
+    
+    if (!deviceId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Missing required field: deviceId" 
+      });
+    }
+    
+    // Validate that user owns this device token
+    const existingTokens = await storage.getPushTokensByUserId(userId);
+    const existingToken = existingTokens.find(t => t.deviceId === deviceId);
+    
+    if (!existingToken) {
+      // Even if token doesn't exist, consider it a success (idempotent operation)
+      logWithTimestamp(`[PUSH-TOKENS] No push token found for device ${deviceId}, considering as already unregistered`);
+      return res.json({ 
+        success: true, 
+        message: "Push token already unregistered or not found" 
+      });
+    }
+
+    // Delete the token directly (no need to mark inactive first)
+    await storage.deletePushToken(deviceId);
+    logWithTimestamp(`[PUSH-TOKENS] Successfully deleted push token for device: ${deviceId}`);
+
+    res.json({ 
+      success: true, 
+      message: "Push token unregistered successfully" 
+    });
+    
+  } catch (error) {
+    errorWithTimestamp(`[PUSH-TOKENS] Error unregistering push token for user ${userId}:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'PushTokensRoute',
+      operation: 'unregisterPushToken',
+      userId,
+      deviceId
+    });
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to unregister push token" 
+    });
+  }
+});
+
 // POST /api/push-tokens/test - Send test notification
 router.post("/test", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
@@ -279,19 +339,38 @@ router.post("/test", isAuthenticated, async (req, res) => {
   try {
     logWithTimestamp(`[PUSH-TOKENS] Sending test notification to user ${userId}`);
     
+    // Get user's push tokens to check their status
+    const pushTokens = await storage.getPushTokensByUserId(userId);
+    logWithTimestamp(`[PUSH-TOKENS] User has ${pushTokens.length} active tokens for test notification`);
+    
+    // Log token details for debugging
+    pushTokens.forEach((token, index) => {
+      const isRealToken = Expo.isExpoPushToken(token.token) && 
+                          !token.token.startsWith('ExponentPushToken[dev-') && 
+                          !token.token.startsWith('ExponentPushToken[fallback-');
+      logWithTimestamp(`[PUSH-TOKENS] Token ${index + 1}: ${token.token.substring(0, 30)}... (Real: ${isRealToken})`);
+    });
+    
     const success = await pushNotificationService.sendTestNotification(userId);
     
     if (success) {
       logWithTimestamp(`[PUSH-TOKENS] Test notification sent successfully to user ${userId}`);
       res.json({ 
         success: true, 
-        message: "Test notification sent successfully" 
+        message: "Test notification sent successfully",
+        tokenCount: pushTokens.length,
+        realTokenCount: pushTokens.filter(t => 
+          Expo.isExpoPushToken(t.token) && 
+          !t.token.startsWith('ExponentPushToken[dev-') && 
+          !t.token.startsWith('ExponentPushToken[fallback-')
+        ).length
       });
     } else {
       logWithTimestamp(`[PUSH-TOKENS] Failed to send test notification to user ${userId}`);
       res.status(400).json({ 
         success: false, 
-        error: "No active push tokens found or notification failed" 
+        error: "No active push tokens found or notification failed",
+        tokenCount: pushTokens.length
       });
     }
     

@@ -60,7 +60,18 @@
       "WebFetch(domain:docs.expo.dev)",
       "WebFetch(domain:metrobundler.dev)",
       "Bash(npm install:*)",
-      "Bash(timeout 60s npx nx start mobile)"
+      "Bash(timeout 60s npx nx start mobile)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\repositories/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\repositories/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\repositories/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_app/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_app\\app/**)",
+      "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)"
     ],
     "additionalDirectories": [
       "C:\\",

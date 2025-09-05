@@ -26,6 +26,7 @@ router.use("/summary", summaryRoutes);
 router.use("/videos", videoRoutes);
 router.use("/user", userRoutes);
 router.use("/push-tokens", pushTokenRoutes);
+router.use("/push", pushTokenRoutes); // Also register under /push for /api/push/unregister
 router.use("/admin", adminRoutes);
 
 // GET /api/channel-videos/:userId

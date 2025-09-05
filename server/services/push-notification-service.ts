@@ -180,7 +180,7 @@ export class PushNotificationService {
       allTickets.push(...mockTickets);
 
       // Check for errors in tickets
-      const errorCount = await this.processTickets(allTickets);
+      const errorCount = await this.processTickets(allTickets, tokens);
       const successCount = allTickets.length - errorCount;
       
       logWithTimestamp(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors out of ${allTickets.length} total`);
@@ -202,7 +202,7 @@ export class PushNotificationService {
   }
 
   // Process push tickets and handle errors
-  private async processTickets(tickets: ExpoPushTicket[]): Promise<number> {
+  private async processTickets(tickets: ExpoPushTicket[], originalTokens: PushToken[]): Promise<number> {
     let errorCount = 0;
 
     for (const ticket of tickets) {
@@ -217,7 +217,7 @@ export class PushNotificationService {
             case 'DeviceNotRegistered':
               console.warn('🔔 [PushNotificationService] Device token is no longer valid');
               // Mark token as inactive in database
-              const tokenRecord = tokens.find(t => t.token === ticket.details!.expoPushToken);
+              const tokenRecord = originalTokens.find(t => t.token === ticket.details!.expoPushToken);
               if (tokenRecord) {
                 await storage.markPushTokenAsInactive(tokenRecord.deviceId);
                 logWithTimestamp(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
