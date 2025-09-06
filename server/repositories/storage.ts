@@ -393,39 +393,68 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findUsersByChannelId(channelId: string): Promise<{ userId: number; pushTokens: PushToken[] }[]> {
-    logWithTimestamp("[storage.ts] findUsersByChannelId");
+    logWithTimestamp("[storage.ts] findUsersByChannelId - using optimized JOIN query");
     
-    // Get users subscribed to this channel
-    const subscribedUsers = await db
-      .select({ userId: userChannels.userId })
+    // Single query with LEFT JOIN to get users and their active push tokens
+    const result = await db
+      .select({
+        userId: userChannels.userId,
+        // Push token fields (will be null if user has no active tokens)
+        tokenId: pushTokens.id,
+        token: pushTokens.token,
+        deviceId: pushTokens.deviceId,
+        platform: pushTokens.platform,
+        appVersion: pushTokens.appVersion,
+        isActive: pushTokens.isActive,
+        tokenCreatedAt: pushTokens.createdAt,
+        tokenUpdatedAt: pushTokens.updatedAt,
+      })
       .from(userChannels)
+      .leftJoin(
+        pushTokens, 
+        and(
+          eq(userChannels.userId, pushTokens.userId),
+          eq(pushTokens.isActive, true)
+        )
+      )
       .where(eq(userChannels.channelId, channelId));
 
-    const userIds = subscribedUsers.map(u => u.userId);
+    logWithTimestamp(`[storage.ts] JOIN query returned ${result.length} rows for channel ${channelId}`);
+
+    // Group results by userId (more efficient than Map for small datasets)
+    const userTokenMap: Record<number, PushToken[]> = {};
     
-    if (userIds.length === 0) {
-      return [];
+    for (const row of result) {
+      // Initialize user entry if not exists
+      if (!userTokenMap[row.userId]) {
+        userTokenMap[row.userId] = [];
+      }
+      
+      // Add token if it exists (LEFT JOIN might return null tokens)
+      if (row.tokenId !== null) {
+        userTokenMap[row.userId].push({
+          id: row.tokenId,
+          userId: row.userId,
+          token: row.token!,
+          deviceId: row.deviceId!,
+          platform: row.platform!,
+          appVersion: row.appVersion!,
+          isActive: row.isActive!,
+          createdAt: row.tokenCreatedAt!,
+          updatedAt: row.tokenUpdatedAt!,
+        });
+      }
     }
 
-    // Get active push tokens for these users
-    const tokens = await db
-      .select()
-      .from(pushTokens)
-      .where(and(inArray(pushTokens.userId, userIds), eq(pushTokens.isActive, true)));
-
-    // Group tokens by user ID
-    const userTokenMap = new Map<number, PushToken[]>();
-    tokens.forEach(token => {
-      if (!userTokenMap.has(token.userId)) {
-        userTokenMap.set(token.userId, []);
-      }
-      userTokenMap.get(token.userId)!.push(token);
-    });
-
-    return userIds.map(userId => ({
-      userId,
-      pushTokens: userTokenMap.get(userId) || []
+    // Convert to required format
+    const users = Object.keys(userTokenMap).map(userIdStr => ({
+      userId: parseInt(userIdStr, 10),
+      pushTokens: userTokenMap[parseInt(userIdStr, 10)]
     }));
+
+    logWithTimestamp(`[storage.ts] Found ${users.length} subscribed users, total tokens: ${users.reduce((sum, u) => sum + u.pushTokens.length, 0)}`);
+    
+    return users;
   }
 
   async updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void> {

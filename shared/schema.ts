@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, json, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, json, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -44,7 +44,12 @@ export const videos = pgTable("videos", {
   processed: boolean("processed").default(false),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  // Composite index for channel video queries with ordering
+  channelCreatedIdx: index("idx_videos_channel_created").on(table.channelId, table.createdAt),
+  // Index for user feed queries ordered by published date
+  publishedAtIdx: index("idx_videos_published_at").on(table.publishedAt),
+}));
 
 // User's subscribed channels (mapping table)
 export const userChannels = pgTable("user_channels", {
@@ -52,7 +57,14 @@ export const userChannels = pgTable("user_channels", {
   userId: integer("user_id").notNull().references(() => users.id),
   channelId: text("channel_id").notNull().references(() => youtubeChannels.channelId),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  // Index for findUsersByChannelId query
+  channelIdIdx: index("idx_user_channels_channel_id").on(table.channelId),
+  // Index for getUserChannels query
+  userIdIdx: index("idx_user_channels_user_id").on(table.userId),
+  // Unique constraint to prevent duplicate subscriptions
+  userChannelUnique: uniqueIndex("idx_user_channels_unique").on(table.userId, table.channelId),
+}));
 
 // Push notification tokens
 export const pushTokens = pgTable("push_tokens", {
@@ -65,7 +77,14 @@ export const pushTokens = pgTable("push_tokens", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  // Composite index for the most common query pattern (userId + isActive)
+  userActiveIdx: index("idx_push_tokens_user_active").on(table.userId, table.isActive),
+  // Index for device-based operations
+  deviceIdIdx: index("idx_push_tokens_device_id").on(table.deviceId),
+  // Unique constraint for userId + deviceId to prevent duplicates
+  userDeviceUnique: uniqueIndex("idx_push_tokens_user_device_unique").on(table.userId, table.deviceId),
+}));
 
 export const session = pgTable("session", {
   sid: varchar("sid").primaryKey(),
