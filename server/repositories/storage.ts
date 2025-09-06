@@ -168,6 +168,9 @@ export class DatabaseStorage implements IStorage {
         updatedAt: youtubeChannels.updatedAt,
         recentVideoId: youtubeChannels.recentVideoId,
         processed: youtubeChannels.processed,
+        isActive: youtubeChannels.isActive,
+        lastRssError: youtubeChannels.lastRssError,
+        lastRssErrorAt: youtubeChannels.lastRssErrorAt,
         subscriptionId: userChannels.id,
         subscribedAt: userChannels.createdAt
       })

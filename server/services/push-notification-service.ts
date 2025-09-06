@@ -4,6 +4,13 @@ import { storage } from "../repositories/storage.js";
 import { errorLogger } from "./error-logging-service.js";
 import type { PushToken } from "@shared/schema";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { PushRetryQueue } from "./push-retry-queue.js";
+import { 
+  PushErrorType, 
+  classifyError, 
+  ERROR_HANDLING_RULES,
+  ErrorSeverity 
+} from "./error-types.js";
 
 export interface PushNotificationPayload {
   title: string;
@@ -21,13 +28,28 @@ export interface PushNotificationPayload {
 
 export class PushNotificationService {
   private expo: Expo;
+  private retryQueue: PushRetryQueue;
 
   constructor() {
     this.expo = new Expo({
       accessToken: process.env.EXPO_ACCESS_TOKEN, // Optional: for higher rate limits
       useFcmV1: true, // Use FCM v1 API (recommended)
     });
-    logWithTimestamp('🔔 [PushNotificationService] Initialized');
+    
+    // Initialize retry queue
+    this.retryQueue = new PushRetryQueue();
+    
+    logWithTimestamp('🔔 [PushNotificationService] Initialized with retry queue');
+  }
+
+  // Get retry queue status for monitoring
+  public getRetryQueueStatus() {
+    return this.retryQueue.getQueueStatus();
+  }
+
+  // Clean up retry queue
+  public cleanupRetryQueue(): number {
+    return this.retryQueue.cleanupOldEntries();
   }
 
   // Send push notification to specific user
@@ -143,10 +165,10 @@ export class PushNotificationService {
       }
 
       // Check for errors in tickets and handle invalid tokens
-      const errorCount = await this.processTickets(allTickets, tokens);
+      const { errorCount, retryableCount } = await this.processTickets(allTickets, tokens, notification);
       const successCount = allTickets.length - errorCount;
       
-      logWithTimestamp(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors out of ${allTickets.length} total`);
+      logWithTimestamp(`🔔 [PushNotificationService] Results: ${successCount} successful, ${errorCount} errors (${retryableCount} queued for retry) out of ${allTickets.length} total`);
 
       // Later, we can implement receipt checking for delivery confirmation
       // this.checkReceipts(allTickets);
@@ -164,56 +186,103 @@ export class PushNotificationService {
     }
   }
 
-  // Process push tickets and handle errors
-  private async processTickets(tickets: ExpoPushTicket[], originalTokens: PushToken[]): Promise<number> {
+  // Process push tickets and handle errors with improved error handling
+  private async processTickets(
+    tickets: ExpoPushTicket[], 
+    originalTokens: PushToken[], 
+    originalNotification: PushNotificationPayload
+  ): Promise<{ errorCount: number; retryableCount: number }> {
     let errorCount = 0;
+    let retryableCount = 0;
 
     for (const ticket of tickets) {
       if (ticket.status === 'error') {
         errorWithTimestamp(`🔔 [PushNotificationService] Push ticket error:`, ticket.message);
         
-        // Handle specific error types
-        if (ticket.details && ticket.details.error) {
-          const errorType = ticket.details.error;
+        // Find the token that caused this error
+        const failedToken = originalTokens.find(t => t.token === ticket.details?.expoPushToken);
+        
+        if (ticket.details && ticket.details.error && failedToken) {
+          // Classify the error type
+          const errorType = classifyError(ticket.details);
+          const errorRule = ERROR_HANDLING_RULES[errorType];
           
-          switch (errorType) {
-            case 'DeviceNotRegistered':
-              console.warn('🔔 [PushNotificationService] Device token is no longer valid');
-              // Mark token as inactive in database
-              const tokenRecord = originalTokens.find(t => t.token === ticket.details!.expoPushToken);
-              if (tokenRecord) {
-                await storage.markPushTokenAsInactive(tokenRecord.deviceId);
-                logWithTimestamp(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
+          logWithTimestamp(`🔔 [PushNotificationService] Error classified as ${errorType} (severity: ${errorRule.severity}, retryable: ${errorRule.retryable})`);
+          
+          // Handle based on error classification
+          switch (errorRule.action) {
+            case 'delete_token':
+              // Permanent token issues - delete completely
+              await storage.deletePushToken(failedToken.deviceId);
+              logWithTimestamp(`🔔 [PushNotificationService] Deleted invalid token ${failedToken.deviceId} due to ${errorType}`);
+              break;
+              
+            case 'deactivate_token':
+              // Temporary token issues - deactivate
+              await storage.markPushTokenAsInactive(failedToken.deviceId);
+              logWithTimestamp(`🔔 [PushNotificationService] Deactivated token ${failedToken.deviceId} due to ${errorType}`);
+              break;
+              
+            case 'retry_later':
+              // Transient errors - add to retry queue
+              const added = this.retryQueue.addToRetryQueue(
+                failedToken.userId,
+                failedToken.deviceId,
+                failedToken.token,
+                originalNotification,
+                errorType,
+                ticket.message || 'Unknown error'
+              );
+              
+              if (added) {
+                retryableCount++;
+                logWithTimestamp(`🔔 [PushNotificationService] Added ${failedToken.deviceId} to retry queue for ${errorType}`);
               }
               break;
-            case 'InvalidCredentials':
-              // This might be due to invalid token format that passed API validation
-              console.warn('🔔 [PushNotificationService] Invalid push token format detected');
-              const invalidTokenRecord = originalTokens.find(t => t.token === ticket.details!.expoPushToken);
-              if (invalidTokenRecord) {
-                await storage.markPushTokenAsInactive(invalidTokenRecord.deviceId);
-                logWithTimestamp(`🔔 [PushNotificationService] Marked invalid token ${invalidTokenRecord.deviceId} as inactive.`);
+              
+            case 'investigate':
+              // Configuration or system issues - log for investigation
+              await errorLogger.logError(new Error(`Push notification ${errorType}: ${ticket.message}`), {
+                service: 'PushNotificationService',
+                operation: 'processTickets',
+                errorType,
+                severity: errorRule.severity,
+                userId: failedToken.userId,
+                deviceId: failedToken.deviceId,
+                requiresInvestigation: true
+              });
+              
+              // For high severity errors, also try retry
+              if (errorRule.severity === ErrorSeverity.HIGH && errorRule.retryable) {
+                const added = this.retryQueue.addToRetryQueue(
+                  failedToken.userId,
+                  failedToken.deviceId,
+                  failedToken.token,
+                  originalNotification,
+                  errorType,
+                  ticket.message || 'Unknown error'
+                );
+                if (added) {
+                  retryableCount++;
+                }
               }
-              break;
-            case 'MessageTooBig':
-              console.warn('🔔 [PushNotificationService] Message size exceeded limit');
-              break;
-            case 'MessageRateExceeded':
-              console.warn('🔔 [PushNotificationService] Message rate exceeded');
-              break;
-            case 'MismatchSenderId':
-              console.warn('🔔 [PushNotificationService] Invalid sender ID');
               break;
           }
+        } else {
+          // Unknown error without details
+          errorWithTimestamp('🔔 [PushNotificationService] Unknown push error without details:', ticket);
         }
         
         errorCount++;
       } else if (ticket.status === 'ok') {
+        // Success case - we can't match specific tokens from success tickets
+        // Success tickets don't contain the original token info
+        // The retry queue will clean up successful items during retry attempts
         logWithTimestamp(`🔔 [PushNotificationService] Push ticket success: ${ticket.id}`);
       }
     }
 
-    return errorCount;
+    return { errorCount, retryableCount };
   }
 
   // Check delivery receipts (optional - can be called later)

@@ -62,7 +62,7 @@ router.get("/", isAuthenticated, async (req, res) => {
       service: 'VideosRoute',
       operation: 'getVideos',
       userId,
-      since: sinceParam
+      since: since || 0
     });
     res.status(500).json({ error: "Failed to get videos." });
   }

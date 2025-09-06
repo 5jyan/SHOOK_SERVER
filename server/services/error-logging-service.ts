@@ -10,6 +10,15 @@ class ErrorLoggingService {
     operation?: string;
     userId?: number;
     channelId?: string;
+    deviceId?: string;
+    errorType?: string;
+    severity?: string;
+    requiresInvestigation?: boolean;
+    notification?: string;
+    tokenCount?: number;
+    since?: number;
+    username?: string;
+    attemptCount?: number;
     additionalInfo?: any;
   }) {
     try {

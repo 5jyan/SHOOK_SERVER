@@ -388,4 +388,63 @@ router.post("/test", isAuthenticated, async (req, res) => {
   }
 });
 
+// GET /api/push-tokens/retry-queue-status - Monitor retry queue status (admin only)
+router.get("/retry-queue-status", isAuthenticated, async (req, res) => {
+  try {
+    // Basic auth check - only allow managers to see retry queue status
+    if (req.user?.role !== 'manager') {
+      return res.status(403).json({
+        success: false,
+        error: "Insufficient privileges"
+      });
+    }
+
+    const queueStatus = pushNotificationService.getRetryQueueStatus();
+    
+    res.json({
+      success: true,
+      data: {
+        ...queueStatus,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    errorWithTimestamp(`[PUSH-TOKENS] Error getting retry queue status:`, error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get retry queue status"
+    });
+  }
+});
+
+// POST /api/push-tokens/cleanup-retry-queue - Clean up old retry entries (admin only)
+router.post("/cleanup-retry-queue", isAuthenticated, async (req, res) => {
+  try {
+    // Basic auth check - only allow managers to cleanup retry queue
+    if (req.user?.role !== 'manager') {
+      return res.status(403).json({
+        success: false,
+        error: "Insufficient privileges"
+      });
+    }
+
+    const cleanedCount = pushNotificationService.cleanupRetryQueue();
+    logWithTimestamp(`[PUSH-TOKENS] Manual retry queue cleanup completed, removed ${cleanedCount} entries`);
+    
+    res.json({
+      success: true,
+      message: `Cleaned up ${cleanedCount} old retry entries`,
+      cleanedCount
+    });
+    
+  } catch (error) {
+    errorWithTimestamp(`[PUSH-TOKENS] Error cleaning up retry queue:`, error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to cleanup retry queue"
+    });
+  }
+});
+
 export default router;
