@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Expo } from "expo-server-sdk";
 import { isAuthenticated } from "../utils/auth-utils.js";
 import { storage } from "../repositories/storage.js";
 import { errorLogger } from "../services/error-logging-service.js";
@@ -90,6 +91,17 @@ router.post("/", isAuthenticated, async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         error: "Missing required fields: token, deviceId, platform, appVersion" 
+      });
+    }
+
+    // Validate token format - reject fallback/dev tokens
+    if (!Expo.isExpoPushToken(token) || 
+        token.startsWith('ExponentPushToken[fallback-') || 
+        token.startsWith('ExponentPushToken[dev-')) {
+      logWithTimestamp(`[PUSH-TOKENS] Rejected invalid token for user ${userId}: ${token.substring(0, 30)}...`);
+      return res.status(400).json({ 
+        success: false, 
+        error: "Invalid push token format. Please restart the app to generate a valid token." 
       });
     }
 
@@ -345,10 +357,7 @@ router.post("/test", isAuthenticated, async (req, res) => {
     
     // Log token details for debugging
     pushTokens.forEach((token, index) => {
-      const isRealToken = Expo.isExpoPushToken(token.token) && 
-                          !token.token.startsWith('ExponentPushToken[dev-') && 
-                          !token.token.startsWith('ExponentPushToken[fallback-');
-      logWithTimestamp(`[PUSH-TOKENS] Token ${index + 1}: ${token.token.substring(0, 30)}... (Real: ${isRealToken})`);
+      logWithTimestamp(`[PUSH-TOKENS] Token ${index + 1}: ${token.token.substring(0, 30)}... (Device: ${token.deviceId})`);
     });
     
     const success = await pushNotificationService.sendTestNotification(userId);
@@ -358,18 +367,14 @@ router.post("/test", isAuthenticated, async (req, res) => {
       res.json({ 
         success: true, 
         message: "Test notification sent successfully",
-        tokenCount: pushTokens.length,
-        realTokenCount: pushTokens.filter(t => 
-          Expo.isExpoPushToken(t.token) && 
-          !t.token.startsWith('ExponentPushToken[dev-') && 
-          !t.token.startsWith('ExponentPushToken[fallback-')
-        ).length
+        tokenCount: pushTokens.length
       });
     } else {
       logWithTimestamp(`[PUSH-TOKENS] Failed to send test notification to user ${userId}`);
+      
       res.status(400).json({ 
         success: false, 
-        error: "No active push tokens found or notification failed",
+        error: pushTokens.length === 0 ? "No push tokens found for user" : "Test notification failed to send",
         tokenCount: pushTokens.length
       });
     }

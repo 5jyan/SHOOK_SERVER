@@ -105,23 +105,16 @@ export class PushNotificationService {
     logWithTimestamp(`🔔 [PushNotificationService] Sending to ${tokens.length} tokens`);
     
     try {
-      // Filter valid Expo push tokens (including development mock tokens)
-      const validTokens = tokens
-        .filter(tokenRecord => {
-          // Accept real Expo tokens or development mock tokens
-          return Expo.isExpoPushToken(tokenRecord.token) || 
-                 tokenRecord.token.startsWith('ExponentPushToken[dev-') ||
-                 tokenRecord.token.startsWith('ExponentPushToken[fallback-');
-        })
-        .map(tokenRecord => tokenRecord.token);
+      // Extract token strings (validation already done at API level)
+      const tokenStrings = tokens.map(tokenRecord => tokenRecord.token);
 
-      if (validTokens.length === 0) {
-        console.warn('🔔 [PushNotificationService] No valid Expo push tokens found');
+      if (tokenStrings.length === 0) {
+        console.warn('🔔 [PushNotificationService] No tokens provided');
         return false;
       }
 
-      // Create push messages
-      const messages: ExpoPushMessage[] = validTokens.map(token => ({
+      // Create push messages (trusting API-validated tokens)
+      const messages: ExpoPushMessage[] = tokenStrings.map(token => ({
         to: token,
         title: notification.title,
         body: notification.body,
@@ -131,34 +124,12 @@ export class PushNotificationService {
         priority: 'high',
       }));
 
-      // Filter out mock tokens for actual sending
-      const realMessages = messages.filter(msg => 
-        Expo.isExpoPushToken(msg.to) && 
-        !msg.to.startsWith('ExponentPushToken[dev-') && 
-        !msg.to.startsWith('ExponentPushToken[fallback-')
-      );
-      
-      const mockMessages = messages.filter(msg => 
-        msg.to.startsWith('ExponentPushToken[dev-') || 
-        msg.to.startsWith('ExponentPushToken[fallback-')
-      );
-
-      // Log mock messages for development
-      if (mockMessages.length > 0) {
-        logWithTimestamp(`🔔 [PushNotificationService] Mock notifications (development):`, mockMessages.map(msg => ({
-          token: msg.to.substring(0, 30) + '...',
-          title: msg.title,
-          body: msg.body
-        })));
-      }
-
       let allTickets: ExpoPushTicket[] = [];
 
-      // Send real messages if any
-      if (realMessages.length > 0) {
-        // Send in chunks (Expo recommends chunks of 100)
-        const chunks = this.expo.chunkPushNotifications(realMessages);
-        logWithTimestamp(`🔔 [PushNotificationService] Sending ${chunks.length} real chunks`);
+      // Send messages in chunks (Expo recommends chunks of 100)
+      if (messages.length > 0) {
+        const chunks = this.expo.chunkPushNotifications(messages);
+        logWithTimestamp(`🔔 [PushNotificationService] Sending ${chunks.length} chunks`);
         
         for (const chunk of chunks) {
           try {
@@ -171,15 +142,7 @@ export class PushNotificationService {
         }
       }
 
-      // Create mock tickets for development tokens
-      const mockTickets: ExpoPushTicket[] = mockMessages.map(() => ({
-        status: 'ok' as const,
-        id: `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      }));
-      
-      allTickets.push(...mockTickets);
-
-      // Check for errors in tickets
+      // Check for errors in tickets and handle invalid tokens
       const errorCount = await this.processTickets(allTickets, tokens);
       const successCount = allTickets.length - errorCount;
       
@@ -223,6 +186,15 @@ export class PushNotificationService {
                 logWithTimestamp(`🔔 [PushNotificationService] Marked token ${tokenRecord.deviceId} as inactive.`);
               }
               break;
+            case 'InvalidCredentials':
+              // This might be due to invalid token format that passed API validation
+              console.warn('🔔 [PushNotificationService] Invalid push token format detected');
+              const invalidTokenRecord = originalTokens.find(t => t.token === ticket.details!.expoPushToken);
+              if (invalidTokenRecord) {
+                await storage.markPushTokenAsInactive(invalidTokenRecord.deviceId);
+                logWithTimestamp(`🔔 [PushNotificationService] Marked invalid token ${invalidTokenRecord.deviceId} as inactive.`);
+              }
+              break;
             case 'MessageTooBig':
               console.warn('🔔 [PushNotificationService] Message size exceeded limit');
               break;
@@ -231,9 +203,6 @@ export class PushNotificationService {
               break;
             case 'MismatchSenderId':
               console.warn('🔔 [PushNotificationService] Invalid sender ID');
-              break;
-            case 'InvalidCredentials':
-              errorWithTimestamp('🔔 [PushNotificationService] Invalid push credentials');
               break;
           }
         }
