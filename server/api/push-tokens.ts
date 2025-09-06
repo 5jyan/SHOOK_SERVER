@@ -9,67 +9,41 @@ import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
-// Helper function to clean up duplicate tokens and return existing tokens  
-async function cleanupDuplicateTokens(userId: number, deviceId: string, newToken: string): Promise<any[]> {
+// Simple upsert function - let database handle uniqueness
+async function upsertPushToken(userId: number, deviceId: string, token: string, platform: string, appVersion: string): Promise<boolean> {
   try {
-    logWithTimestamp(`[PUSH-TOKENS] Cleaning up duplicate tokens for user ${userId}, device ${deviceId}`);
-    
-    // Get existing tokens first
+    // Try to find existing token for this device
     const existingTokens = await storage.getPushTokensByUserId(userId);
-    
-    // Prepare cleanup operations
-    const tokensToDelete: string[] = [];
-    const tokensToDeactivate: string[] = [];
-    
-    for (const token of existingTokens) {
-      // Skip the exact match (current token for current device)
-      if (token.deviceId === deviceId && token.token === newToken) {
-        continue;
-      }
-      
-      // Same token but different device - remove duplicate
-      if (token.token === newToken && token.deviceId !== deviceId) {
-        logWithTimestamp(`[PUSH-TOKENS] Found duplicate token with different device: ${token.deviceId}`);
-        tokensToDelete.push(token.deviceId);
-        continue;
-      }
-      
-      // Same device but different token - deactivate old token
-      if (token.deviceId === deviceId && token.token !== newToken && token.isActive) {
-        logWithTimestamp(`[PUSH-TOKENS] Found old token for same device: ${token.deviceId}`);
-        tokensToDeactivate.push(token.deviceId);
-        continue;
-      }
-      
-      // Remove old inactive tokens (older than 30 days)
-      if (!token.isActive && token.updatedAt) {
-        const daysSinceUpdate = (Date.now() - new Date(token.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
-        if (daysSinceUpdate > 30) {
-          logWithTimestamp(`[PUSH-TOKENS] Found old inactive token: ${token.deviceId} (${daysSinceUpdate.toFixed(1)} days old)`);
-          tokensToDelete.push(token.deviceId);
-        }
-      }
-    }
+    const existingToken = existingTokens.find(t => t.deviceId === deviceId);
 
-    // Execute cleanup operations (could be optimized with bulk operations)
-    for (const deviceId of tokensToDeactivate) {
-      await storage.markPushTokenAsInactive(deviceId);
+    if (existingToken) {
+      // Update existing token
+      await storage.updatePushToken(deviceId, {
+        token,
+        platform, 
+        appVersion,
+        isActive: true
+      });
+      logWithTimestamp(`[PUSH-TOKENS] Updated existing token for device: ${deviceId}`);
+      return true;
+    } else {
+      // Create new token
+      const newPushToken: InsertPushToken = {
+        userId,
+        token,
+        deviceId,
+        platform,
+        appVersion,
+        isActive: true
+      };
+      
+      await storage.createPushToken(newPushToken);
+      logWithTimestamp(`[PUSH-TOKENS] Created new token for device: ${deviceId}`);
+      return false;
     }
-    
-    for (const deviceId of tokensToDelete) {
-      await storage.deletePushToken(deviceId);
-    }
-    
-    const totalCleaned = tokensToDelete.length + tokensToDeactivate.length;
-    if (totalCleaned > 0) {
-      logWithTimestamp(`[PUSH-TOKENS] Cleaned up ${totalCleaned} duplicate/old tokens for user ${userId} (${tokensToDelete.length} deleted, ${tokensToDeactivate.length} deactivated)`);
-    }
-    
-    return existingTokens;
   } catch (error) {
-    errorWithTimestamp(`[PUSH-TOKENS] Error cleaning up duplicate tokens:`, error);
-    // Don't throw error - just log it, so the main token registration can continue
-    return [];
+    errorWithTimestamp(`[PUSH-TOKENS] Error upserting token:`, error);
+    throw error;
   }
 }
 
@@ -100,37 +74,12 @@ router.post("/", isAuthenticated, async (req, res) => {
       });
     }
 
-    // Clean up any duplicate or old tokens first and get existing tokens
-    const existingTokens = await cleanupDuplicateTokens(userId, deviceId, token);
-    const existingToken = existingTokens.find(t => t.deviceId === deviceId);
-
-    if (existingToken) {
-      // Update existing token
-      await storage.updatePushToken(deviceId, {
-        token,
-        platform,
-        appVersion,
-        isActive: true
-      });
-      logWithTimestamp(`[PUSH-TOKENS] Updated existing push token for device: ${deviceId}`);
-    } else {
-      // Create new token
-      const newPushToken: InsertPushToken = {
-        userId,
-        token,
-        deviceId,
-        platform,
-        appVersion,
-        isActive: true
-      };
-      
-      await storage.createPushToken(newPushToken);
-      logWithTimestamp(`[PUSH-TOKENS] Created new push token for device: ${deviceId}`);
-    }
+    // Simple upsert operation
+    const wasUpdated = await upsertPushToken(userId, deviceId, token, platform, appVersion);
 
     res.json({ 
       success: true, 
-      message: existingToken ? "Push token updated successfully" : "Push token registered successfully" 
+      message: wasUpdated ? "Push token updated successfully" : "Push token registered successfully" 
     });
     
   } catch (error) {
