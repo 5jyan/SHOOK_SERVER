@@ -2,7 +2,7 @@ import { storage } from "../repositories/storage.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
 import { errorLogger } from "./error-logging-service.js";
 import { pushNotificationService } from "./push-notification-service.js";
-import { YoutubeChannel, Video } from "../../shared/schema.js";
+import { YoutubeChannel, Video, InsertVideo } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
@@ -166,7 +166,7 @@ export class YouTubeMonitor {
 
     // 자막 유무에 관계없이 항상 영상 정보 저장
     try {
-      const newVideo: Omit<Video, 'createdAt'> = {
+      const newVideo: InsertVideo = {
         videoId: latestVideo.videoId,
         channelId: channel.channelId,
         title: latestVideo.title,
@@ -175,6 +175,10 @@ export class YouTubeMonitor {
         transcript,
         processed,
         errorMessage,
+        // New fields with values
+        channelTitle: channel.title,
+        channelThumbnail: channel.thumbnail,
+        processingStatus: processed ? 'completed' : (errorMessage ? 'failed' : 'pending'),
       };
 
       await storage.createVideo(newVideo);

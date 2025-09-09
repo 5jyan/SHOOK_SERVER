@@ -65,8 +65,8 @@ export class ChannelService {
           title: decodeYouTubeTitle(searchItem.snippet!.title!),
           description: decodeHtmlEntities(searchItem.snippet!.description || ''),
           thumbnail: searchItem.snippet!.thumbnails?.default?.url || '',
-          subscriberCount: channelDetail?.statistics?.subscriberCount || '0',
-          videoCount: channelDetail?.statistics?.videoCount || '0',
+          subscriberCount: parseInt(channelDetail?.statistics?.subscriberCount || '0', 10),
+          videoCount: parseInt(channelDetail?.statistics?.videoCount || '0', 10),
         };
       });
 
@@ -214,8 +214,8 @@ export class ChannelService {
         title: decodeYouTubeTitle(channel.snippet!.title!),
         description: decodeHtmlEntities(channel.snippet!.description || ''),
         thumbnail: channel.snippet!.thumbnails?.default?.url || '',
-        subscriberCount: channel.statistics?.subscriberCount || '0',
-        videoCount: channel.statistics?.videoCount || '0',
+        subscriberCount: parseInt(channel.statistics?.subscriberCount || '0', 10),
+        videoCount: parseInt(channel.statistics?.videoCount || '0', 10),
       };
 
     } catch (error: any) {

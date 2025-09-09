@@ -48,7 +48,7 @@ export interface IStorage {
   // Video methods
   createVideo(video: InsertVideo): Promise<Video>;
   getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
-  getVideosForUser(userId: number, limit?: number, since?: number | null): Promise<(Video & { channelTitle: string })[]>;
+  getVideosForUser(userId: number, limit?: number, since?: number): Promise<Video[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
 
@@ -244,30 +244,26 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(videos).where(eq(videos.channelId, channelId)).orderBy(desc(videos.publishedAt)).limit(limit);
   }
 
-  async getVideosForUser(userId: number, limit: number = 20, since?: number | null): Promise<(Video & { channelTitle: string })[]> {
+  async getVideosForUser(userId: number, limit: number = 20, since?: number): Promise<Video[]> {
     const sinceDate = since ? new Date(since) : null;
     logWithTimestamp(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
     
-    // First get all channels the user is subscribed to
-    const subscribedChannels = await db
-      .select({ channelId: userChannels.channelId })
-      .from(userChannels)
-      .where(eq(userChannels.userId, userId));
+    // Optimized single query using JOIN - eliminates N+1 problem
+    // Build WHERE clause based on incremental sync requirement
+    const baseCondition = eq(userChannels.userId, userId);
+    let whereClause;
     
-    logWithTimestamp(`[storage.ts] User ${userId} is subscribed to ${subscribedChannels.length} channels`);
-    
-    if (subscribedChannels.length === 0) {
-      return [];
+    if (sinceDate) {
+      logWithTimestamp(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
+      whereClause = and(
+        baseCondition,
+        gte(videos.createdAt as any, sinceDate)
+      );
+    } else {
+      whereClause = baseCondition;
     }
-    
-    const channelIds = subscribedChannels.map(c => c.channelId);
-    logWithTimestamp(`[storage.ts] Fetching videos for channels:`, channelIds);
-    
-    // Base where clause for channel filtering
-    let baseWhereClause = inArray(videos.channelId, channelIds);
-    
-    // Build query with JOIN to include channel names only (thumbnails now handled by frontend)
-    let query = db
+
+    const userVideos = await db
       .select({
         videoId: videos.videoId,
         channelId: videos.channelId,
@@ -278,41 +274,19 @@ export class DatabaseStorage implements IStorage {
         processed: videos.processed,
         errorMessage: videos.errorMessage,
         createdAt: videos.createdAt,
-        channelTitle: youtubeChannels.title, // Include channel title from JOIN
+        channelTitle: videos.channelTitle, // Use denormalized field for better performance
+        channelThumbnail: videos.channelThumbnail,
+        duration: videos.duration,
+        viewCount: videos.viewCount,
+        processingStatus: videos.processingStatus,
+        processingStartedAt: videos.processingStartedAt,
+        processingCompletedAt: videos.processingCompletedAt,
       })
-      .from(videos)
-      .innerJoin(youtubeChannels, eq(videos.channelId, youtubeChannels.channelId))
-      .where(baseWhereClause)
+      .from(userChannels)
+      .innerJoin(videos, eq(userChannels.channelId, videos.channelId))
+      .where(whereClause)
       .orderBy(desc(videos.createdAt))
       .limit(limit);
-    
-    // For incremental sync, add createdAt filter
-    if (sinceDate) {
-      logWithTimestamp(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
-      query = db
-        .select({
-          videoId: videos.videoId,
-          channelId: videos.channelId,
-          title: videos.title,
-          publishedAt: videos.publishedAt,
-          summary: videos.summary,
-          transcript: videos.transcript,
-          processed: videos.processed,
-          errorMessage: videos.errorMessage,
-          createdAt: videos.createdAt,
-          channelTitle: youtubeChannels.title, // Include channel title from JOIN
-        })
-        .from(videos)
-        .innerJoin(youtubeChannels, eq(videos.channelId, youtubeChannels.channelId))
-        .where(and(
-          baseWhereClause,
-          gte(videos.createdAt as any, sinceDate)
-        ))
-        .orderBy(desc(videos.createdAt))
-        .limit(limit);
-    }
-    
-    const userVideos = await query;
     
     if (sinceDate) {
       logWithTimestamp(`[storage.ts] Incremental sync found ${userVideos.length} new videos for user ${userId} since ${sinceDate.toISOString()}`);

@@ -22,10 +22,10 @@ export const youtubeChannels = pgTable("youtube_channels", {
   channelId: text("channel_id").primaryKey(),
   handle: text("handle").notNull(),
   title: text("title").notNull(),
-  description: text("description"),
+  description: varchar("description", { length: 1000 }),
   thumbnail: text("thumbnail"),
-  subscriberCount: text("subscriber_count"),
-  videoCount: text("video_count"),
+  subscriberCount: integer("subscriber_count"),
+  videoCount: integer("video_count"),
   updatedAt: timestamp("updated_at").defaultNow(),
   recentVideoId: text("recent_video_id"),
   processed: boolean("processed").default(false),
@@ -44,11 +44,19 @@ export const videos = pgTable("videos", {
   processed: boolean("processed").default(false),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),
+  // Added fields for better performance and metadata
+  channelTitle: text("channel_title").notNull().default('Unknown Channel'),
+  channelThumbnail: text("channel_thumbnail"),
+  duration: integer("duration"), // seconds
+  viewCount: integer("view_count"),
+  processingStatus: text("processing_status").default('pending'), // pending, processing, completed, failed
+  processingStartedAt: timestamp("processing_started_at"),
+  processingCompletedAt: timestamp("processing_completed_at"),
 }, (table) => ({
-  // Composite index for channel video queries with ordering
+  // Essential index for getVideosForUser JOIN query (userChannels -> videos)
   channelCreatedIdx: index("idx_videos_channel_created").on(table.channelId, table.createdAt),
-  // Index for user feed queries ordered by published date
-  publishedAtIdx: index("idx_videos_published_at").on(table.publishedAt),
+  // Essential index for getVideosByChannel query (channelId + publishedAt ordering)
+  channelPublishedIdx: index("idx_videos_channel_published").on(table.channelId, table.publishedAt),
 }));
 
 // User's subscribed channels (mapping table)
@@ -58,11 +66,11 @@ export const userChannels = pgTable("user_channels", {
   channelId: text("channel_id").notNull().references(() => youtubeChannels.channelId),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
-  // Index for findUsersByChannelId query
+  // Essential index for findUsersByChannelId query
   channelIdIdx: index("idx_user_channels_channel_id").on(table.channelId),
-  // Index for getUserChannels query
+  // Essential index for getUserChannels query  
   userIdIdx: index("idx_user_channels_user_id").on(table.userId),
-  // Unique constraint to prevent duplicate subscriptions
+  // Unique constraint serves as index + prevents duplicates
   userChannelUnique: uniqueIndex("idx_user_channels_unique").on(table.userId, table.channelId),
 }));
 
@@ -138,6 +146,11 @@ export const insertYoutubeChannelSchema = createInsertSchema(youtubeChannels).om
 
 export const insertVideoSchema = createInsertSchema(videos).omit({
   createdAt: true,
+  // Make some new fields optional for backward compatibility
+  duration: true,
+  viewCount: true,
+  processingStartedAt: true,
+  processingCompletedAt: true,
 });
 
 export const insertUserChannelSchema = createInsertSchema(userChannels).omit({

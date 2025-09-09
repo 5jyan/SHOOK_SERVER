@@ -13,12 +13,12 @@ router.get("/", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
   const username = req.user!.username;
   
+  // Check for incremental sync parameter (move to outer scope for error handling)
+  const sinceParam = req.query.since as string;
+  const since = sinceParam ? parseInt(sinceParam) : null;
+  
   try {
     logWithTimestamp(`[VIDEOS] Getting videos for user ${userId} (${username})`);
-    
-    // Check for incremental sync parameter
-    const sinceParam = req.query.since as string;
-    const since = sinceParam ? parseInt(sinceParam) : null;
     
     // Get limit from query parameter (default: 50, max: 100)
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -31,7 +31,7 @@ router.get("/", isAuthenticated, async (req, res) => {
     }
     
     // Bypass service layer to avoid circular import issues
-    const rawVideos = await storage.getVideosForUser(userId, limit, since);
+    const rawVideos = await storage.getVideosForUser(userId, limit, since || undefined);
     
     logWithTimestamp(`[VIDEOS] Successfully retrieved ${rawVideos.length} videos for user ${userId}`);
     
@@ -62,7 +62,7 @@ router.get("/", isAuthenticated, async (req, res) => {
       service: 'VideosRoute',
       operation: 'getVideos',
       userId,
-      since: since || 0
+      since: since || undefined
     });
     res.status(500).json({ error: "Failed to get videos." });
   }
