@@ -9,38 +9,83 @@ import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 
 const router = Router();
 
-// Simple upsert function - let database handle uniqueness
-async function upsertPushToken(userId: number, deviceId: string, token: string, platform: string, appVersion: string): Promise<boolean> {
+// Industry-standard push token management with token-based deduplication
+async function upsertPushToken(userId: number, deviceId: string, token: string, platform: string, appVersion: string): Promise<{wasUpdated: boolean, cleanedUp: number}> {
   try {
-    // Try to find existing token for this device
+    // Get all existing tokens for this user
     const existingTokens = await storage.getPushTokensByUserId(userId);
-    const existingToken = existingTokens.find(t => t.deviceId === deviceId);
-
-    if (existingToken) {
-      // Update existing token
-      await storage.updatePushToken(deviceId, {
-        token,
-        platform, 
-        appVersion,
-        isActive: true
-      });
-      logWithTimestamp(`[PUSH-TOKENS] Updated existing token for device: ${deviceId}`);
-      return true;
-    } else {
-      // Create new token
-      const newPushToken: InsertPushToken = {
-        userId,
-        token,
-        deviceId,
-        platform,
-        appVersion,
-        isActive: true
-      };
-      
-      await storage.createPushToken(newPushToken);
-      logWithTimestamp(`[PUSH-TOKENS] Created new token for device: ${deviceId}`);
-      return false;
+    
+    logWithTimestamp(`[PUSH-TOKENS] User ${userId} currently has ${existingTokens.length} tokens`);
+    
+    // Step 1: Check if exact same token already exists (industry standard)
+    const exactTokenMatch = existingTokens.find(t => t.token === token);
+    
+    if (exactTokenMatch) {
+      // Same token exists - just update metadata (Google/Apple approach)
+      if (exactTokenMatch.deviceId === deviceId && 
+          exactTokenMatch.platform === platform && 
+          exactTokenMatch.appVersion === appVersion &&
+          exactTokenMatch.isActive) {
+        logWithTimestamp(`[PUSH-TOKENS] Token already exists and up-to-date for device: ${deviceId}`);
+        return { wasUpdated: false, cleanedUp: 0 };
+      } else {
+        // Update metadata for existing token (keep original deviceId)
+        await storage.updatePushToken(exactTokenMatch.deviceId, {
+          token,
+          platform,
+          appVersion, 
+          isActive: true
+        });
+        logWithTimestamp(`[PUSH-TOKENS] Updated metadata for existing token: ${exactTokenMatch.deviceId} (requested as ${deviceId})`);
+        return { wasUpdated: true, cleanedUp: 0 };
+      }
     }
+    
+    // Step 2: Clean up potential duplicates BEFORE creating new token
+    let cleanedUpCount = 0;
+    
+    // Remove old tokens from same device (deviceId changed scenario)
+    const oldDeviceTokens = existingTokens.filter(t => 
+      t.deviceId === deviceId && t.token !== token
+    );
+    
+    for (const oldToken of oldDeviceTokens) {
+      await storage.deletePushToken(oldToken.deviceId);
+      logWithTimestamp(`[PUSH-TOKENS] Removed old token from same device: ${oldToken.deviceId}`);
+      cleanedUpCount++;
+    }
+    
+    // Optional: Remove very old tokens from same platform (prevents accumulation)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const oldPlatformTokens = existingTokens.filter(t => 
+      t.platform === platform && 
+      t.token !== token && 
+      t.deviceId !== deviceId &&
+      new Date(t.updatedAt || t.createdAt) < thirtyDaysAgo
+    );
+    
+    for (const oldToken of oldPlatformTokens) {
+      await storage.deletePushToken(oldToken.deviceId);
+      logWithTimestamp(`[PUSH-TOKENS] Removed stale token from same platform: ${oldToken.deviceId} (age: ${Math.floor((Date.now() - new Date(oldToken.createdAt).getTime()) / (1000 * 60 * 60 * 24))} days)`);
+      cleanedUpCount++;
+    }
+    
+    // Step 3: Create new token
+    const newPushToken: InsertPushToken = {
+      userId,
+      token,
+      deviceId,
+      platform,
+      appVersion,
+      isActive: true
+    };
+    
+    await storage.createPushToken(newPushToken);
+    logWithTimestamp(`[PUSH-TOKENS] Created new token for device: ${deviceId} (cleaned up ${cleanedUpCount} old tokens)`);
+    return { wasUpdated: false, cleanedUp: cleanedUpCount };
+    
   } catch (error) {
     errorWithTimestamp(`[PUSH-TOKENS] Error upserting token:`, error);
     throw error;
@@ -74,12 +119,24 @@ router.post("/", isAuthenticated, async (req, res) => {
       });
     }
 
-    // Simple upsert operation
-    const wasUpdated = await upsertPushToken(userId, deviceId, token, platform, appVersion);
+    // Enhanced upsert operation with cleanup
+    const result = await upsertPushToken(userId, deviceId, token, platform, appVersion);
+
+    const message = result.wasUpdated 
+      ? "Push token updated successfully"
+      : "Push token registered successfully";
+    
+    const finalMessage = result.cleanedUp > 0 
+      ? `${message} (cleaned up ${result.cleanedUp} duplicate tokens)`
+      : message;
 
     res.json({ 
       success: true, 
-      message: wasUpdated ? "Push token updated successfully" : "Push token registered successfully" 
+      message: finalMessage,
+      stats: {
+        wasUpdated: result.wasUpdated,
+        cleanedUp: result.cleanedUp
+      }
     });
     
   } catch (error) {
