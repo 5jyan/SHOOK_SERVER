@@ -21,14 +21,13 @@ async function upsertPushToken(userId: number, deviceId: string, token: string, 
     const exactTokenMatch = existingTokens.find(t => t.token === token);
     
     if (exactTokenMatch) {
-      // Same token exists - just update metadata (Google/Apple approach)
-      if (exactTokenMatch.deviceId === deviceId && 
-          exactTokenMatch.platform === platform && 
-          exactTokenMatch.appVersion === appVersion &&
-          exactTokenMatch.isActive) {
-        logWithTimestamp(`[PUSH-TOKENS] Token already exists and up-to-date for device: ${deviceId}`);
-        return { wasUpdated: false, cleanedUp: 0 };
-      } else {
+      // Same token exists - update metadata and clean up duplicates
+      let wasUpdated = false;
+      
+      if (!(exactTokenMatch.deviceId === deviceId && 
+            exactTokenMatch.platform === platform && 
+            exactTokenMatch.appVersion === appVersion &&
+            exactTokenMatch.isActive)) {
         // Update metadata for existing token (keep original deviceId)
         await storage.updatePushToken(exactTokenMatch.deviceId, {
           token,
@@ -37,8 +36,28 @@ async function upsertPushToken(userId: number, deviceId: string, token: string, 
           isActive: true
         });
         logWithTimestamp(`[PUSH-TOKENS] Updated metadata for existing token: ${exactTokenMatch.deviceId} (requested as ${deviceId})`);
-        return { wasUpdated: true, cleanedUp: 0 };
+        wasUpdated = true;
+      } else {
+        logWithTimestamp(`[PUSH-TOKENS] Token already exists and up-to-date for device: ${deviceId}`);
       }
+      
+      // IMPORTANT: Clean up duplicate tokens with same token string
+      const duplicateTokens = existingTokens.filter(t => 
+        t.token === token && t.deviceId !== exactTokenMatch.deviceId
+      );
+      
+      let cleanedUpCount = 0;
+      for (const duplicate of duplicateTokens) {
+        await storage.deletePushToken(duplicate.deviceId);
+        logWithTimestamp(`[PUSH-TOKENS] Removed duplicate token: ${duplicate.deviceId} (kept: ${exactTokenMatch.deviceId})`);
+        cleanedUpCount++;
+      }
+      
+      if (cleanedUpCount > 0) {
+        logWithTimestamp(`[PUSH-TOKENS] Cleaned up ${cleanedUpCount} duplicate tokens for same token string`);
+      }
+      
+      return { wasUpdated, cleanedUp: cleanedUpCount };
     }
     
     // Step 2: Clean up potential duplicates BEFORE creating new token
