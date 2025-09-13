@@ -5,6 +5,7 @@ import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video, InsertVideo } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { youtubeApiUtils } from "../utils/youtube-api-utils.js";
 
 interface RSSVideo {
   videoId: string;
@@ -272,6 +273,26 @@ export class YouTubeMonitor {
           logWithTimestamp(
             `[YOUTUBE_MONITOR] New video detected for channel ${channel.title}: ${latestVideo.title} (${latestVideo.videoId})`,
           );
+
+          // Check if the video is a live stream before processing
+          try {
+            const isLiveStream = await youtubeApiUtils.isLiveStream(latestVideo.videoId);
+            if (isLiveStream) {
+              logWithTimestamp(
+                `[YOUTUBE_MONITOR] Skipping live stream video: ${latestVideo.title} (${latestVideo.videoId})`,
+              );
+
+              // Update the recentVideoId to avoid processing this video again, but don't save to videos table
+              await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
+              continue;
+            }
+          } catch (error) {
+            errorWithTimestamp(
+              `[YOUTUBE_MONITOR] Error checking live stream status for video ${latestVideo.videoId}:`,
+              error,
+            );
+            // Continue processing if live stream check fails to avoid blocking regular videos
+          }
 
           // 새 영상 처리
           await this.processChannelVideo(channel, latestVideo);
