@@ -22,6 +22,35 @@ export class YouTubeMonitor {
     this.summaryService = new YouTubeSummaryService();
   }
 
+  // RSS 응답에서 주요 정보만 추출해서 로깅
+  private logRSSEntries(xmlText: string): void {
+    const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
+
+    if (entryMatches && entryMatches.length > 0) {
+      // 처음 몇 개 entry의 주요 정보만 로깅
+      const entriesToLog = entryMatches.slice(0, 3); // 최대 3개만
+      logWithTimestamp(`[YOUTUBE_MONITOR] RSS entries found: ${entryMatches.length}, showing first ${entriesToLog.length}:`);
+
+      entriesToLog.forEach((entry, index) => {
+        const entryXml = entry.replace(/<entry>|<\/entry>/g, "");
+        const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
+        const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
+        const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
+        const linkMatch = entryXml.match(/<link\s+rel="alternate"\s+href="([^"]*)"/);
+
+        if (videoIdMatch && titleMatch && publishedMatch) {
+          let title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
+          title = decodeYouTubeTitle(title);
+          const videoId = videoIdMatch[1];
+          const publishedAt = publishedMatch[1];
+          const link = linkMatch ? linkMatch[1] : `https://www.youtube.com/watch?v=${videoId}`;
+
+          logWithTimestamp(`[YOUTUBE_MONITOR] Entry ${index + 1}: ${title} (${videoId}) - ${publishedAt} - ${link}`);
+        }
+      });
+    }
+  }
+
   // RSS 피드에서 YouTube 영상 정보 파싱 (쇼츠 영상 제외, 가장 최신 일반 영상만 가져오기)
   private async fetchLatestVideoFromRSS(
     channelId: string,
@@ -40,6 +69,9 @@ export class YouTubeMonitor {
       logWithTimestamp(
         `[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`,
       );
+
+      // RSS 엔트리 정보 로깅
+      this.logRSSEntries(xmlText);
 
       // XML에서 모든 entry 찾기 (쇼츠가 아닌 첫 번째 영상을 찾기 위해)
       const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);

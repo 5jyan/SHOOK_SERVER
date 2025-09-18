@@ -99,7 +99,7 @@ export function decodeHtmlEntities(str: string): string {
 export function decodeYouTubeTitle(title: string): string {
   if (!title) return title;
 
-  logWithTimestamp(`[html-decode] Original title: "${title}"`);
+  //logWithTimestamp(`[html-decode] Original title: "${title}"`);
   const decoded = decodeHtmlEntities(title);
   logWithTimestamp(`[html-decode] Decoded title: "${decoded}"`);
   
