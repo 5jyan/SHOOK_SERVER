@@ -132,6 +132,7 @@ DATABASE_URL=postgresql://...           # Neon PostgreSQL connection
 SESSION_SECRET=random_string           # Session encryption
 YOUTUBE_API_KEY=google_cloud_key      # YouTube Data API v3
 OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization
+SUPADATA_API_KEY=supadata_key        # SupaData API for video transcripts
 GOOGLE_CLIENT_ID=google_oauth_client  # Google OAuth for authentication
 GOOGLE_CLIENT_SECRET=google_oauth_secret
 PORT=3000                            # Server port (optional)
