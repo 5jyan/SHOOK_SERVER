@@ -12,347 +12,459 @@ interface RSSVideo {
   channelId: string;
   title: string;
   publishedAt: Date;
+  channelTitle: string;
+  channelThumbnail: string | null;
+}
+
+interface RSSEntry {
+  videoId: string;
+  title: string;
+  publishedAt: string;
+  linkUrl: string;
 }
 
 export class YouTubeMonitor {
+  // Configuration constants
+  private readonly CONCURRENT_LIMIT = 3;
+  private readonly SUMMARY_TIMEOUT = 120000; // 2 minutes
+  private readonly MONITORING_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+  // Runtime state
+  private state = {
+    monitorInterval: null as NodeJS.Timeout | null,
+    summaryQueue: [] as RSSVideo[],
+    isProcessingSummaries: false,
+  };
+
+  // Services
   private summaryService: YouTubeSummaryService;
-  private monitorInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.summaryService = new YouTubeSummaryService();
+    logWithTimestamp('[YOUTUBE_MONITOR] Initialized with concurrent limit:', this.CONCURRENT_LIMIT);
   }
 
-  // RSS 응답에서 주요 정보만 추출해서 로깅
+  // ================================
+  // RSS Parsing Methods
+  // ================================
+
   private logRSSEntries(xmlText: string): void {
     const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
-
     if (entryMatches && entryMatches.length > 0) {
-      // 처음 몇 개 entry의 주요 정보만 로깅
-      const entriesToLog = entryMatches.slice(0, 3); // 최대 3개만
+      const entriesToLog = entryMatches.slice(0, 3);
       logWithTimestamp(`[YOUTUBE_MONITOR] RSS entries found: ${entryMatches.length}, showing first ${entriesToLog.length}:`);
 
       entriesToLog.forEach((entry, index) => {
-        const entryXml = entry.replace(/<entry>|<\/entry>/g, "");
-        const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
-        const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
-        const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
-        const linkMatch = entryXml.match(/<link\s+rel="alternate"\s+href="([^"]*)"/);
-
-        if (videoIdMatch && titleMatch && publishedMatch) {
-          let title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
-          title = decodeYouTubeTitle(title);
-          const videoId = videoIdMatch[1];
-          const publishedAt = publishedMatch[1];
-          const link = linkMatch ? linkMatch[1] : `https://www.youtube.com/watch?v=${videoId}`;
-
-          logWithTimestamp(`[YOUTUBE_MONITOR] Entry ${index + 1}: ${title} (${videoId}) - ${publishedAt} - ${link}`);
+        const parsedEntry = this.parseRSSEntry(entry);
+        if (parsedEntry) {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Entry ${index + 1}: ${parsedEntry.title} (${parsedEntry.videoId}) - ${parsedEntry.publishedAt}`);
         }
       });
     }
   }
 
-  // RSS 피드에서 YouTube 영상 정보 파싱 (쇼츠 영상 제외, 가장 최신 일반 영상만 가져오기)
-  private async fetchLatestVideoFromRSS(
-    channelId: string,
-  ): Promise<RSSVideo | null> {
+  private parseRSSEntry(entryXml: string): RSSEntry | null {
+    const entryContent = entryXml.replace(/<entry>|<\/entry>/g, "");
+
+    const videoIdMatch = entryContent.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
+    const titleMatch = entryContent.match(/<title>(.*?)<\/title>/);
+    const publishedMatch = entryContent.match(/<published>(.*?)<\/published>/);
+    const linkMatch = entryContent.match(/<link\s+rel="alternate"\s+href="([^"]*)"/);
+
+    if (videoIdMatch && titleMatch && publishedMatch) {
+      let title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
+      title = decodeYouTubeTitle(title);
+
+      const videoId = videoIdMatch[1];
+      const publishedAt = publishedMatch[1];
+      const linkUrl = linkMatch ? linkMatch[1] : `https://www.youtube.com/watch?v=${videoId}`;
+
+      return { videoId, title, publishedAt, linkUrl };
+    }
+
+    return null;
+  }
+
+  private isVideoSkippable(entry: RSSEntry): { skip: boolean; reason?: string } {
+    // Check for shorts
+    if (entry.linkUrl.includes("/shorts/")) {
+      return { skip: true, reason: 'YouTube Shorts' };
+    }
+
+    return { skip: false };
+  }
+
+  private async fetchRSSContent(channelId: string): Promise<string> {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
 
+    logWithTimestamp(`[YOUTUBE_MONITOR] Fetching RSS for channel: ${channelId}`);
+    const response = await fetch(rssUrl);
+
+    if (!response.ok) {
+      throw new Error(`RSS fetch failed: ${response.status}`);
+    }
+
+    const xmlText = await response.text();
+    logWithTimestamp(`[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`);
+
+    return xmlText;
+  }
+
+  private async findLatestValidVideo(channelId: string): Promise<RSSVideo | null> {
     try {
-      logWithTimestamp(`[YOUTUBE_MONITOR] Fetching RSS for channel: ${channelId}`);
-      const response = await fetch(rssUrl);
-
-      if (!response.ok) {
-        throw new Error(`RSS fetch failed: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      logWithTimestamp(
-        `[YOUTUBE_MONITOR] RSS response length: ${xmlText.length} characters`,
-      );
-
-      // RSS 엔트리 정보 로깅
+      const xmlText = await this.fetchRSSContent(channelId);
       this.logRSSEntries(xmlText);
 
-      // XML에서 모든 entry 찾기 (쇼츠가 아닌 첫 번째 영상을 찾기 위해)
       const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
-
       if (!entryMatches || entryMatches.length === 0) {
-        logWithTimestamp(
-          `[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`,
-        );
+        logWithTimestamp(`[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`);
         return null;
       }
 
-      // 각 entry를 확인하여 쇼츠가 아닌 첫 번째 영상 찾기
+      // Find first non-skippable video
       for (const entryMatch of entryMatches) {
-        const entryXml = entryMatch.replace(/<entry>|<\/entry>/g, "");
+        const parsedEntry = this.parseRSSEntry(entryMatch);
+        if (!parsedEntry) continue;
 
-        // 비디오 ID, 제목, 게시 날짜 추출
-        const videoIdMatch = entryXml.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
-        const titleMatch = entryXml.match(/<title>(.*?)<\/title>/);
-        const publishedMatch = entryXml.match(/<published>(.*?)<\/published>/);
-
-        if (videoIdMatch && titleMatch && publishedMatch) {
-          const videoId = videoIdMatch[1];
-          let title = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/, "$1");
-          
-          // Decode HTML entities in the title (YouTube RSS feeds contain encoded entities like &quot;)
-          title = decodeYouTubeTitle(title);
-          
-          const publishedAt = new Date(publishedMatch[1]);
-
-          // 쇼츠 영상인지 확인 - URL에 "shorts"가 포함되어 있는지 체크
-          const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-          // RSS 피드에서 link 태그를 찾아 실제 URL 확인
-          const linkMatch = entryXml.match(/<link\s+rel="alternate"\s+href="([^"]*)"/);
-          let actualUrl = videoUrl; // 기본값
-
-          if (linkMatch && linkMatch[1]) {
-            actualUrl = linkMatch[1];
-          }
-
-          // URL에 "shorts"가 포함되어 있으면 쇼츠로 간주
-          if (actualUrl.includes("/shorts/")) {
-            logWithTimestamp(
-              `[YOUTUBE_MONITOR] Skipping shorts video: ${title} (${videoId}) - URL contains 'shorts'`,
-            );
-            continue;
-          }
-
-          logWithTimestamp(
-            `[YOUTUBE_MONITOR] Latest non-shorts video from channel ${channelId}: ${title} (${videoId})`,
-          );
-
-          return {
-            videoId,
-            channelId,
-            title,
-            publishedAt,
-          };
+        const skipCheck = this.isVideoSkippable(parsedEntry);
+        if (skipCheck.skip) {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video: ${parsedEntry.title} (${parsedEntry.videoId}) - ${skipCheck.reason}`);
+          continue;
         }
+
+        // Note: Live stream check moved to channel processing level to match existing logic
+
+        // Valid video found
+        const channel = await storage.getYoutubeChannel(channelId);
+        logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId})`);
+
+        return {
+          videoId: parsedEntry.videoId,
+          channelId,
+          title: parsedEntry.title,
+          publishedAt: new Date(parsedEntry.publishedAt),
+          channelTitle: channel?.title || 'Unknown Channel',
+          channelThumbnail: channel?.thumbnail || null,
+        };
       }
 
-      logWithTimestamp(
-        `[YOUTUBE_MONITOR] No non-shorts videos found in RSS feed for channel ${channelId}`,
-      );
+      logWithTimestamp(`[YOUTUBE_MONITOR] No valid videos found in RSS feed for channel ${channelId}`);
       return null;
+
     } catch (error) {
-      errorWithTimestamp(
-        `[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`,
-        error,
-      );
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
+
+      // Handle 404 errors for channel deactivation
+      if (error instanceof Error && error.message.includes('404')) {
+        await storage.updateChannelActiveStatus(
+          channelId,
+          false,
+          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
+        );
+      }
+
       return null;
     }
   }
 
-  // --- Helper functions for processChannelVideo ---
+  // ================================
+  // Channel Processing Methods
+  // ================================
 
-  private async processChannelVideo(
-    channel: YoutubeChannel,
-    latestVideo: RSSVideo,
-  ): Promise<void> {
-    logWithTimestamp(
-      `[YOUTUBE_MONITOR] Processing new video for channel ${channel.title}: ${latestVideo.title}`,
-    );
-
-    let transcript: string | null = null;
-    let summary: string | null = null;
-    let errorMessage: string | null = null;
-    let processed = false;
-
-    try {
-      const videoUrl = `https://www.youtube.com/watch?v=${latestVideo.videoId}`;
-      const result = await this.summaryService.processYouTubeUrl(videoUrl);
-      
-      transcript = result.transcript;
-      summary = result.summary;
-      processed = true;
-
-      logWithTimestamp(`[YOUTUBE_MONITOR] Successfully processed video with transcript and summary`);
-    } catch (error) {
-      errorWithTimestamp(
-        `[YOUTUBE_MONITOR] Error processing video ${latestVideo.videoId}:`,
-        error,
-      );
-
-      // 자막 관련 에러인지 확인
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      if (errorMsg.includes('자막이 없거나') || errorMsg.includes('자막을 가져올 수 없습니다')) {
-        logWithTimestamp(`[YOUTUBE_MONITOR] Video has no subtitles, saving basic info only`);
-        errorMessage = '자막이 없는 영상';
-      } else {
-        // 다른 에러의 경우 로깅
-        errorMessage = `처리 실패: ${errorMsg}`;
-        await errorLogger.logError(error as Error, {
-          service: "YouTubeMonitor",
-          operation: "processChannelVideo",
-          channelId: channel.channelId,
-          additionalInfo: {
-            videoId: latestVideo.videoId,
-            videoTitle: latestVideo.title,
-            channelTitle: channel.title,
-          },
-        });
-      }
+  private async shouldProcessVideo(channel: YoutubeChannel, video: RSSVideo): Promise<boolean> {
+    // Check if it's the same as recent video
+    if (channel.recentVideoId === video.videoId) {
+      logWithTimestamp(`[YOUTUBE_MONITOR] No new video for channel ${channel.title} (latest: ${video.videoId})`);
+      return false;
     }
 
-    // 자막 유무에 관계없이 항상 영상 정보 저장
+    // Check if video is already being processed
+    const existingVideo = await storage.getVideo(video.videoId);
+    if (existingVideo?.processingStatus === 'pending' ||
+        existingVideo?.processingStatus === 'processing') {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping ${video.videoId} - already ${existingVideo.processingStatus}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  private async saveNewVideo(video: RSSVideo): Promise<void> {
+    const newVideo: InsertVideo = {
+      videoId: video.videoId,
+      channelId: video.channelId,
+      title: video.title,
+      publishedAt: video.publishedAt,
+      channelTitle: video.channelTitle,
+      channelThumbnail: video.channelThumbnail,
+      processingStatus: 'pending',
+      summary: null,
+      transcript: null,
+      processed: false,
+    };
+
+    await storage.createVideo(newVideo);
+    await storage.updateChannelRecentVideo(video.channelId, video.videoId);
+
+    logWithTimestamp(`[YOUTUBE_MONITOR] New video queued: ${video.title} (${video.videoId})`);
+  }
+
+  private async scanSingleChannel(channel: YoutubeChannel): Promise<RSSVideo | null> {
     try {
-      const newVideo: InsertVideo = {
-        videoId: latestVideo.videoId,
-        channelId: channel.channelId,
-        title: latestVideo.title,
-        publishedAt: latestVideo.publishedAt,
-        summary,
-        transcript,
-        processed,
-        errorMessage,
-        // New fields with values
-        channelTitle: channel.title,
-        channelThumbnail: channel.thumbnail,
-        processingStatus: processed ? 'completed' : (errorMessage ? 'failed' : 'pending'),
-      };
+      logWithTimestamp(`[YOUTUBE_MONITOR] Scanning channel: ${channel.title} (${channel.channelId})`);
 
-      await storage.createVideo(newVideo);
-      await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
-
-      logWithTimestamp(`[YOUTUBE_MONITOR] Video saved to database, recentVideoId updated`);
-
-      // 요약이 성공한 경우에만 푸시 알림 전송
-      if (processed && summary) {
-        logWithTimestamp(`[YOUTUBE_MONITOR] Sending push notifications for channel ${channel.channelId}`);
-        try {
-          const pushNotificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
-            channel.channelId, 
-            {
-              videoId: latestVideo.videoId,
-              title: latestVideo.title,
-              channelName: channel.title,
-              summary: summary,
-            }
-          );
-          logWithTimestamp(`[YOUTUBE_MONITOR] Sent push notifications to ${pushNotificationsSent} users`);
-        } catch (error) {
-          errorWithTimestamp(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
-          await errorLogger.logError(error as Error, {
-            service: "YouTubeMonitor",
-            operation: "sendPushNotifications",
-            channelId: channel.channelId,
-            additionalInfo: {
-              videoId: latestVideo.videoId,
-            },
-          });
-        }
-      } else {
-        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping push notifications (no summary available)`);
+      const latestVideo = await this.findLatestValidVideo(channel.channelId);
+      if (!latestVideo) {
+        return null;
       }
 
-    } catch (dbError) {
-      errorWithTimestamp(`[YOUTUBE_MONITOR] Error saving video to database:`, dbError);
-      await errorLogger.logError(dbError as Error, {
+      // Check if we should process this video
+      const shouldProcess = await this.shouldProcessVideo(channel, latestVideo);
+      if (!shouldProcess) {
+        return null;
+      }
+
+      // Reactivate channel if it was inactive
+      if (!channel.isActive) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
+        await storage.updateChannelActiveStatus(channel.channelId, true, null);
+      }
+
+      // Check if it's a live stream before processing (matching existing logic)
+      try {
+        const isLiveStream = await youtubeApiUtils.isLiveStream(latestVideo.videoId);
+        if (isLiveStream) {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${latestVideo.title} (${latestVideo.videoId})`);
+
+          // Update recentVideoId to avoid processing this video again, but don't save to videos table
+          await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
+          return null; // Don't add to summary queue
+        }
+      } catch (error) {
+        errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for video ${latestVideo.videoId}:`, error);
+        // Continue processing if live stream check fails to avoid blocking regular videos
+      }
+
+      // Save video to DB with pending status
+      await this.saveNewVideo(latestVideo);
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] New video detected: ${latestVideo.title} from ${channel.title}`);
+      return latestVideo;
+
+    } catch (error) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error scanning channel ${channel.channelId}:`, error);
+
+      // Handle RSS 404 errors
+      if (error instanceof Error && error.message.includes('404')) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
+        await storage.updateChannelActiveStatus(
+          channel.channelId,
+          false,
+          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
+        );
+      } else {
+        await errorLogger.logError(error as Error, {
+          service: "YouTubeMonitor",
+          operation: "scanSingleChannel",
+          channelId: channel.channelId,
+          additionalInfo: { channelTitle: channel.title },
+        });
+      }
+
+      return null;
+    }
+  }
+
+  // ================================
+  // Summary Processing Methods
+  // ================================
+
+  private async processVideoSummary(video: RSSVideo): Promise<void> {
+    logWithTimestamp(`[YOUTUBE_MONITOR] Processing summary for: ${video.title} (${video.videoId})`);
+
+    try {
+      // Update status to processing
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'processing',
+        processingStartedAt: new Date()
+      });
+
+      // Process with timeout
+      const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+      const result = await Promise.race([
+        this.summaryService.processYouTubeUrl(videoUrl),
+        this.createTimeoutPromise(this.SUMMARY_TIMEOUT)
+      ]);
+
+      // Success: update with results
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        summary: result.summary,
+        transcript: result.transcript,
+        processed: true
+      });
+
+      // Send push notifications
+      await this.sendVideoNotification(video, result.summary);
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] ✅ Successfully processed: ${video.title}`);
+
+    } catch (error) {
+      await this.handleProcessingError(video, error);
+    }
+  }
+
+  private createTimeoutPromise(timeoutMs: number): Promise<never> {
+    return new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('PROCESSING_TIMEOUT')), timeoutMs)
+    );
+  }
+
+  private async handleProcessingError(video: RSSVideo, error: any): Promise<void> {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+
+    logWithTimestamp(`[YOUTUBE_MONITOR] ❌ Processing failed for ${video.title}: ${errorMsg}`);
+
+    if (errorMsg.includes('자막이 없거나') || errorMsg.includes('자막을 가져올 수 없습니다')) {
+      // No subtitles - save basic info only (matching existing logic)
+      logWithTimestamp(`[YOUTUBE_MONITOR] Video has no subtitles, saving basic info only: ${video.title}`);
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'completed',
+        processingCompletedAt: new Date(),
+        errorMessage: '자막이 없는 영상',
+        processed: true, // Mark as processed even without summary
+        summary: null,
+        transcript: null
+      });
+      // Note: No push notification sent for videos without subtitles
+    } else if (errorMsg === 'PROCESSING_TIMEOUT') {
+      // Timeout error
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'failed',
+        processingCompletedAt: new Date(),
+        errorMessage: `처리 시간 초과 (${this.SUMMARY_TIMEOUT / 1000}초)`,
+        processed: false
+      });
+    } else {
+      // Other errors
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'failed',
+        processingCompletedAt: new Date(),
+        errorMessage: `처리 실패: ${errorMsg}`,
+        processed: false
+      });
+
+      // Log error for serious issues
+      await errorLogger.logError(error as Error, {
         service: "YouTubeMonitor",
-        operation: "saveVideoToDatabase",
-        channelId: channel.channelId,
+        operation: "processVideoSummary",
         additionalInfo: {
-          videoId: latestVideo.videoId,
-          videoTitle: latestVideo.title,
+          videoId: video.videoId,
+          videoTitle: video.title,
+          channelTitle: video.channelTitle,
         },
       });
     }
   }
 
-  // 모든 구독 채널 모니터링
-  public async monitorAllChannels(): Promise<void> {
-    logWithTimestamp(
-      `[YOUTUBE_MONITOR] monitorAllChannels at ${new Date().toISOString()}`,
+  private async sendVideoNotification(video: RSSVideo, summary: string): Promise<void> {
+    try {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Sending push notifications for video: ${video.videoId}`);
+
+      const notificationsSent = await pushNotificationService.sendNewVideoSummaryNotification(
+        video.channelId,
+        {
+          videoId: video.videoId,
+          title: video.title,
+          channelName: video.channelTitle,
+          summary: summary,
+        }
+      );
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Sent push notifications to ${notificationsSent} users`);
+    } catch (error) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error sending push notifications:`, error);
+      await errorLogger.logError(error as Error, {
+        service: "YouTubeMonitor",
+        operation: "sendVideoNotification",
+        additionalInfo: { videoId: video.videoId },
+      });
+    }
+  }
+
+  private async processSummaryBatch(videos: RSSVideo[]): Promise<void> {
+    logWithTimestamp(`[YOUTUBE_MONITOR] Processing batch of ${videos.length} videos`);
+
+    const results = await Promise.allSettled(
+      videos.map(video => this.processVideoSummary(video))
     );
 
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+
+    logWithTimestamp(`[YOUTUBE_MONITOR] Batch completed: ${successful} success, ${failed} failed`);
+  }
+
+  private async processSummaryQueue(): Promise<void> {
+    if (this.state.isProcessingSummaries) {
+      logWithTimestamp('[YOUTUBE_MONITOR] Summary processing already in progress');
+      return;
+    }
+
+    this.state.isProcessingSummaries = true;
+
     try {
-      // 모든 YouTube 채널 가져오기
-      logWithTimestamp(`[YOUTUBE_MONITOR] monitorAllChannels - fetching all channels`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Starting summary processing for ${this.state.summaryQueue.length} videos`);
+
+      while (this.state.summaryQueue.length > 0) {
+        // Process videos in batches
+        const batch = this.state.summaryQueue.splice(0, this.CONCURRENT_LIMIT);
+        await this.processSummaryBatch(batch);
+
+        logWithTimestamp(`[YOUTUBE_MONITOR] ${this.state.summaryQueue.length} videos remaining in queue`);
+      }
+
+      logWithTimestamp('[YOUTUBE_MONITOR] All summaries processed');
+
+    } finally {
+      this.state.isProcessingSummaries = false;
+    }
+  }
+
+  // ================================
+  // Main Monitoring Methods
+  // ================================
+
+  public async monitorAllChannels(): Promise<void> {
+    const startTime = Date.now();
+    logWithTimestamp(`[YOUTUBE_MONITOR] Starting RSS scan cycle at ${new Date().toISOString()}`);
+
+    try {
+      // Phase 1: RSS Scan - collect new videos
+      this.state.summaryQueue = []; // Reset queue
       const channels = await storage.getAllYoutubeChannels();
-      logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring ${channels.length} channels`);
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
 
       for (const channel of channels) {
-        try {
-          // RSS에서 최신 영상 가져오기
-          const latestVideo = await this.fetchLatestVideoFromRSS(
-            channel.channelId,
-          );
-
-          if (!latestVideo) {
-            logWithTimestamp(
-              `[YOUTUBE_MONITOR] No videos found for channel: ${channel.title}`,
-            );
-            continue;
-          }
-
-          // RSS 성공 시 채널 활성화 상태 복구
-          if (!channel.isActive) {
-            logWithTimestamp(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
-            await storage.updateChannelActiveStatus(channel.channelId, true, null);
-          }
-
-          // 현재 저장된 영상 ID와 비교
-          if (channel.recentVideoId === latestVideo.videoId) {
-            logWithTimestamp(
-              `[YOUTUBE_MONITOR] No new video for channel ${channel.title} (latest: ${latestVideo.videoId})`,
-            );
-            continue;
-          }
-
-          logWithTimestamp(
-            `[YOUTUBE_MONITOR] New video detected for channel ${channel.title}: ${latestVideo.title} (${latestVideo.videoId})`,
-          );
-
-          // Check if the video is a live stream before processing
-          try {
-            const isLiveStream = await youtubeApiUtils.isLiveStream(latestVideo.videoId);
-            if (isLiveStream) {
-              logWithTimestamp(
-                `[YOUTUBE_MONITOR] Skipping live stream video: ${latestVideo.title} (${latestVideo.videoId})`,
-              );
-
-              // Update the recentVideoId to avoid processing this video again, but don't save to videos table
-              await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
-              continue;
-            }
-          } catch (error) {
-            errorWithTimestamp(
-              `[YOUTUBE_MONITOR] Error checking live stream status for video ${latestVideo.videoId}:`,
-              error,
-            );
-            // Continue processing if live stream check fails to avoid blocking regular videos
-          }
-
-          // 새 영상 처리
-          await this.processChannelVideo(channel, latestVideo);
-        } catch (error) {
-          errorWithTimestamp(
-            `[YOUTUBE_MONITOR] Error monitoring channel ${channel.channelId}:`,
-            error,
-          );
-
-          // RSS 404 오류 처리 - 채널 비활성화
-          if (error instanceof Error && error.message.includes('404')) {
-            logWithTimestamp(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
-            await storage.updateChannelActiveStatus(
-              channel.channelId, 
-              false, 
-              `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
-            );
-          } else {
-            // 다른 에러들은 기존 방식대로 로깅
-            await errorLogger.logError(error as Error, {
-              service: "YouTubeMonitor",
-              operation: "monitorChannel",
-              channelId: channel.channelId,
-              additionalInfo: { channelTitle: channel.title },
-            });
-          }
+        const newVideo = await this.scanSingleChannel(channel);
+        if (newVideo) {
+          this.state.summaryQueue.push(newVideo);
         }
       }
+
+      const scanTime = Date.now() - startTime;
+      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos`);
+
+      // Phase 2: Summary Processing (if any new videos found)
+      if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
+        // Start processing asynchronously (don't await)
+        this.processSummaryQueue().catch(error => {
+          errorWithTimestamp('[YOUTUBE_MONITOR] Error in summary processing:', error);
+        });
+      }
+
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
       await errorLogger.logError(error as Error, {
@@ -361,45 +473,51 @@ export class YouTubeMonitor {
       });
     }
 
-    logWithTimestamp(
-      `[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`,
-    );
+    logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`);
   }
 
-  // 5분 간격 모니터링 시작
+  // ================================
+  // Control Methods
+  // ================================
+
   public startMonitoring(): void {
-    if (this.monitorInterval) {
+    if (this.state.monitorInterval) {
       logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring already running`);
       return;
     }
 
-    logWithTimestamp(
-      `[YOUTUBE_MONITOR] Starting YouTube channel monitoring (5-minute intervals)`,
-    );
+    logWithTimestamp(`[YOUTUBE_MONITOR] Starting YouTube channel monitoring (${this.MONITORING_INTERVAL / 1000}s intervals)`);
 
-    // 즉시 첫 번째 실행
+    // Run immediately
     this.monitorAllChannels();
 
-    // 5분(300,000ms) 간격으로 실행
-    this.monitorInterval = setInterval(
+    // Schedule regular intervals
+    this.state.monitorInterval = setInterval(
       () => {
         this.monitorAllChannels();
       },
-      5 * 60 * 1000,
+      this.MONITORING_INTERVAL
     );
   }
 
-  // 모니터링 중지
   public stopMonitoring(): void {
-    if (this.monitorInterval) {
-      clearInterval(this.monitorInterval);
-      this.monitorInterval = null;
+    if (this.state.monitorInterval) {
+      clearInterval(this.state.monitorInterval);
+      this.state.monitorInterval = null;
       logWithTimestamp(`[YOUTUBE_MONITOR] YouTube channel monitoring stopped`);
     }
   }
 
-  // 상태 확인
   public isMonitoring(): boolean {
-    return this.monitorInterval !== null;
+    return this.state.monitorInterval !== null;
+  }
+
+  public getStatus() {
+    return {
+      isMonitoring: this.isMonitoring(),
+      isProcessingSummaries: this.state.isProcessingSummaries,
+      queueLength: this.state.summaryQueue.length,
+      concurrentLimit: this.CONCURRENT_LIMIT,
+    };
   }
 }

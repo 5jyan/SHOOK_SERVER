@@ -97,7 +97,7 @@ export class YouTubeSummaryService {
     ) {
       const contentArray = transcriptData.content || [];
       transcriptText = contentArray
-        .map((entry) => entry.text || "")
+        .map((entry: any) => entry.text || "")
         .join(" ");
     } else {
       throw new Error("이 영상에는 자막이 없거나 자막을 가져올 수 없습니다.");

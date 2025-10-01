@@ -47,10 +47,14 @@ export interface IStorage {
   
   // Video methods
   createVideo(video: InsertVideo): Promise<Video>;
+  getVideo(videoId: string): Promise<Video | undefined>;
   getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
   getVideosForUser(userId: number, limit?: number, since?: number): Promise<Video[]>;
+  updateVideoProcessingStatus(videoId: string, updates: Partial<Video>): Promise<void>;
+  getPendingVideos(limit: number): Promise<Video[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
+  updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void>;
 
   // Push token methods
   createPushToken(pushToken: InsertPushToken): Promise<PushToken>;
@@ -237,6 +241,30 @@ export class DatabaseStorage implements IStorage {
       .values(video)
       .returning();
     return newVideo;
+  }
+
+  async getVideo(videoId: string): Promise<Video | undefined> {
+    logWithTimestamp("[storage.ts] getVideo");
+    const [video] = await db.select().from(videos).where(eq(videos.videoId, videoId));
+    return video || undefined;
+  }
+
+  async updateVideoProcessingStatus(videoId: string, updates: Partial<Video>): Promise<void> {
+    logWithTimestamp(`[storage.ts] updateVideoProcessingStatus - videoId: ${videoId}`);
+    await db
+      .update(videos)
+      .set(updates)
+      .where(eq(videos.videoId, videoId));
+  }
+
+  async getPendingVideos(limit: number): Promise<Video[]> {
+    logWithTimestamp(`[storage.ts] getPendingVideos - limit: ${limit}`);
+    return db
+      .select()
+      .from(videos)
+      .where(eq(videos.processingStatus, 'pending'))
+      .orderBy(videos.createdAt)
+      .limit(limit);
   }
 
   async getVideosByChannel(channelId: string, limit: number = 20): Promise<Video[]> {
