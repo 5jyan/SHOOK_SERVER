@@ -86,6 +86,8 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
           id: user.id,
           email: user.email,
           name: nickname,
+          username: user.username,
+          role: user.role, // Include role for channel limit logic
         },
       });
     });
