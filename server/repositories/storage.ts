@@ -16,7 +16,7 @@ import {
   type InsertPushToken
 } from "@shared/schema";
 import { db } from "../lib/db";
-import { eq, and, isNotNull, desc, inArray, gte } from "drizzle-orm";
+import { eq, and, isNotNull, desc, inArray, gte, sql } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "../lib/db";
@@ -282,23 +282,27 @@ export class DatabaseStorage implements IStorage {
   async getVideosForUser(userId: number, limit: number = 20, since?: number): Promise<Video[]> {
     const sinceDate = since ? new Date(since) : null;
     logWithTimestamp(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
-    
-    // Optimized single query using JOIN - eliminates N+1 problem
-    // Build WHERE clause based on incremental sync requirement
-    const baseCondition = eq(userChannels.userId, userId);
-    let whereClause;
-    
-    if (sinceDate) {
-      logWithTimestamp(`[storage.ts] Incremental sync: filtering videos created after ${sinceDate.toISOString()}`);
-      whereClause = and(
-        baseCondition,
-        gte(videos.createdAt as any, sinceDate)
-      );
-    } else {
-      whereClause = baseCondition;
+
+    // Get user's channel subscriptions with subscription dates
+    const userSubscriptions = await db
+      .select({
+        channelId: userChannels.channelId,
+        subscribedAt: userChannels.createdAt,
+      })
+      .from(userChannels)
+      .where(eq(userChannels.userId, userId));
+
+    logWithTimestamp(`[storage.ts] User has ${userSubscriptions.length} channel subscriptions`);
+
+    if (userSubscriptions.length === 0) {
+      return [];
     }
 
-    const userVideos = await db
+    // Build query to get videos created after user's subscription to each channel
+    const channelIds = userSubscriptions.map(sub => sub.channelId);
+
+    // Get all videos from subscribed channels
+    const allChannelVideos = await db
       .select({
         videoId: videos.videoId,
         channelId: videos.channelId,
@@ -309,7 +313,7 @@ export class DatabaseStorage implements IStorage {
         processed: videos.processed,
         errorMessage: videos.errorMessage,
         createdAt: videos.createdAt,
-        channelTitle: videos.channelTitle, // Use denormalized field for better performance
+        channelTitle: videos.channelTitle,
         channelThumbnail: videos.channelThumbnail,
         duration: videos.duration,
         viewCount: videos.viewCount,
@@ -317,17 +321,113 @@ export class DatabaseStorage implements IStorage {
         processingStartedAt: videos.processingStartedAt,
         processingCompletedAt: videos.processingCompletedAt,
       })
-      .from(userChannels)
-      .innerJoin(videos, eq(userChannels.channelId, videos.channelId))
-      .where(whereClause)
-      .orderBy(desc(videos.createdAt))
-      .limit(limit);
-    
-    if (sinceDate) {
-      logWithTimestamp(`[storage.ts] Incremental sync found ${userVideos.length} new videos for user ${userId} since ${sinceDate.toISOString()}`);
-    } else {
-      logWithTimestamp(`[storage.ts] Full sync found ${userVideos.length} videos for user ${userId}`);
+      .from(videos)
+      .where(
+        sinceDate
+          ? and(
+              eq(videos.channelId, channelIds[0]), // Use first channel for initial filter
+              gte(videos.createdAt as any, sinceDate)
+            )
+          : eq(videos.channelId, channelIds[0]) // Use first channel for initial filter
+      )
+      .orderBy(desc(videos.createdAt));
+
+    // Filter videos per channel based on subscription date
+    const filteredVideos: Video[] = [];
+    const channelLatestVideos: Map<string, Video> = new Map();
+
+    for (const video of allChannelVideos) {
+      const subscription = userSubscriptions.find(sub => sub.channelId === video.channelId);
+      if (!subscription) continue;
+
+      const subscribedAt = subscription.subscribedAt || new Date(0);
+
+      // Track latest video per channel for fallback
+      if (!channelLatestVideos.has(video.channelId)) {
+        channelLatestVideos.set(video.channelId, video as Video);
+      }
+
+      // Include videos created after subscription
+      if (new Date(video.createdAt) >= new Date(subscribedAt)) {
+        filteredVideos.push(video as Video);
+      }
     }
+
+    // Get all videos from all subscribed channels (proper multi-channel query)
+    const allVideosQuery = await db
+      .select({
+        videoId: videos.videoId,
+        channelId: videos.channelId,
+        title: videos.title,
+        publishedAt: videos.publishedAt,
+        summary: videos.summary,
+        transcript: videos.transcript,
+        processed: videos.processed,
+        errorMessage: videos.errorMessage,
+        createdAt: videos.createdAt,
+        channelTitle: videos.channelTitle,
+        channelThumbnail: videos.channelThumbnail,
+        duration: videos.duration,
+        viewCount: videos.viewCount,
+        processingStatus: videos.processingStatus,
+        processingStartedAt: videos.processingStartedAt,
+        processingCompletedAt: videos.processingCompletedAt,
+      })
+      .from(videos)
+      .where(
+        sinceDate
+          ? and(
+              sql`${videos.channelId} IN ${channelIds}`,
+              gte(videos.createdAt as any, sinceDate)
+            )
+          : sql`${videos.channelId} IN ${channelIds}`
+      )
+      .orderBy(desc(videos.createdAt));
+
+    // Re-process with all videos
+    const properFilteredVideos: Video[] = [];
+    const properChannelLatestVideos: Map<string, Video> = new Map();
+
+    for (const video of allVideosQuery) {
+      const subscription = userSubscriptions.find(sub => sub.channelId === video.channelId);
+      if (!subscription) continue;
+
+      const subscribedAt = subscription.subscribedAt || new Date(0);
+
+      // Track latest video per channel
+      const existing = properChannelLatestVideos.get(video.channelId);
+      if (!existing || new Date(video.createdAt) > new Date(existing.createdAt)) {
+        properChannelLatestVideos.set(video.channelId, video as Video);
+      }
+
+      // Include videos created after subscription
+      if (new Date(video.createdAt) >= new Date(subscribedAt)) {
+        properFilteredVideos.push(video as Video);
+      }
+    }
+
+    // For channels with no videos after subscription, add the latest video
+    for (const subscription of userSubscriptions) {
+      const channelId = subscription.channelId;
+      const hasVideosAfterSub = properFilteredVideos.some(v => v.channelId === channelId);
+
+      if (!hasVideosAfterSub) {
+        const latestVideo = properChannelLatestVideos.get(channelId);
+        if (latestVideo) {
+          logWithTimestamp(`[storage.ts] Channel ${channelId} has no videos after subscription, adding latest video: ${latestVideo.videoId}`);
+          properFilteredVideos.push(latestVideo);
+        }
+      }
+    }
+
+    // Sort by createdAt descending and apply limit
+    const sortedVideos = properFilteredVideos.sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ).slice(0, limit);
+
+    logWithTimestamp(`[storage.ts] Filtered ${sortedVideos.length} videos for user ${userId} (after subscription filter + fallback)`);
+
+    const userVideos = sortedVideos;
     
     // Log sample video with channel name for debugging
     if (userVideos.length > 0) {

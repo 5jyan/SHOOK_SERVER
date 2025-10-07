@@ -142,17 +142,59 @@ export class ChannelService {
 
       await this.checkUserSubscription(userId, channelId);
 
+      // Check if this is a brand new channel (not in DB yet) BEFORE creating/updating
+      const existingChannel = await storage.getYoutubeChannel(channelId);
+      const isNewChannel = !existingChannel;
+
+      logWithTimestamp(`[CHANNEL_SERVICE] Channel existence check: ${isNewChannel ? 'NEW CHANNEL' : 'EXISTING CHANNEL'}`);
+
       // Save to database if not already exists or update
       logWithTimestamp(`[CHANNEL_SERVICE] createOrUpdateYoutubeChannel for channel ${channelInfo.channelId}`);
       await storage.createOrUpdateYoutubeChannel(channelInfo);
 
       const { subscription, channel } = await this.subscribeUser(userId, channelId);
 
+      // Scenario 1: Brand new channel - process latest video in background
+      if (isNewChannel) {
+        logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, processing latest video in background`);
+
+        // Process video asynchronously (don't await)
+        this.processLatestVideoForChannel(channelId).catch(async (videoError) => {
+          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to process latest video for channel ${channelId}:`, videoError);
+          await errorLogger.logError(videoError as Error, {
+            service: 'ChannelService',
+            operation: 'addChannel.processLatestVideo',
+            userId,
+            channelId
+          });
+        });
+
+        return {
+          success: true,
+          message: "채널이 성공적으로 추가되었습니다",
+          channel,
+          subscription,
+          latestVideo: null // Video processing in background
+        };
+      }
+
+      // Scenario 2: Existing channel - return latest video from DB
+      logWithTimestamp(`[CHANNEL_SERVICE] Existing channel, fetching latest video from DB`);
+      const existingVideos = await storage.getVideosByChannel(channelId, 1);
+      const latestVideo = existingVideos.length > 0 ? existingVideos[0] : null;
+
+      if (latestVideo) {
+        logWithTimestamp(`[CHANNEL_SERVICE] Found latest video: ${latestVideo.videoId}`);
+      } else {
+        logWithTimestamp(`[CHANNEL_SERVICE] No videos found for existing channel`);
+      }
+
       return {
         success: true,
         message: "채널이 성공적으로 추가되었습니다",
         channel,
-        subscription
+        subscription,
+        latestVideo // Include latest video info if exists
       };
     }
     catch (error) {
@@ -164,6 +206,29 @@ export class ChannelService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Process the most recent video from a channel (used when adding new channel)
+   */
+  private async processLatestVideoForChannel(channelId: string): Promise<void> {
+    logWithTimestamp(`[CHANNEL_SERVICE] processLatestVideoForChannel for ${channelId}`);
+
+    // Import YouTube monitoring service dynamically to avoid circular dependency
+    const { youtubeMonitor } = await import('./index.js');
+
+    // Fetch latest video from RSS feed
+    const latestVideo = await youtubeMonitor.getLatestVideoFromChannel(channelId);
+
+    if (!latestVideo) {
+      logWithTimestamp(`[CHANNEL_SERVICE] No videos found for channel ${channelId}`);
+      return;
+    }
+
+    logWithTimestamp(`[CHANNEL_SERVICE] Latest video found: ${latestVideo.videoId} - ${latestVideo.title}`);
+
+    // Process this video (get transcript, generate summary)
+    await youtubeMonitor.processVideo(channelId, latestVideo);
   }
 
   async deleteChannel(userId: number, channelId: string) {

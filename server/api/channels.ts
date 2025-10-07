@@ -49,6 +49,17 @@ router.post("/", isAuthenticated, async (req, res) => {
     const { channelId } = req.body;
     logWithTimestamp("[CHANNELS] Received channelId in POST request:", channelId);
     const result = await channelService.addChannel(req.user!.id, channelId);
+
+    // Log the response being sent to client
+    logWithTimestamp("[CHANNELS] Response data:", {
+      success: result.success,
+      hasLatestVideo: !!result.latestVideo,
+      latestVideoId: result.latestVideo?.videoId,
+      latestVideoProcessed: result.latestVideo?.processed,
+      latestVideoHasSummary: !!result.latestVideo?.summary,
+      latestVideoSummaryLength: result.latestVideo?.summary?.length || 0
+    });
+
     res.json(result);
   } catch (error) {
     errorWithTimestamp("[CHANNELS] Error adding channel:", error);

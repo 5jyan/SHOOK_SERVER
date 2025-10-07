@@ -477,6 +477,62 @@ export class YouTubeMonitor {
   }
 
   // ================================
+  // Public API Methods
+  // ================================
+
+  /**
+   * Get the latest video from a channel's RSS feed
+   * Used by ChannelService when adding new channels
+   */
+  public async getLatestVideoFromChannel(channelId: string): Promise<RSSVideo | null> {
+    logWithTimestamp(`[YOUTUBE_MONITOR] getLatestVideoFromChannel called for ${channelId}`);
+    return this.findLatestValidVideo(channelId);
+  }
+
+  /**
+   * Process a specific video (transcript extraction + AI summary)
+   * Used by ChannelService when adding new channels
+   */
+  public async processVideo(channelId: string, video: RSSVideo): Promise<void> {
+    logWithTimestamp(`[YOUTUBE_MONITOR] processVideo called for ${video.videoId}`);
+
+    // Check if video already exists and is processed
+    const existingVideo = await storage.getVideo(video.videoId);
+    if (existingVideo) {
+      // Video already exists in DB
+      if (existingVideo.processingStatus === 'completed' || existingVideo.processed) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Video ${video.videoId} already processed (status: ${existingVideo.processingStatus})`);
+        return;
+      }
+      if (existingVideo.processingStatus === 'pending' || existingVideo.processingStatus === 'processing') {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Video ${video.videoId} already ${existingVideo.processingStatus}`);
+        return;
+      }
+    }
+
+    // Check if it's a live stream
+    try {
+      const isLiveStream = await youtubeApiUtils.isLiveStream(video.videoId);
+      if (isLiveStream) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream: ${video.title}`);
+        await storage.updateChannelRecentVideo(channelId, video.videoId);
+        return;
+      }
+    } catch (error) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status:`, error);
+      // Continue processing if check fails
+    }
+
+    // Save video to DB (only if it doesn't exist)
+    if (!existingVideo) {
+      await this.saveNewVideo(video);
+    }
+
+    // Process summary immediately
+    await this.processVideoSummary(video);
+  }
+
+  // ================================
   // Control Methods
   // ================================
 
