@@ -28,6 +28,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByKakaoId(kakaoId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserEmail(userId: number, email: string): Promise<void>;
   
@@ -101,6 +102,12 @@ export class DatabaseStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     logWithTimestamp("[storage.ts] getUserByEmail");
     const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
+  async getUserByKakaoId(kakaoId: string): Promise<User | undefined> {
+    logWithTimestamp("[storage.ts] getUserByKakaoId");
+    const [user] = await db.select().from(users).where(eq(users.kakaoId, kakaoId));
     return user || undefined;
   }
 
