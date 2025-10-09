@@ -1,6 +1,5 @@
 import { Router } from "express";
 import channelRoutes from "./channels.js";
-import googleRoutes from "./google.js";
 import summaryRoutes from "./summary.js";
 import videoRoutes from "./videos.js";
 import userRoutes from "./user.js";
@@ -20,8 +19,6 @@ logWithTimestamp('✅ Main API router loaded');
 router.use("/", authRoutes);
 
 router.use("/channels", channelRoutes);
-logWithTimestamp('📋 Registering Google routes at /auth/google');
-router.use("/auth/google", googleRoutes);
 router.use("/summary", summaryRoutes);
 router.use("/videos", videoRoutes);
 router.use("/user", userRoutes);

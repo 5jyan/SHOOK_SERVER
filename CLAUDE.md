@@ -45,8 +45,8 @@ docker-compose up
 
 **Tech Stack:**
 - Backend: Node.js 22, Express.js, TypeScript (ESM), Drizzle ORM, PostgreSQL (Neon)
-- Authentication: Passport.js with local strategy + Google OAuth, session-based
-- External APIs: YouTube Data API v3, SupaData API, OpenAI API, Google APIs, Expo Push Notifications
+- Authentication: Passport.js with local strategy + Kakao OAuth, session-based
+- External APIs: YouTube Data API v3, SupaData API, OpenAI API, Expo Push Notifications
 - Build: esbuild for production bundling, tsx for development
 - Deployment: Docker with multi-stage builds
 
@@ -94,10 +94,10 @@ docker-compose up
 - **Channel Lifecycle Management**: Auto-cleanup of `youtube_channels` when no users remain subscribed
 - **Service Dependencies**: YouTubeMonitor depends on YouTubeSummaryService and PushNotificationService
 - **Error Recovery**: Comprehensive error handling for all service failures with detailed logging
-- **Multi-Auth Support**: Local username/password and Google OAuth authentication
+- **Multi-Auth Support**: Local username/password and Kakao OAuth authentication
 
 **Database Schema (PostgreSQL with Drizzle ORM):**
-- `users` - User accounts with authentication details, roles (user/tester/manager), Google OAuth support
+- `users` - User accounts with authentication details, roles (user/tester/manager), Kakao OAuth support
 - `youtube_channels` - Shared channel metadata with video tracking (recentVideoId, processed, isActive)
 - `videos` - Individual video records with summaries, transcripts, and processing status
 - `user_channels` - Many-to-many subscription mapping with auto-cleanup logic
@@ -133,8 +133,6 @@ SESSION_SECRET=random_string           # Session encryption
 YOUTUBE_API_KEY=google_cloud_key      # YouTube Data API v3
 OPENAI_API_KEY=openai_api_key        # OpenAI API for summarization
 SUPADATA_API_KEY=supadata_key        # SupaData API for video transcripts
-GOOGLE_CLIENT_ID=google_oauth_client  # Google OAuth for authentication
-GOOGLE_CLIENT_SECRET=google_oauth_secret
 PORT=3000                            # Server port (optional)
 NODE_ENV=development                 # Environment setting
 ```
@@ -143,7 +141,7 @@ NODE_ENV=development                 # Environment setting
 - **YouTube Data API**: Channel search, metadata retrieval, RSS feed parsing (10K daily quota)
 - **SupaData API**: Video transcript/caption extraction with retry logic (rate limited)
 - **OpenAI API**: AI-powered video summarization in Korean using GPT models
-- **Google OAuth**: User authentication via Google accounts
+- **Kakao OAuth**: User authentication via Kakao accounts
 - **Expo Push Notifications**: Mobile app notifications via Expo's service
 
 ## Development Guidelines
@@ -162,7 +160,7 @@ NODE_ENV=development                 # Environment setting
 - **API Layer**: Express routers with middleware stack (auth → authorization → business logic)
 - **Service Layer**: Singleton pattern with dependency injection, services exported from `server/services/index.ts`
 - **Database**: Drizzle ORM with type-safe queries and relations, no raw SQL
-- **Authentication**: Session-based auth with Passport.js (local strategy + Google OAuth) and PostgreSQL session store
+- **Authentication**: Session-based auth with Passport.js (local strategy + Kakao OAuth) and PostgreSQL session store
 - **Error Handling**: Centralized error logging service with structured logging and timestamps
 - **Background Jobs**: YouTube monitoring service runs continuously with interval scheduling
 - **Mobile Integration**: Expo push notification service for cross-platform mobile notifications
@@ -209,11 +207,10 @@ npm run start    # Starts production server
 ## Common Issues & Troubleshooting
 
 1. **API Quota Exceeded**: YouTube API 403 errors - check Google Cloud Console quotas
-2. **Database Connection Issues**: Verify DATABASE_URL and Neon database status  
+2. **Database Connection Issues**: Verify DATABASE_URL and Neon database status
 3. **Build Failures**: Run `npm run check` for TypeScript errors first
-4. **Google OAuth Issues**: Verify GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set
-5. **Push Notification Failures**: Check Expo push notification token validity and service status
-6. **YouTube Monitoring Stopped**: Check service logs for RSS feed errors or API failures
+4. **Push Notification Failures**: Check Expo push notification token validity and service status
+5. **YouTube Monitoring Stopped**: Check service logs for RSS feed errors or API failures
 
 ## Key Configuration Files
 
