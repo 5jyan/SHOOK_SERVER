@@ -31,6 +31,7 @@ export interface IStorage {
   getUserByKakaoId(kakaoId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserEmail(userId: number, email: string): Promise<void>;
+  deleteUser(userId: number): Promise<void>;
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
@@ -119,6 +120,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId));
   }
 
+  async deleteUser(userId: number): Promise<void> {
+    logWithTimestamp("[storage.ts] deleteUser");
+
+    // Delete user's push tokens first
+    await db.delete(pushTokens).where(eq(pushTokens.userId, userId));
+
+    // Delete user's channel subscriptions
+    await db.delete(userChannels).where(eq(userChannels.userId, userId));
+
+    // Delete the user
+    await db.delete(users).where(eq(users.id, userId));
+
+    logWithTimestamp(`[storage.ts] User ${userId} and all associated data deleted`);
+  }
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
     logWithTimestamp("[storage.ts] getYoutubeChannel");
