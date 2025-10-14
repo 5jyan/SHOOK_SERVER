@@ -67,6 +67,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Serve static files from public directory
+  app.use(express.static('public'));
+
   app.use("/api", apiRouter);
 
   // Create the server after setting up routes
