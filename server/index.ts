@@ -73,8 +73,10 @@ app.use((req, res, next) => {
 
 (async () => {
   // Serve static files from public directory
-  // Use absolute path to ensure it works in production build
-  const publicPath = path.join(__dirname, '..', 'public');
+  // Use absolute path to ensure it works in both dev and production
+  // In dev: server/index.ts -> public (up two levels)
+  // In Docker production: /app/dist/server/index.js -> /app/public (up two levels from dist/server)
+  const publicPath = path.join(__dirname, '..', '..', 'public');
   app.use(express.static(publicPath));
   logWithTimestamp(`[express] Serving static files from: ${publicPath}`);
 

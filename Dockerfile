@@ -22,10 +22,13 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 
-# Copy built server from 'builder' stage  
+# Copy built server from 'builder' stage
 # Build script outputs to 'dist/server'
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/shared ./shared
+
+# Copy public folder for static files (privacy policy, terms of service)
+COPY --from=builder /app/public ./public
 
 # Expose the port the server will run on
 EXPOSE 3000
