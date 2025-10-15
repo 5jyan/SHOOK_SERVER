@@ -20,7 +20,7 @@ const router = Router();
 router.post("/register", async (req, res, next) => {
   const existingUser = await storage.getUserByUsername(req.body.username);
   if (existingUser) {
-    return res.status(400).send("Username already exists");
+    return res.status(400).json({ error: "이미 사용 중인 ID입니다" });
   }
 
   const user = await storage.createUser({
@@ -56,21 +56,21 @@ router.post("/auth/email/login", async (req, res, next) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: "Username and password are required" });
+      return res.status(400).json({ error: "ID와 비밀번호를 입력해주세요" });
     }
 
     // Find user by username
     const user = await storage.getUserByUsername(username);
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid username or password" });
+      return res.status(401).json({ error: "ID 또는 비밀번호가 올바르지 않습니다" });
     }
 
     // Verify password (using scrypt)
     const isValidPassword = await comparePasswords(password, user.password || '');
 
     if (!isValidPassword) {
-      return res.status(401).json({ error: "Invalid username or password" });
+      return res.status(401).json({ error: "ID 또는 비밀번호가 올바르지 않습니다" });
     }
 
     // Create session
@@ -87,7 +87,7 @@ router.post("/auth/email/login", async (req, res, next) => {
     });
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ error: "Authentication failed" });
+    res.status(500).json({ error: "로그인 중 오류가 발생했습니다" });
   }
 });
 
