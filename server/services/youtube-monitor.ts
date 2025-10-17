@@ -121,20 +121,32 @@ export class YouTubeMonitor {
         return null;
       }
 
-      // Find first non-skippable video
+      // Find first valid video (skip shorts and live streams)
       for (const entryMatch of entryMatches) {
         const parsedEntry = this.parseRSSEntry(entryMatch);
         if (!parsedEntry) continue;
 
+        // Check if it's a short
         const skipCheck = this.isVideoSkippable(parsedEntry);
         if (skipCheck.skip) {
           logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video: ${parsedEntry.title} (${parsedEntry.videoId}) - ${skipCheck.reason}`);
           continue;
         }
 
-        // Note: Live stream check moved to channel processing level to match existing logic
+        // Check if it's a live stream
+        try {
+          const isLiveStream = await youtubeApiUtils.isLiveStream(parsedEntry.videoId);
+          if (isLiveStream) {
+            logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+            continue; // Skip and check next video
+          }
+        } catch (error) {
+          errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for ${parsedEntry.videoId}:`, error);
+          // Continue to next video on error to avoid blocking
+          continue;
+        }
 
-        // Valid video found
+        // Valid video found (not shorts, not live stream)
         const channel = await storage.getYoutubeChannel(channelId);
         logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId})`);
 
@@ -230,22 +242,7 @@ export class YouTubeMonitor {
         await storage.updateChannelActiveStatus(channel.channelId, true, null);
       }
 
-      // Check if it's a live stream before processing (matching existing logic)
-      try {
-        const isLiveStream = await youtubeApiUtils.isLiveStream(latestVideo.videoId);
-        if (isLiveStream) {
-          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${latestVideo.title} (${latestVideo.videoId})`);
-
-          // Update recentVideoId to avoid processing this video again, but don't save to videos table
-          await storage.updateChannelRecentVideo(channel.channelId, latestVideo.videoId);
-          return null; // Don't add to summary queue
-        }
-      } catch (error) {
-        errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for video ${latestVideo.videoId}:`, error);
-        // Continue processing if live stream check fails to avoid blocking regular videos
-      }
-
-      // Save video to DB with pending status
+      // Save video to DB with pending status (live stream check already done in findLatestValidVideo)
       await this.saveNewVideo(latestVideo);
 
       logWithTimestamp(`[YOUTUBE_MONITOR] New video detected: ${latestVideo.title} from ${channel.title}`);
