@@ -48,6 +48,12 @@ router.post("/", isAuthenticated, async (req, res) => {
   try {
     const { channelId } = req.body;
     logWithTimestamp("[CHANNELS] Received channelId in POST request:", channelId);
+
+    // 테스트용: test=true 쿼리 파라미터가 있으면 일부러 에러 발생
+    if (req.query.test === 'true') {
+      throw new Error('슬랙 에러 알림 테스트: 채널 추가 중 의도적인 에러 발생');
+    }
+
     const result = await channelService.addChannel(req.user!.id, channelId);
 
     // Log the response being sent to client

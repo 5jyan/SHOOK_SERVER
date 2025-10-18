@@ -105,6 +105,11 @@ router.post("/sample", isAuthenticated, async (req, res) => {
     });
   } catch (error) {
     errorWithTimestamp(`[VIDEOS] Error creating sample data:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'VideosRoute',
+      operation: 'createSampleData',
+      userId
+    });
     res.status(500).json({ error: "Failed to create sample data" });
   }
 });

@@ -4,6 +4,7 @@ import { storage } from "../repositories/storage.js";
 import { hashPassword } from "../lib/auth.js";
 import { scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import { errorLogger } from "../services/error-logging-service.js";
 
 const scryptAsync = promisify(scrypt);
 
@@ -87,6 +88,11 @@ router.post("/auth/email/login", async (req, res, next) => {
     });
   } catch (error) {
     console.error("Login error:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'AuthRoutes',
+      operation: 'emailLogin',
+      additionalInfo: { username: req.body.username }
+    });
     res.status(500).json({ error: "로그인 중 오류가 발생했습니다" });
   }
 });
@@ -114,6 +120,11 @@ router.delete("/auth/account", async (req, res, next) => {
     });
   } catch (error) {
     console.error("Account deletion error:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'AuthRoutes',
+      operation: 'deleteAccount',
+      userId: (req.user as any)?.id
+    });
     res.status(500).json({ error: "Failed to delete account" });
   }
 });
@@ -173,6 +184,10 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
     });
   } catch (error) {
     console.error("Kakao verification error:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'AuthRoutes',
+      operation: 'kakaoVerify'
+    });
     res.status(500).json({ error: "Kakao authentication failed" });
   }
 });

@@ -31,10 +31,16 @@ router.post("/fix-html-entities", isAuthenticated, async (req, res) => {
     
   } catch (error) {
     errorWithTimestamp(`[ADMIN] Error in fix-html-entities:`, error);
-    res.status(500).json({ 
+    await errorLogger.logError(error as Error, {
+      service: 'AdminRoutes',
+      operation: 'fixHtmlEntities',
+      userId,
+      username
+    });
+    res.status(500).json({
       success: false,
       error: "Failed to fix HTML entities",
-      details: (error as Error).message 
+      details: (error as Error).message
     });
   }
 });
@@ -137,8 +143,14 @@ router.get("/database-stats", isAuthenticated, async (req, res) => {
     
   } catch (error) {
     errorWithTimestamp(`[ADMIN] Error in database-stats:`, error);
-    res.status(500).json({ 
-      error: "Failed to get database statistics" 
+    await errorLogger.logError(error as Error, {
+      service: 'AdminRoutes',
+      operation: 'getDatabaseStats',
+      userId,
+      username
+    });
+    res.status(500).json({
+      error: "Failed to get database statistics"
     });
   }
 });

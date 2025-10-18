@@ -107,6 +107,12 @@ async function upsertPushToken(userId: number, deviceId: string, token: string, 
     
   } catch (error) {
     errorWithTimestamp(`[PUSH-TOKENS] Error upserting token:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'PushTokensRoute',
+      operation: 'upsertPushToken',
+      userId,
+      deviceId
+    });
     throw error;
   }
 }
@@ -436,6 +442,11 @@ router.get("/retry-queue-status", isAuthenticated, async (req, res) => {
     
   } catch (error) {
     errorWithTimestamp(`[PUSH-TOKENS] Error getting retry queue status:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'PushTokensRoute',
+      operation: 'getRetryQueueStatus',
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: "Failed to get retry queue status"
@@ -465,6 +476,11 @@ router.post("/cleanup-retry-queue", isAuthenticated, async (req, res) => {
     
   } catch (error) {
     errorWithTimestamp(`[PUSH-TOKENS] Error cleaning up retry queue:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'PushTokensRoute',
+      operation: 'cleanupRetryQueue',
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       error: "Failed to cleanup retry queue"
