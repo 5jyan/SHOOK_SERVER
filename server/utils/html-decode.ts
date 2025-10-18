@@ -99,10 +99,8 @@ export function decodeHtmlEntities(str: string): string {
 export function decodeYouTubeTitle(title: string): string {
   if (!title) return title;
 
-  //logWithTimestamp(`[html-decode] Original title: "${title}"`);
   const decoded = decodeHtmlEntities(title);
-  logWithTimestamp(`[html-decode] Decoded title: "${decoded}"`);
-  
+
   return decoded;
 }
 
@@ -115,10 +113,7 @@ export function decodeYouTubeSummary(summary: string): string {
 
   // Decode entities but preserve line breaks and formatting
   const decoded = decodeHtmlEntities(summary);
-  
-  // Log only first 100 chars to avoid spam
-  logWithTimestamp(`[html-decode] Summary decoded: "${decoded.substring(0, 100)}${decoded.length > 100 ? '...' : ''}"`);
-  
+
   return decoded;
 }
 
