@@ -190,11 +190,15 @@ export class YouTubeMonitor {
       return false;
     }
 
-    // Check if video is already being processed
+    // Check if video already exists in database (any status)
     const existingVideo = await storage.getVideo(video.videoId);
-    if (existingVideo?.processingStatus === 'pending' ||
-        existingVideo?.processingStatus === 'processing') {
-      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping ${video.videoId} - already ${existingVideo.processingStatus}`);
+    if (existingVideo) {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping ${video.videoId} - already exists (status: ${existingVideo.processingStatus})`);
+
+      // Sync recentVideoId to prevent future mismatches
+      if (channel.recentVideoId !== video.videoId) {
+        await storage.updateChannelRecentVideo(video.channelId, video.videoId);
+      }
       return false;
     }
 
