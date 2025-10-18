@@ -122,6 +122,18 @@ export class ChannelService {
     }
   }
 
+  private async checkChannelLimit(userId: number) {
+    logWithTimestamp(`[CHANNEL_SERVICE] checkChannelLimit for user ${userId}`);
+    const userChannels = await storage.getUserChannels(userId);
+    const user = await storage.getUser(userId);
+    const maxChannels = 5;
+
+    // manager 역할 사용자는 채널 제한이 없음
+    if (user?.role !== 'manager' && userChannels.length >= maxChannels) {
+      throw new Error(`최대 ${maxChannels}개의 채널만 구독할 수 있습니다`);
+    }
+  }
+
   private async subscribeUser(userId: number, channelId: string) {
     logWithTimestamp(`[CHANNEL_SERVICE] subscribeUser for user ${userId} and channel ${channelId}`);
     const subscription = await storage.subscribeUserToChannel(userId, channelId);
@@ -140,6 +152,7 @@ export class ChannelService {
         throw new Error("채널을 찾을 수 없습니다.");
       }
 
+      await this.checkChannelLimit(userId);
       await this.checkUserSubscription(userId, channelId);
 
       // Check if this is a brand new channel (not in DB yet) BEFORE creating/updating
