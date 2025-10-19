@@ -75,6 +75,8 @@ jobs:
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             SUPADATA_API_KEY=${{ secrets.SUPADATA_API_KEY }}
+            SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+            SLACK_CHANNEL_ID=${{ secrets.SLACK_CHANNEL_ID }}
             EOF
             
             # Docker 로그인

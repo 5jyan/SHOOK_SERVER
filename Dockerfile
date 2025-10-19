@@ -18,9 +18,9 @@ WORKDIR /app
 # Set production environment
 ENV NODE_ENV=production
 
-# Copy production dependencies from 'deps' stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
+# Copy package files and install production dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 # Copy built server from 'builder' stage
 # Build script outputs to 'dist/server'
