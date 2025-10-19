@@ -73,7 +73,8 @@
       "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_app\\app/**)",
       "Read(/C:\\Users\\saulpark\\Documents\\workspace\\shook_server\\server\\services/**)",
       "Bash(node:*)",
-      "Bash(npm run check:*)"
+      "Bash(npm run check:*)",
+      "Bash(cat package.json)"
     ],
     "additionalDirectories": [
       "C:\\",
