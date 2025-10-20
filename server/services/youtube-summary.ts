@@ -145,7 +145,7 @@ export class YouTubeSummaryService {
   private _buildOpenAIPrompt(transcript: string, youtubeUrl: string): string {
     return `다음 내용을 한국어로 명확하고 체계적으로 정리해. 자동으로 생성된 자막이니 잘못 생성된 단어라 판단되는 단어는 직접 보정하고 보정한 이력은 따로 기재하지마. 글쓴이를 언급할때는 단순히 "유튜버"라는 명칭만 사용해. 요약 필요한 내용: ${transcript}\n
     정리는 마크다운 형식을 사용하지마. 요약 예시: 1. 핵심 내용\n - 세부 내용1\n - 세부내용2\n
-    요약 정리 내용 외 다른 내용은 모두 제거해.`;
+    요약 정리 내용 외 부수적인 언급은 하지마.`;
   }
 
   /**
