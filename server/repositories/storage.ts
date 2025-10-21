@@ -135,6 +135,24 @@ export class DatabaseStorage implements IStorage {
     logWithTimestamp(`[storage.ts] User ${userId} and all associated data deleted`);
   }
 
+  async convertGuestToKakao(userId: number, kakaoId: string, email: string | null): Promise<User> {
+    logWithTimestamp(`[storage.ts] Converting guest user ${userId} to Kakao account`);
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        username: `kakao_${kakaoId}`,
+        kakaoId: kakaoId,
+        email: email,
+        authProvider: "kakao",
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    logWithTimestamp(`[storage.ts] Guest user ${userId} successfully converted to Kakao account`);
+    return updatedUser;
+  }
+
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
     logWithTimestamp("[storage.ts] getYoutubeChannel");
     const [channel] = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));

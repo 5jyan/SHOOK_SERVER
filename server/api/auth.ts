@@ -129,10 +129,58 @@ router.delete("/auth/account", async (req, res, next) => {
   }
 });
 
+// Guest account creation endpoint
+router.post("/auth/guest", async (req, res, next) => {
+  try {
+    const { deviceId } = req.body;
+
+    if (!deviceId) {
+      return res.status(400).json({ error: "Device ID is required" });
+    }
+
+    // Create guest username using device ID
+    const guestUsername = `guest_${deviceId}`;
+
+    // Check if guest account already exists
+    let user = await storage.getUserByUsername(guestUsername);
+
+    if (!user) {
+      // Create new guest user
+      user = await storage.createUser({
+        username: guestUsername,
+        authProvider: "guest",
+        role: "user",
+      });
+    }
+
+    // Create session
+    req.login(user, (err) => {
+      if (err) return next(err);
+      res.status(200).json({
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          isGuest: user.authProvider === 'guest',
+        },
+      });
+    });
+  } catch (error) {
+    console.error("Guest account creation error:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'AuthRoutes',
+      operation: 'guestAccountCreation',
+      additionalInfo: { deviceId: req.body.deviceId }
+    });
+    res.status(500).json({ error: "게스트 계정 생성에 실패했습니다" });
+  }
+});
+
 // Kakao authentication endpoint
 router.post("/auth/kakao/verify", async (req, res, next) => {
   try {
-    const { accessToken } = req.body;
+    const { accessToken, convertGuestAccount } = req.body;
 
     if (!accessToken) {
       return res.status(400).json({ error: "Access token is required" });
@@ -159,14 +207,32 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
     let user = await storage.getUserByKakaoId(kakaoId);
 
     if (!user) {
-      // Create new user with Kakao info
-      user = await storage.createUser({
-        username: `kakao_${kakaoId}`, // Unique username
-        email: email,
-        kakaoId: kakaoId,
-        authProvider: "kakao",
-        role: "user",
-      });
+      // Check if we should convert guest account
+      if (convertGuestAccount && req.isAuthenticated()) {
+        const currentUser = req.user as any;
+        if (currentUser.authProvider === 'guest') {
+          // Convert guest account to Kakao account
+          user = await storage.convertGuestToKakao(currentUser.id, kakaoId, email);
+        } else {
+          // Create new user with Kakao info
+          user = await storage.createUser({
+            username: `kakao_${kakaoId}`,
+            email: email,
+            kakaoId: kakaoId,
+            authProvider: "kakao",
+            role: "user",
+          });
+        }
+      } else {
+        // Create new user with Kakao info
+        user = await storage.createUser({
+          username: `kakao_${kakaoId}`,
+          email: email,
+          kakaoId: kakaoId,
+          authProvider: "kakao",
+          role: "user",
+        });
+      }
     }
 
     // Create session
@@ -179,6 +245,7 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
           name: nickname,
           username: user.username,
           role: user.role, // Include role for channel limit logic
+          isGuest: user.isGuest || false,
         },
       });
     });
