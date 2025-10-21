@@ -417,21 +417,49 @@ export class DatabaseStorage implements IStorage {
       )
       .orderBy(desc(videos.createdAt));
 
+    // Get all videos (without since filter) for fallback
+    const allVideosWithoutSinceFilter = await db
+      .select({
+        videoId: videos.videoId,
+        channelId: videos.channelId,
+        title: videos.title,
+        publishedAt: videos.publishedAt,
+        summary: videos.summary,
+        transcript: videos.transcript,
+        processed: videos.processed,
+        errorMessage: videos.errorMessage,
+        createdAt: videos.createdAt,
+        channelTitle: videos.channelTitle,
+        channelThumbnail: videos.channelThumbnail,
+        duration: videos.duration,
+        viewCount: videos.viewCount,
+        processingStatus: videos.processingStatus,
+        processingStartedAt: videos.processingStartedAt,
+        processingCompletedAt: videos.processingCompletedAt,
+      })
+      .from(videos)
+      .where(sql`${videos.channelId} IN ${channelIds}`)
+      .orderBy(desc(videos.createdAt));
+
     // Re-process with all videos
     const properFilteredVideos: Video[] = [];
-    const properChannelLatestVideos: Map<string, Video> = new Map();
+    const properChannelLatestVideos: Map<string, Video[]> = new Map();
 
+    // Build fallback map from unfiltered results
+    for (const video of allVideosWithoutSinceFilter) {
+      const existingVideos = properChannelLatestVideos.get(video.channelId) || [];
+      if (existingVideos.length < 3) {
+        existingVideos.push(video as Video);
+        properChannelLatestVideos.set(video.channelId, existingVideos);
+      }
+    }
+
+    // Process filtered results
     for (const video of allVideosQuery) {
       const subscription = userSubscriptions.find(sub => sub.channelId === video.channelId);
       if (!subscription) continue;
 
       const subscribedAt = subscription.subscribedAt || new Date(0);
-
-      // Track latest video per channel
-      const existing = properChannelLatestVideos.get(video.channelId);
-      if (!existing || new Date(video.createdAt) > new Date(existing.createdAt)) {
-        properChannelLatestVideos.set(video.channelId, video as Video);
-      }
 
       // Include videos created after subscription
       if (new Date(video.createdAt) >= new Date(subscribedAt)) {
@@ -439,16 +467,16 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // For channels with no videos after subscription, add the latest video
+    // For channels with no videos after subscription, add the latest videos (up to 3)
     for (const subscription of userSubscriptions) {
       const channelId = subscription.channelId;
       const hasVideosAfterSub = properFilteredVideos.some(v => v.channelId === channelId);
 
       if (!hasVideosAfterSub) {
-        const latestVideo = properChannelLatestVideos.get(channelId);
-        if (latestVideo) {
-          logWithTimestamp(`[storage.ts] Channel ${channelId} has no videos after subscription, adding latest video: ${latestVideo.videoId}`);
-          properFilteredVideos.push(latestVideo);
+        const latestVideos = properChannelLatestVideos.get(channelId) || [];
+        if (latestVideos.length > 0) {
+          logWithTimestamp(`[storage.ts] Channel ${channelId} has no videos after subscription, adding ${latestVideos.length} latest videos`);
+          properFilteredVideos.push(...latestVideos);
         }
       }
     }

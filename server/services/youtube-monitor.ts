@@ -179,6 +179,85 @@ export class YouTubeMonitor {
     }
   }
 
+  /**
+   * Find up to maxCount latest valid videos from a channel's RSS feed
+   * Used when adding new channels to get initial video batch
+   */
+  private async findLatestValidVideos(channelId: string, maxCount: number = 3): Promise<RSSVideo[]> {
+    try {
+      const xmlText = await this.fetchRSSContent(channelId);
+      this.logRSSEntries(xmlText);
+
+      const entryMatches = xmlText.match(/<entry>([\s\S]*?)<\/entry>/g);
+      if (!entryMatches || entryMatches.length === 0) {
+        logWithTimestamp(`[YOUTUBE_MONITOR] No videos found in RSS feed for channel ${channelId}`);
+        return [];
+      }
+
+      const validVideos: RSSVideo[] = [];
+      const channel = await storage.getYoutubeChannel(channelId);
+
+      // Find up to maxCount valid videos (skip shorts and live streams)
+      for (const entryMatch of entryMatches) {
+        if (validVideos.length >= maxCount) {
+          break; // Stop when we have enough videos
+        }
+
+        const parsedEntry = this.parseRSSEntry(entryMatch);
+        if (!parsedEntry) continue;
+
+        // Check if it's a short
+        const skipCheck = this.isVideoSkippable(parsedEntry);
+        if (skipCheck.skip) {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video: ${parsedEntry.title} (${parsedEntry.videoId}) - ${skipCheck.reason}`);
+          continue;
+        }
+
+        // Check if it's a live stream
+        try {
+          const isLiveStream = await youtubeApiUtils.isLiveStream(parsedEntry.videoId);
+          if (isLiveStream) {
+            logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+            continue; // Skip and check next video
+          }
+        } catch (error) {
+          errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for ${parsedEntry.videoId}:`, error);
+          // Continue to next video on error to avoid blocking
+          continue;
+        }
+
+        // Valid video found (not shorts, not live stream)
+        validVideos.push({
+          videoId: parsedEntry.videoId,
+          channelId,
+          title: parsedEntry.title,
+          publishedAt: new Date(parsedEntry.publishedAt),
+          channelTitle: channel?.title || 'Unknown Channel',
+          channelThumbnail: channel?.thumbnail || null,
+        });
+
+        logWithTimestamp(`[YOUTUBE_MONITOR] Found valid video ${validVideos.length}/${maxCount}: ${parsedEntry.title} (${parsedEntry.videoId})`);
+      }
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Found ${validVideos.length} valid videos from channel ${channelId}`);
+      return validVideos;
+
+    } catch (error) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
+
+      // Handle 404 errors for channel deactivation
+      if (error instanceof Error && error.message.includes('404')) {
+        await storage.updateChannelActiveStatus(
+          channelId,
+          false,
+          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
+        );
+      }
+
+      return [];
+    }
+  }
+
   // ================================
   // Channel Processing Methods
   // ================================
@@ -488,6 +567,15 @@ export class YouTubeMonitor {
   public async getLatestVideoFromChannel(channelId: string): Promise<RSSVideo | null> {
     logWithTimestamp(`[YOUTUBE_MONITOR] getLatestVideoFromChannel called for ${channelId}`);
     return this.findLatestValidVideo(channelId);
+  }
+
+  /**
+   * Get up to maxCount latest videos from a channel's RSS feed
+   * Used by ChannelService when adding new channels to get initial video batch
+   */
+  public async getLatestVideosFromChannel(channelId: string, maxCount: number = 3): Promise<RSSVideo[]> {
+    logWithTimestamp(`[YOUTUBE_MONITOR] getLatestVideosFromChannel called for ${channelId} (maxCount: ${maxCount})`);
+    return this.findLatestValidVideos(channelId, maxCount);
   }
 
   /**

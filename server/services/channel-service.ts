@@ -167,16 +167,16 @@ export class ChannelService {
 
       const { subscription, channel } = await this.subscribeUser(userId, channelId);
 
-      // Scenario 1: Brand new channel - process latest video in background
+      // Scenario 1: Brand new channel - process latest 3 videos in background
       if (isNewChannel) {
-        logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, processing latest video in background`);
+        logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, processing latest videos in background`);
 
-        // Process video asynchronously (don't await)
-        this.processLatestVideoForChannel(channelId).catch(async (videoError) => {
-          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to process latest video for channel ${channelId}:`, videoError);
+        // Process videos asynchronously (don't await)
+        this.processLatestVideosForChannel(channelId).catch(async (videoError) => {
+          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to process latest videos for channel ${channelId}:`, videoError);
           await errorLogger.logError(videoError as Error, {
             service: 'ChannelService',
-            operation: 'addChannel.processLatestVideo',
+            operation: 'addChannel.processLatestVideos',
             userId,
             channelId
           });
@@ -187,17 +187,16 @@ export class ChannelService {
           message: "채널이 성공적으로 추가되었습니다",
           channel,
           subscription,
-          latestVideo: null // Video processing in background
+          latestVideo: null // Videos processing in background
         };
       }
 
-      // Scenario 2: Existing channel - return latest video from DB
-      logWithTimestamp(`[CHANNEL_SERVICE] Existing channel, fetching latest video from DB`);
-      const existingVideos = await storage.getVideosByChannel(channelId, 1);
-      const latestVideo = existingVideos.length > 0 ? existingVideos[0] : null;
+      // Scenario 2: Existing channel - return latest 3 videos from DB
+      logWithTimestamp(`[CHANNEL_SERVICE] Existing channel, fetching latest videos from DB`);
+      const existingVideos = await storage.getVideosByChannel(channelId, 3);
 
-      if (latestVideo) {
-        logWithTimestamp(`[CHANNEL_SERVICE] Found latest video: ${latestVideo.videoId}`);
+      if (existingVideos.length > 0) {
+        logWithTimestamp(`[CHANNEL_SERVICE] Found ${existingVideos.length} latest videos`);
       } else {
         logWithTimestamp(`[CHANNEL_SERVICE] No videos found for existing channel`);
       }
@@ -207,7 +206,7 @@ export class ChannelService {
         message: "채널이 성공적으로 추가되었습니다",
         channel,
         subscription,
-        latestVideo // Include latest video info if exists
+        latestVideo: existingVideos.length > 0 ? existingVideos[0] : null // Return first video for backwards compatibility
       };
     }
     catch (error) {
@@ -222,26 +221,30 @@ export class ChannelService {
   }
 
   /**
-   * Process the most recent video from a channel (used when adding new channel)
+   * Process the most recent videos from a channel (used when adding new channel)
+   * Fetches and processes up to 3 latest videos
    */
-  private async processLatestVideoForChannel(channelId: string): Promise<void> {
-    logWithTimestamp(`[CHANNEL_SERVICE] processLatestVideoForChannel for ${channelId}`);
+  private async processLatestVideosForChannel(channelId: string): Promise<void> {
+    logWithTimestamp(`[CHANNEL_SERVICE] processLatestVideosForChannel for ${channelId}`);
 
     // Import YouTube monitoring service dynamically to avoid circular dependency
     const { youtubeMonitor } = await import('./index.js');
 
-    // Fetch latest video from RSS feed
-    const latestVideo = await youtubeMonitor.getLatestVideoFromChannel(channelId);
+    // Fetch latest 3 videos from RSS feed
+    const latestVideos = await youtubeMonitor.getLatestVideosFromChannel(channelId, 3);
 
-    if (!latestVideo) {
+    if (!latestVideos || latestVideos.length === 0) {
       logWithTimestamp(`[CHANNEL_SERVICE] No videos found for channel ${channelId}`);
       return;
     }
 
-    logWithTimestamp(`[CHANNEL_SERVICE] Latest video found: ${latestVideo.videoId} - ${latestVideo.title}`);
+    logWithTimestamp(`[CHANNEL_SERVICE] Found ${latestVideos.length} latest videos for channel ${channelId}`);
 
-    // Process this video (get transcript, generate summary)
-    await youtubeMonitor.processVideo(channelId, latestVideo);
+    // Process each video (get transcript, generate summary)
+    for (const video of latestVideos) {
+      logWithTimestamp(`[CHANNEL_SERVICE] Processing video: ${video.videoId} - ${video.title}`);
+      await youtubeMonitor.processVideo(channelId, video);
+    }
   }
 
   async deleteChannel(userId: number, channelId: string) {
