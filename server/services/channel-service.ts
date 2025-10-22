@@ -72,7 +72,22 @@ export class ChannelService {
 
       logWithTimestamp("[CHANNEL_SERVICE] Formatted channels for frontend:", channels);
       return channels;
-    } catch (error) {
+    } catch (error: any) {
+      // Check if it's a quota exceeded error
+      const errorMessage = error.message || '';
+      const isQuotaError = errorMessage.includes('quota') || error.code === 403;
+
+      if (isQuotaError) {
+        errorWithTimestamp("[CHANNEL_SERVICE] YouTube API quota exceeded");
+        const quotaError = new Error('채널 검색이 원활하지 않습니다.');
+        await errorLogger.logError(quotaError, {
+          service: 'ChannelService',
+          operation: 'searchChannels',
+          additionalInfo: { query, originalError: 'Quota exceeded' },
+        });
+        throw quotaError;
+      }
+
       errorWithTimestamp("[CHANNEL_SERVICE] Error during channel search:", error);
       await errorLogger.logError(error as Error, {
         service: 'ChannelService',
