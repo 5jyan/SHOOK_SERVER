@@ -42,35 +42,58 @@ export class YouTubeSummaryService {
   private async _fetchTranscriptFromSupaData(youtubeUrl: string): Promise<string> {
     const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
     const apiKey = process.env.SUPADATA_API_KEY;
-    
+
     if (!apiKey) {
       throw new Error('SUPADATA_API_KEY 환경 변수가 설정되지 않았습니다.');
     }
-    
+
     const requestHeaders = {
       "x-api-key": apiKey,
       "Content-Type": "application/json",
       "User-Agent": "Mozilla/5.0 (compatible; YouTube-Summary-Bot/1.0)",
     };
 
-    logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting transcript from SupaData API...`);
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: requestHeaders,
-    });
-    logWithTimestamp(`[YOUTUBE_SUMMARY] Received response from SupaData API.`);
+    // Timeout controller (90 seconds - less than Cloudflare's 100s timeout)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      errorWithTimestamp(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
-        status: response.status,
-        statusText: response.statusText,
-        body: responseText,
+    try {
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting transcript from SupaData API...`);
+      const response = await fetch(requestUrl, {
+        method: "GET",
+        headers: requestHeaders,
+        signal: controller.signal,
       });
-      throw new Error(`자막 추출 실패: ${response.status} - ${responseText}`);
+      clearTimeout(timeoutId);
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Received response from SupaData API.`);
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        // Check if response is HTML error page (Cloudflare error)
+        if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
+          errorWithTimestamp(`[YOUTUBE_SUMMARY] SupaData API returned HTML error page (likely Cloudflare error)`);
+          throw new Error(`자막 추출 실패: SupaData API 서버 오류 (${response.status})`);
+        }
+
+        errorWithTimestamp(`[YOUTUBE_SUMMARY] SupaData API error response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText.substring(0, 200), // Limit error log size
+        });
+        throw new Error(`자막 추출 실패: ${response.status} - ${responseText.substring(0, 100)}`);
+      }
+      return responseText;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error && error.name === 'AbortError') {
+        errorWithTimestamp(`[YOUTUBE_SUMMARY] SupaData API request timed out after 90 seconds`);
+        throw new Error('자막 추출 시간 초과: 비디오가 너무 길거나 서버가 응답하지 않습니다.');
+      }
+
+      throw error;
     }
-    return responseText;
   }
 
   private _parseSupaDataResponse(responseText: string): string {
