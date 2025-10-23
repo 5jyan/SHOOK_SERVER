@@ -528,7 +528,7 @@ export class YouTubeMonitor {
       logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos`);
 
       // Phase 1.5: Add pending videos for retry (processed=false with retryCount < 3)
-      const pendingVideos = await storage.getPendingVideos(10); // Limit to avoid overload
+      const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
       logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
 
       for (const video of pendingVideos) {
