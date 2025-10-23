@@ -406,44 +406,34 @@ export class YouTubeMonitor {
 
     logWithTimestamp(`[YOUTUBE_MONITOR] ❌ Processing failed for ${video.title}: ${errorMsg}`);
 
-    if (errorMsg.includes('자막이 없거나') || errorMsg.includes('자막을 가져올 수 없습니다')) {
-      // No subtitles - save basic info only (matching existing logic)
-      logWithTimestamp(`[YOUTUBE_MONITOR] Video has no subtitles, saving basic info only: ${video.title}`);
+    // Get current retry count and increment
+    const existingVideo = await storage.getVideo(video.videoId);
+    const currentRetryCount = existingVideo?.retryCount || 0;
+    const newRetryCount = currentRetryCount + 1;
+
+    if (newRetryCount >= 3) {
+      // Max retries reached - mark as processed and stop retrying
+      logWithTimestamp(`[YOUTUBE_MONITOR] Max retries reached (${newRetryCount}/3) for ${video.title}, marking as processed`);
       await storage.updateVideoProcessingStatus(video.videoId, {
-        processingStatus: 'completed',
+        processingStatus: 'failed',
         processingCompletedAt: new Date(),
-        errorMessage: '자막이 없는 영상',
-        processed: true, // Mark as processed even without summary
+        errorMessage: `처리 실패: ${errorMsg} (재시도 3회 완료)`,
+        processed: true, // Stop retrying
+        retryCount: newRetryCount,
         summary: null,
         transcript: null
       });
-      // Note: No push notification sent for videos without subtitles
-    } else if (errorMsg === 'PROCESSING_TIMEOUT') {
-      // Timeout error
-      await storage.updateVideoProcessingStatus(video.videoId, {
-        processingStatus: 'failed',
-        processingCompletedAt: new Date(),
-        errorMessage: `처리 시간 초과 (${this.SUMMARY_TIMEOUT / 1000}초)`,
-        processed: false
-      });
     } else {
-      // Other errors
+      // Retry available - keep as pending for next cycle
+      logWithTimestamp(`[YOUTUBE_MONITOR] Will retry for ${video.title} in next cycle (attempt ${newRetryCount + 1}/3)`);
       await storage.updateVideoProcessingStatus(video.videoId, {
-        processingStatus: 'failed',
+        processingStatus: 'pending',
         processingCompletedAt: new Date(),
-        errorMessage: `처리 실패: ${errorMsg}`,
-        processed: false
-      });
-
-      // Log error for serious issues
-      await errorLogger.logError(error as Error, {
-        service: "YouTubeMonitor",
-        operation: "processVideoSummary",
-        additionalInfo: {
-          videoId: video.videoId,
-          videoTitle: video.title,
-          channelTitle: video.channelTitle,
-        },
+        errorMessage: `처리 실패: ${errorMsg} (재시도 ${newRetryCount}/3)`,
+        processed: false, // Will be retried
+        retryCount: newRetryCount,
+        summary: null,
+        transcript: null
       });
     }
   }
@@ -537,7 +527,26 @@ export class YouTubeMonitor {
       const scanTime = Date.now() - startTime;
       logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos`);
 
-      // Phase 2: Summary Processing (if any new videos found)
+      // Phase 1.5: Add pending videos for retry (processed=false with retryCount < 3)
+      const pendingVideos = await storage.getPendingVideos(10); // Limit to avoid overload
+      logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
+
+      for (const video of pendingVideos) {
+        // Convert Video to RSSVideo format
+        const rssVideo: RSSVideo = {
+          videoId: video.videoId,
+          channelId: video.channelId,
+          title: video.title,
+          publishedAt: video.publishedAt,
+          channelTitle: video.channelTitle,
+          channelThumbnail: video.channelThumbnail,
+        };
+        this.state.summaryQueue.push(rssVideo);
+      }
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (${this.state.summaryQueue.length - pendingVideos.length} new + ${pendingVideos.length} retry)`);
+
+      // Phase 2: Summary Processing (if any videos found)
       if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
         // Start processing asynchronously (don't await)
         this.processSummaryQueue().catch(error => {

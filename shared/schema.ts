@@ -52,6 +52,7 @@ export const videos = pgTable("videos", {
   processingStatus: text("processing_status").default('pending'), // pending, processing, completed, failed
   processingStartedAt: timestamp("processing_started_at"),
   processingCompletedAt: timestamp("processing_completed_at"),
+  retryCount: integer("retry_count").default(0), // Track subtitle extraction retry attempts
 }, (table) => ({
   // Essential index for getVideosForUser JOIN query (userChannels -> videos)
   channelCreatedIdx: index("idx_videos_channel_created").on(table.channelId, table.createdAt),
@@ -151,6 +152,7 @@ export const insertVideoSchema = createInsertSchema(videos).omit({
   viewCount: true,
   processingStartedAt: true,
   processingCompletedAt: true,
+  retryCount: true,
 });
 
 export const insertUserChannelSchema = createInsertSchema(userChannels).omit({

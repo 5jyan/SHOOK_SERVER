@@ -302,7 +302,13 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(videos)
-      .where(eq(videos.processingStatus, 'pending'))
+      .where(
+        and(
+          eq(videos.processingStatus, 'pending'),
+          eq(videos.processed, false),
+          sql`(${videos.retryCount} IS NULL OR ${videos.retryCount} < 3)`
+        )
+      )
       .orderBy(videos.createdAt)
       .limit(limit);
   }
