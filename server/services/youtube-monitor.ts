@@ -5,7 +5,6 @@ import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video, InsertVideo } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
-import { youtubeApiUtils } from "../utils/youtube-api-utils.js";
 
 interface RSSVideo {
   videoId: string;
@@ -133,20 +132,7 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Check if it's a live stream
-        try {
-          const isLiveStream = await youtubeApiUtils.isLiveStream(parsedEntry.videoId);
-          if (isLiveStream) {
-            logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${parsedEntry.title} (${parsedEntry.videoId})`);
-            continue; // Skip and check next video
-          }
-        } catch (error) {
-          errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for ${parsedEntry.videoId}:`, error);
-          // Continue to next video on error to avoid blocking
-          continue;
-        }
-
-        // Valid video found (not shorts, not live stream)
+        // Valid video found (not shorts)
         const channel = await storage.getYoutubeChannel(channelId);
         logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId})`);
 
@@ -213,20 +199,7 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Check if it's a live stream
-        try {
-          const isLiveStream = await youtubeApiUtils.isLiveStream(parsedEntry.videoId);
-          if (isLiveStream) {
-            logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream video: ${parsedEntry.title} (${parsedEntry.videoId})`);
-            continue; // Skip and check next video
-          }
-        } catch (error) {
-          errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status for ${parsedEntry.videoId}:`, error);
-          // Continue to next video on error to avoid blocking
-          continue;
-        }
-
-        // Valid video found (not shorts, not live stream)
+        // Valid video found (not shorts)
         validVideos.push({
           videoId: parsedEntry.videoId,
           channelId,
@@ -613,19 +586,6 @@ export class YouTubeMonitor {
         logWithTimestamp(`[YOUTUBE_MONITOR] Video ${video.videoId} already ${existingVideo.processingStatus}`);
         return;
       }
-    }
-
-    // Check if it's a live stream
-    try {
-      const isLiveStream = await youtubeApiUtils.isLiveStream(video.videoId);
-      if (isLiveStream) {
-        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live stream: ${video.title}`);
-        await storage.updateChannelRecentVideo(channelId, video.videoId);
-        return;
-      }
-    } catch (error) {
-      errorWithTimestamp(`[YOUTUBE_MONITOR] Error checking live stream status:`, error);
-      // Continue processing if check fails
     }
 
     // Save video to DB (only if it doesn't exist)
