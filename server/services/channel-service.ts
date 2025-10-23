@@ -168,10 +168,11 @@ export class ChannelService {
       }
 
       await this.checkChannelLimit(userId);
-      await this.checkUserSubscription(userId, channelId);
+      // IMPORTANT: Use channelInfo.channelId (from API) for all DB operations
+      await this.checkUserSubscription(userId, channelInfo.channelId);
 
       // Check if this is a brand new channel (not in DB yet) BEFORE creating/updating
-      const existingChannel = await storage.getYoutubeChannel(channelId);
+      const existingChannel = await storage.getYoutubeChannel(channelInfo.channelId);
       const isNewChannel = !existingChannel;
 
       logWithTimestamp(`[CHANNEL_SERVICE] Channel existence check: ${isNewChannel ? 'NEW CHANNEL' : 'EXISTING CHANNEL'}`);
@@ -180,20 +181,21 @@ export class ChannelService {
       logWithTimestamp(`[CHANNEL_SERVICE] createOrUpdateYoutubeChannel for channel ${channelInfo.channelId}`);
       await storage.createOrUpdateYoutubeChannel(channelInfo);
 
-      const { subscription, channel } = await this.subscribeUser(userId, channelId);
+      const { subscription, channel } = await this.subscribeUser(userId, channelInfo.channelId);
 
       // Scenario 1: Brand new channel - process latest 3 videos in background
       if (isNewChannel) {
         logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, processing latest videos in background`);
 
         // Process videos asynchronously (don't await)
-        this.processLatestVideosForChannel(channelId).catch(async (videoError) => {
-          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to process latest videos for channel ${channelId}:`, videoError);
+        // IMPORTANT: Use channelInfo.channelId (from API) instead of parameter channelId
+        this.processLatestVideosForChannel(channelInfo.channelId).catch(async (videoError) => {
+          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to process latest videos for channel ${channelInfo.channelId}:`, videoError);
           await errorLogger.logError(videoError as Error, {
             service: 'ChannelService',
             operation: 'addChannel.processLatestVideos',
             userId,
-            channelId
+            channelId: channelInfo.channelId
           });
         });
 
@@ -208,7 +210,7 @@ export class ChannelService {
 
       // Scenario 2: Existing channel - return latest 3 videos from DB
       logWithTimestamp(`[CHANNEL_SERVICE] Existing channel, fetching latest videos from DB`);
-      const existingVideos = await storage.getVideosByChannel(channelId, 3);
+      const existingVideos = await storage.getVideosByChannel(channelInfo.channelId, 3);
 
       if (existingVideos.length > 0) {
         logWithTimestamp(`[CHANNEL_SERVICE] Found ${existingVideos.length} latest videos`);

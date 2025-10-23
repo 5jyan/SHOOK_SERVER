@@ -594,6 +594,13 @@ export class YouTubeMonitor {
   public async processVideo(channelId: string, video: RSSVideo): Promise<void> {
     logWithTimestamp(`[YOUTUBE_MONITOR] processVideo called for ${video.videoId}`);
 
+    // Check if channel exists in DB (prevent foreign key constraint violation)
+    const channel = await storage.getYoutubeChannel(channelId);
+    if (!channel) {
+      errorWithTimestamp(`[YOUTUBE_MONITOR] Channel ${channelId} not found in DB, cannot process video ${video.videoId}`);
+      throw new Error(`Channel ${channelId} does not exist in database`);
+    }
+
     // Check if video already exists and is processed
     const existingVideo = await storage.getVideo(video.videoId);
     if (existingVideo) {
