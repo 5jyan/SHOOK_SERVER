@@ -5,6 +5,7 @@ import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video, InsertVideo } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { youtubeApiUtils, VideoType } from "../utils/youtube-api-utils.js";
 
 interface RSSVideo {
   videoId: string;
@@ -13,6 +14,7 @@ interface RSSVideo {
   publishedAt: Date;
   channelTitle: string;
   channelThumbnail: string | null;
+  videoType?: VideoType;
 }
 
 interface RSSEntry {
@@ -120,7 +122,7 @@ export class YouTubeMonitor {
         return null;
       }
 
-      // Find first valid video (skip shorts and live streams)
+      // Find first valid video (skip shorts, skip upcoming)
       for (const entryMatch of entryMatches) {
         const parsedEntry = this.parseRSSEntry(entryMatch);
         if (!parsedEntry) continue;
@@ -132,9 +134,18 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Valid video found (not shorts)
+        // Check video type (live, upcoming, none)
+        const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+
+        // Skip upcoming videos
+        if (videoType === 'upcoming') {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+          continue;
+        }
+
+        // Valid video found (not shorts, not upcoming)
         const channel = await storage.getYoutubeChannel(channelId);
-        logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId})`);
+        logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId}) [${videoType}]`);
 
         return {
           videoId: parsedEntry.videoId,
@@ -143,6 +154,7 @@ export class YouTubeMonitor {
           publishedAt: new Date(parsedEntry.publishedAt),
           channelTitle: channel?.title || 'Unknown Channel',
           channelThumbnail: channel?.thumbnail || null,
+          videoType,
         };
       }
 
@@ -183,7 +195,7 @@ export class YouTubeMonitor {
       const validVideos: RSSVideo[] = [];
       const channel = await storage.getYoutubeChannel(channelId);
 
-      // Find up to maxCount valid videos (skip shorts and live streams)
+      // Find up to maxCount valid videos (skip shorts, skip upcoming)
       for (const entryMatch of entryMatches) {
         if (validVideos.length >= maxCount) {
           break; // Stop when we have enough videos
@@ -199,7 +211,16 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Valid video found (not shorts)
+        // Check video type (live, upcoming, none)
+        const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+
+        // Skip upcoming videos
+        if (videoType === 'upcoming') {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+          continue;
+        }
+
+        // Valid video found (not shorts, not upcoming)
         validVideos.push({
           videoId: parsedEntry.videoId,
           channelId,
@@ -207,9 +228,10 @@ export class YouTubeMonitor {
           publishedAt: new Date(parsedEntry.publishedAt),
           channelTitle: channel?.title || 'Unknown Channel',
           channelThumbnail: channel?.thumbnail || null,
+          videoType,
         });
 
-        logWithTimestamp(`[YOUTUBE_MONITOR] Found valid video ${validVideos.length}/${maxCount}: ${parsedEntry.title} (${parsedEntry.videoId})`);
+        logWithTimestamp(`[YOUTUBE_MONITOR] Found valid video ${validVideos.length}/${maxCount}: ${parsedEntry.title} (${parsedEntry.videoId}) [${videoType}]`);
       }
 
       logWithTimestamp(`[YOUTUBE_MONITOR] Found ${validVideos.length} valid videos from channel ${channelId}`);
@@ -258,23 +280,24 @@ export class YouTubeMonitor {
   }
 
   private async saveNewVideo(video: RSSVideo): Promise<void> {
-    const newVideo: InsertVideo = {
+    const newVideo = {
       videoId: video.videoId,
       channelId: video.channelId,
       title: video.title,
       publishedAt: video.publishedAt,
       channelTitle: video.channelTitle,
       channelThumbnail: video.channelThumbnail,
-      processingStatus: 'pending',
+      processingStatus: video.videoType === 'live' ? 'pending' : 'pending', // live videos stay pending until they become 'none'
       summary: null,
       transcript: null,
       processed: false,
-    };
+      videoType: video.videoType || 'none',
+    } as InsertVideo;
 
     await storage.createVideo(newVideo);
     await storage.updateChannelRecentVideo(video.channelId, video.videoId);
 
-    logWithTimestamp(`[YOUTUBE_MONITOR] New video queued: ${video.title} (${video.videoId})`);
+    logWithTimestamp(`[YOUTUBE_MONITOR] New video saved: ${video.title} (${video.videoId}) [${video.videoType || 'none'}]`);
   }
 
   private async scanSingleChannel(channel: YoutubeChannel): Promise<RSSVideo | null> {
@@ -333,7 +356,13 @@ export class YouTubeMonitor {
   // ================================
 
   private async processVideoSummary(video: RSSVideo): Promise<void> {
-    logWithTimestamp(`[YOUTUBE_MONITOR] Processing summary for: ${video.title} (${video.videoId})`);
+    logWithTimestamp(`[YOUTUBE_MONITOR] Processing summary for: ${video.title} (${video.videoId}) [${video.videoType || 'none'}]`);
+
+    // Skip live videos - they will be processed when they become 'none'
+    if (video.videoType === 'live') {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live video: ${video.title} (${video.videoId})`);
+      return;
+    }
 
     try {
       // Update status to processing
@@ -513,11 +542,43 @@ export class YouTubeMonitor {
           publishedAt: video.publishedAt,
           channelTitle: video.channelTitle,
           channelThumbnail: video.channelThumbnail,
+          videoType: video.videoType as VideoType | undefined,
         };
         this.state.summaryQueue.push(rssVideo);
       }
 
-      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (${this.state.summaryQueue.length - pendingVideos.length} new + ${pendingVideos.length} retry)`);
+      // Phase 1.6: Check live videos to see if they've become 'none'
+      const liveVideos = await storage.getLiveVideos(50); // Check up to 50 live videos
+      logWithTimestamp(`[YOUTUBE_MONITOR] Found ${liveVideos.length} live videos to check status`);
+
+      for (const video of liveVideos) {
+        const currentType = await youtubeApiUtils.getVideoType(video.videoId);
+
+        if (currentType === 'none') {
+          // Live stream ended, update videoType and add to processing queue
+          logWithTimestamp(`[YOUTUBE_MONITOR] Live stream ended for ${video.title} (${video.videoId}), adding to queue`);
+
+          await storage.updateVideoProcessingStatus(video.videoId, {
+            videoType: 'none',
+          });
+
+          const rssVideo: RSSVideo = {
+            videoId: video.videoId,
+            channelId: video.channelId,
+            title: video.title,
+            publishedAt: video.publishedAt,
+            channelTitle: video.channelTitle,
+            channelThumbnail: video.channelThumbnail,
+            videoType: 'none',
+          };
+          this.state.summaryQueue.push(rssVideo);
+        } else {
+          logWithTimestamp(`[YOUTUBE_MONITOR] Live stream still ${currentType}: ${video.title} (${video.videoId})`);
+        }
+      }
+
+      const liveEndedCount = liveVideos.filter(async v => await youtubeApiUtils.getVideoType(v.videoId) === 'none').length;
+      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (new + retry + ${liveEndedCount} live ended)`);
 
       // Phase 2: Summary Processing (if any videos found)
       if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
@@ -593,7 +654,17 @@ export class YouTubeMonitor {
       await this.saveNewVideo(video);
     }
 
-    // Process summary immediately
+    // Skip live/upcoming videos - they will be processed later
+    if (video.videoType === 'live') {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live video for now: ${video.title} (${video.videoId})`);
+      return;
+    }
+    if (video.videoType === 'upcoming') {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${video.title} (${video.videoId})`);
+      return;
+    }
+
+    // Process summary immediately for 'none' type videos
     await this.processVideoSummary(video);
   }
 

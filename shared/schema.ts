@@ -53,11 +53,14 @@ export const videos = pgTable("videos", {
   processingStartedAt: timestamp("processing_started_at"),
   processingCompletedAt: timestamp("processing_completed_at"),
   retryCount: integer("retry_count").default(0), // Track subtitle extraction retry attempts
+  videoType: text("video_type").default('none'), // live, upcoming, none (from YouTube liveBroadcastContent)
 }, (table) => ({
   // Essential index for getVideosForUser JOIN query (userChannels -> videos)
   channelCreatedIdx: index("idx_videos_channel_created").on(table.channelId, table.createdAt),
   // Essential index for getVideosByChannel query (channelId + publishedAt ordering)
   channelPublishedIdx: index("idx_videos_channel_published").on(table.channelId, table.publishedAt),
+  // Index for finding live videos to check status
+  videoTypeIdx: index("idx_videos_video_type").on(table.videoType),
 }));
 
 // User's subscribed channels (mapping table)
@@ -153,6 +156,7 @@ export const insertVideoSchema = createInsertSchema(videos).omit({
   processingStartedAt: true,
   processingCompletedAt: true,
   retryCount: true,
+  videoType: true,
 });
 
 export const insertUserChannelSchema = createInsertSchema(userChannels).omit({

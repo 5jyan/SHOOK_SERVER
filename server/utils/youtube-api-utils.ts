@@ -1,6 +1,8 @@
 import { google, youtube_v3 } from 'googleapis';
 import { logWithTimestamp, errorWithTimestamp } from './timestamp.js';
 
+export type VideoType = 'live' | 'upcoming' | 'none';
+
 export class YouTubeAPIUtils {
   private youtube: youtube_v3.Youtube;
 
@@ -16,48 +18,42 @@ export class YouTubeAPIUtils {
   }
 
   /**
-   * Check if a video is a live stream by checking its broadcast content
+   * Get video type by checking its broadcast content
    * @param videoId YouTube video ID
-   * @returns true if video is live stream, false otherwise
+   * @returns 'live' | 'upcoming' | 'none'
    */
-  async isLiveStream(videoId: string): Promise<boolean> {
+  async getVideoType(videoId: string): Promise<VideoType> {
     try {
-      logWithTimestamp(`[YOUTUBE_API_UTILS] Checking if video ${videoId} is live stream`);
+      logWithTimestamp(`[YOUTUBE_API_UTILS] Getting video type for ${videoId}`);
 
       const response = await this.youtube.videos.list({
-        part: ['snippet', 'liveStreamingDetails'],
+        part: ['snippet'],
         id: [videoId],
       });
 
       if (!response.data.items || response.data.items.length === 0) {
-        logWithTimestamp(`[YOUTUBE_API_UTILS] Video ${videoId} not found`);
-        return false;
+        logWithTimestamp(`[YOUTUBE_API_UTILS] Video ${videoId} not found, defaulting to none`);
+        return 'none';
       }
 
       const video = response.data.items[0];
-      const snippet = video.snippet;
-      const liveStreamingDetails = video.liveStreamingDetails;
+      const liveBroadcastContent = video.snippet?.liveBroadcastContent;
 
-      // Check if video has live streaming details or if liveBroadcastContent indicates it's live
-      const isLive = snippet?.liveBroadcastContent === 'live' ||
-                    snippet?.liveBroadcastContent === 'upcoming' ||
-                    !!liveStreamingDetails;
+      const videoType: VideoType =
+        liveBroadcastContent === 'live' ? 'live' :
+        liveBroadcastContent === 'upcoming' ? 'upcoming' :
+        'none';
 
-      if (isLive) {
-        logWithTimestamp(
-          `[YOUTUBE_API_UTILS] Video ${videoId} is live stream - liveBroadcastContent: ${snippet?.liveBroadcastContent}, hasLiveStreamingDetails: ${!!liveStreamingDetails}`
-        );
-      } else {
-        logWithTimestamp(`[YOUTUBE_API_UTILS] Video ${videoId} is not live stream`);
-      }
+      logWithTimestamp(
+        `[YOUTUBE_API_UTILS] Video ${videoId} type: ${videoType} (liveBroadcastContent: ${liveBroadcastContent})`
+      );
 
-      return isLive;
+      return videoType;
     } catch (error) {
-      errorWithTimestamp(`[YOUTUBE_API_UTILS] Error checking live stream status for video ${videoId}:`, error);
+      errorWithTimestamp(`[YOUTUBE_API_UTILS] Error getting video type for ${videoId}:`, error);
 
-      // In case of API error, we'll assume it's not a live stream and allow processing
-      // This prevents API errors from blocking regular video processing
-      return false;
+      // In case of API error, default to 'none' to allow processing
+      return 'none';
     }
   }
 }

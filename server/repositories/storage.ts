@@ -54,6 +54,7 @@ export interface IStorage {
   getVideosForUser(userId: number, limit?: number, since?: number): Promise<Video[]>;
   updateVideoProcessingStatus(videoId: string, updates: Partial<Video>): Promise<void>;
   getPendingVideos(limit: number): Promise<Video[]>;
+  getLiveVideos(limit: number): Promise<Video[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
   updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void>;
@@ -309,6 +310,16 @@ export class DatabaseStorage implements IStorage {
           sql`(${videos.retryCount} IS NULL OR ${videos.retryCount} < 3)`
         )
       )
+      .orderBy(videos.createdAt)
+      .limit(limit);
+  }
+
+  async getLiveVideos(limit: number): Promise<Video[]> {
+    logWithTimestamp(`[storage.ts] getLiveVideos - limit: ${limit}`);
+    return db
+      .select()
+      .from(videos)
+      .where(eq(videos.videoType, 'live'))
       .orderBy(videos.createdAt)
       .limit(limit);
   }

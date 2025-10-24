@@ -136,33 +136,23 @@ export class YouTubeSummaryService {
    * SupaData API를 사용하여 YouTube 자막 추출
    */
   async extractTranscript(youtubeUrl: string): Promise<string> {
-    try {
-      logWithTimestamp(
-        `[YOUTUBE_SUMMARY] Extracting transcript for URL: ${youtubeUrl}`,
-      );
+    logWithTimestamp(
+      `[YOUTUBE_SUMMARY] Extracting transcript for URL: ${youtubeUrl}`,
+    );
 
-      const videoId = this.extractVideoId(youtubeUrl);
-      if (!videoId) {
-        throw new Error("유효하지 않은 YouTube URL입니다.");
-      }
-      logWithTimestamp(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
-
-      const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
-      const transcriptText = this._parseSupaDataResponse(responseText);
-
-      logWithTimestamp(
-        `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
-      );
-      return transcriptText;
-    } catch (error) {
-      errorWithTimestamp(`[YOUTUBE_SUMMARY] Error extracting transcript:`, error);
-      await errorLogger.logError(error as Error, {
-        service: "YouTubeSummaryService",
-        operation: "extractTranscript",
-        additionalInfo: { youtubeUrl },
-      });
-      throw error;
+    const videoId = this.extractVideoId(youtubeUrl);
+    if (!videoId) {
+      throw new Error("유효하지 않은 YouTube URL입니다.");
     }
+    logWithTimestamp(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
+
+    const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
+    const transcriptText = this._parseSupaDataResponse(responseText);
+
+    logWithTimestamp(
+      `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
+    );
+    return transcriptText;
   }
 
   private _buildOpenAIPrompt(transcript: string, youtubeUrl: string): string {
@@ -227,32 +217,22 @@ export class YouTubeSummaryService {
   async processYouTubeUrl(
     youtubeUrl: string,
   ): Promise<{ transcript: string; summary: string }> {
-    try {
-      logWithTimestamp(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl}`);
+    logWithTimestamp(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl}`);
 
-      // 1. 자막 추출
-      const transcript = await this.extractTranscript(youtubeUrl);
+    // 1. 자막 추출
+    const transcript = await this.extractTranscript(youtubeUrl);
 
-      // 2. 요약 생성
-      const summary = await this.summarizeTranscript(transcript, youtubeUrl);
+    // 2. 요약 생성
+    const summary = await this.summarizeTranscript(transcript, youtubeUrl);
 
-      logWithTimestamp(
-        `[YOUTUBE_SUMMARY] YouTube URL processing completed successfully`,
-      );
+    logWithTimestamp(
+      `[YOUTUBE_SUMMARY] YouTube URL processing completed successfully`,
+    );
 
-      return {
-        transcript,
-        summary,
-      };
-    } catch (error) {
-      errorWithTimestamp(`[YOUTUBE_SUMMARY] Error processing YouTube URL:`, error);
-      await errorLogger.logError(error as Error, {
-        service: "YouTubeSummaryService",
-        operation: "processYouTubeUrl",
-        additionalInfo: { youtubeUrl },
-      });
-      throw error;
-    }
+    return {
+      transcript,
+      summary,
+    };
   }
 
   
