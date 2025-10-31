@@ -513,23 +513,9 @@ export class YouTubeMonitor {
     logWithTimestamp(`[YOUTUBE_MONITOR] Starting RSS scan cycle at ${new Date().toISOString()}`);
 
     try {
-      // Phase 1: RSS Scan - collect new videos
+      // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 3)
+      // This prevents duplicate queue entries since Phase 1 will skip videos already in DB
       this.state.summaryQueue = []; // Reset queue
-      const channels = await storage.getAllYoutubeChannels();
-
-      logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
-
-      for (const channel of channels) {
-        const newVideo = await this.scanSingleChannel(channel);
-        if (newVideo) {
-          this.state.summaryQueue.push(newVideo);
-        }
-      }
-
-      const scanTime = Date.now() - startTime;
-      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos`);
-
-      // Phase 1.5: Add pending videos for retry (processed=false with retryCount < 3)
       const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
       logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
 
@@ -546,6 +532,23 @@ export class YouTubeMonitor {
         };
         this.state.summaryQueue.push(rssVideo);
       }
+
+      // Phase 1: RSS Scan - collect new videos
+      // shouldProcessVideo() will automatically skip videos already in DB (from Phase 0.5)
+      const channels = await storage.getAllYoutubeChannels();
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
+
+      for (const channel of channels) {
+        const newVideo = await this.scanSingleChannel(channel);
+        if (newVideo) {
+          this.state.summaryQueue.push(newVideo);
+        }
+      }
+
+      const scanTime = Date.now() - startTime;
+      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos (including ${pendingVideos.length} pending retries)`);
+
 
       // Phase 1.6: Check live videos to see if they've become 'none'
       const liveVideos = await storage.getLiveVideos(50); // Check up to 50 live videos
