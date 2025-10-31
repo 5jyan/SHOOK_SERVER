@@ -47,8 +47,6 @@ export const videos = pgTable("videos", {
   // Added fields for better performance and metadata
   channelTitle: text("channel_title").notNull().default('Unknown Channel'),
   channelThumbnail: text("channel_thumbnail"),
-  duration: integer("duration"), // seconds
-  viewCount: integer("view_count"),
   processingStatus: text("processing_status").default('pending'), // pending, processing, completed, failed
   processingStartedAt: timestamp("processing_started_at"),
   processingCompletedAt: timestamp("processing_completed_at"),
@@ -151,8 +149,6 @@ export const insertYoutubeChannelSchema = createInsertSchema(youtubeChannels).om
 export const insertVideoSchema = createInsertSchema(videos).omit({
   createdAt: true,
   // Make some new fields optional for backward compatibility
-  duration: true,
-  viewCount: true,
   processingStartedAt: true,
   processingCompletedAt: true,
   retryCount: true,
