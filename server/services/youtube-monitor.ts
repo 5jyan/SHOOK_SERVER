@@ -358,10 +358,23 @@ export class YouTubeMonitor {
   private async processVideoSummary(video: RSSVideo): Promise<void> {
     logWithTimestamp(`[YOUTUBE_MONITOR] Processing summary for: ${video.title} (${video.videoId}) [${video.videoType || 'none'}]`);
 
-    // Skip live videos - they will be processed when they become 'none'
+    // Check if live stream has ended
     if (video.videoType === 'live') {
-      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live video: ${video.title} (${video.videoId})`);
-      return;
+      const currentType = await youtubeApiUtils.getVideoType(video.videoId);
+
+      if (currentType === 'none') {
+        // Live stream ended, update videoType and continue processing
+        logWithTimestamp(`[YOUTUBE_MONITOR] Live stream ended for ${video.title} (${video.videoId}), proceeding with processing`);
+        await storage.updateVideoProcessingStatus(video.videoId, {
+          videoType: 'none',
+        });
+        // Update local object for processing below
+        video.videoType = 'none';
+      } else {
+        // Still live or upcoming, skip for now
+        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video still in ${currentType} state: ${video.title} (${video.videoId})`);
+        return;
+      }
     }
 
     try {
@@ -550,38 +563,9 @@ export class YouTubeMonitor {
       logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos (including ${pendingVideos.length} pending retries)`);
 
 
-      // Phase 1.6: Check live videos to see if they've become 'none'
-      const liveVideos = await storage.getLiveVideos(50); // Check up to 50 live videos
-      logWithTimestamp(`[YOUTUBE_MONITOR] Found ${liveVideos.length} live videos to check status`);
-
-      for (const video of liveVideos) {
-        const currentType = await youtubeApiUtils.getVideoType(video.videoId);
-
-        if (currentType === 'none') {
-          // Live stream ended, update videoType and add to processing queue
-          logWithTimestamp(`[YOUTUBE_MONITOR] Live stream ended for ${video.title} (${video.videoId}), adding to queue`);
-
-          await storage.updateVideoProcessingStatus(video.videoId, {
-            videoType: 'none',
-          });
-
-          const rssVideo: RSSVideo = {
-            videoId: video.videoId,
-            channelId: video.channelId,
-            title: video.title,
-            publishedAt: video.publishedAt,
-            channelTitle: video.channelTitle,
-            channelThumbnail: video.channelThumbnail,
-            videoType: 'none',
-          };
-          this.state.summaryQueue.push(rssVideo);
-        } else {
-          logWithTimestamp(`[YOUTUBE_MONITOR] Live stream still ${currentType}: ${video.title} (${video.videoId})`);
-        }
-      }
-
-      const liveEndedCount = liveVideos.filter(async v => await youtubeApiUtils.getVideoType(v.videoId) === 'none').length;
-      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (new + retry + ${liveEndedCount} live ended)`);
+      // Note: Live videos are now handled in processVideoSummary() via getPendingVideos()
+      // No need for separate Phase 1.6 anymore - live state check is integrated into main processing flow
+      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (new + pending retries + live videos)`);
 
       // Phase 2: Summary Processing (if any videos found)
       if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
