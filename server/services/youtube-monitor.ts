@@ -235,7 +235,10 @@ export class YouTubeMonitor {
       }
 
       logWithTimestamp(`[YOUTUBE_MONITOR] Found ${validVideos.length} valid videos from channel ${channelId}`);
-      return validVideos;
+
+      // Reverse order to process oldest first (better UX for initial channel subscription)
+      // RSS feed is newest-first, so reverse to get [oldest, ..., newest]
+      return validVideos.reverse();
 
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
