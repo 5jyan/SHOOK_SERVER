@@ -26,7 +26,7 @@ interface RSSEntry {
 
 export class YouTubeMonitor {
   // Configuration constants
-  private readonly CONCURRENT_LIMIT = 3;
+  private readonly CONCURRENT_LIMIT = 5; // Increased from 3 to 5 for faster processing
   private readonly SUMMARY_TIMEOUT = 120000; // 2 minutes
   private readonly MONITORING_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
@@ -529,13 +529,23 @@ export class YouTubeMonitor {
     logWithTimestamp(`[YOUTUBE_MONITOR] Starting RSS scan cycle at ${new Date().toISOString()}`);
 
     try {
+      // Don't reset queue - processing might be ongoing
+      // Instead, use Set-based deduplication to prevent duplicates
+      const videoIdsInQueue = new Set(this.state.summaryQueue.map(v => v.videoId));
+      logWithTimestamp(`[YOUTUBE_MONITOR] Current queue size: ${this.state.summaryQueue.length} videos (${videoIdsInQueue.size} unique)`);
+
       // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 3)
       // This prevents duplicate queue entries since Phase 1 will skip videos already in DB
-      this.state.summaryQueue = []; // Reset queue
       const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
       logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
 
+      let addedPendingCount = 0;
       for (const video of pendingVideos) {
+        // Skip if already in queue
+        if (videoIdsInQueue.has(video.videoId)) {
+          continue;
+        }
+
         // Convert Video to RSSVideo format
         const rssVideo: RSSVideo = {
           videoId: video.videoId,
@@ -547,7 +557,11 @@ export class YouTubeMonitor {
           videoType: video.videoType as VideoType | undefined,
         };
         this.state.summaryQueue.push(rssVideo);
+        videoIdsInQueue.add(video.videoId);
+        addedPendingCount++;
       }
+
+      logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedPendingCount} new pending videos (skipped ${pendingVideos.length - addedPendingCount} duplicates)`);
 
       // Phase 1: RSS Scan - collect new videos
       // shouldProcessVideo() will automatically skip videos already in DB (from Phase 0.5)
@@ -555,20 +569,26 @@ export class YouTubeMonitor {
 
       logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
 
+      let addedNewCount = 0;
       for (const channel of channels) {
         const newVideo = await this.scanSingleChannel(channel);
-        if (newVideo) {
+        if (newVideo && !videoIdsInQueue.has(newVideo.videoId)) {
           this.state.summaryQueue.push(newVideo);
+          videoIdsInQueue.add(newVideo.videoId);
+          addedNewCount++;
         }
       }
 
+      logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedNewCount} new videos from RSS scan`);
+
       const scanTime = Date.now() - startTime;
-      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, found ${this.state.summaryQueue.length} new videos (including ${pendingVideos.length} pending retries)`);
+      const totalAdded = addedPendingCount + addedNewCount;
+      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, added ${totalAdded} new videos to queue (${addedPendingCount} pending retries + ${addedNewCount} new from RSS)`);
 
 
       // Note: Live videos are now handled in processVideoSummary() via getPendingVideos()
       // No need for separate Phase 1.6 anymore - live state check is integrated into main processing flow
-      logWithTimestamp(`[YOUTUBE_MONITOR] Total videos to process: ${this.state.summaryQueue.length} (new + pending retries + live videos)`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Total queue size: ${this.state.summaryQueue.length} videos (including videos from previous cycles)`);
 
       // Phase 2: Summary Processing (if any videos found)
       if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
