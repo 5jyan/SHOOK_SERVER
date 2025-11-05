@@ -28,7 +28,7 @@ export class YouTubeMonitor {
   // Configuration constants
   private readonly CONCURRENT_LIMIT = 5; // Increased from 3 to 5 for faster processing
   private readonly SUMMARY_TIMEOUT = 120000; // 2 minutes
-  private readonly MONITORING_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  private readonly MONITORING_INTERVAL = 10 * 60 * 1000; // 10 minutes (reduced API quota usage)
 
   // Runtime state
   private state = {
@@ -134,16 +134,17 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Check video type (live, upcoming, none)
-        const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+        // COMMENTED OUT: API quota optimization - treat all videos as 'none' type
+        // const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+        const videoType = 'none'; // All videos treated as regular videos
 
-        // Skip upcoming videos
-        if (videoType === 'upcoming') {
-          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
-          continue;
-        }
+        // COMMENTED OUT: Skip upcoming videos check (no API call)
+        // if (videoType === 'upcoming') {
+        //   logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+        //   continue;
+        // }
 
-        // Valid video found (not shorts, not upcoming)
+        // Valid video found (not shorts, treating all as 'none' type)
         const channel = await storage.getYoutubeChannel(channelId);
         logWithTimestamp(`[YOUTUBE_MONITOR] Latest valid video from channel ${channelId}: ${parsedEntry.title} (${parsedEntry.videoId}) [${videoType}]`);
 
@@ -211,16 +212,17 @@ export class YouTubeMonitor {
           continue;
         }
 
-        // Check video type (live, upcoming, none)
-        const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+        // COMMENTED OUT: API quota optimization - treat all videos as 'none' type
+        // const videoType = await youtubeApiUtils.getVideoType(parsedEntry.videoId);
+        const videoType = 'none'; // All videos treated as regular videos
 
-        // Skip upcoming videos
-        if (videoType === 'upcoming') {
-          logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
-          continue;
-        }
+        // COMMENTED OUT: Skip upcoming videos check (no API call)
+        // if (videoType === 'upcoming') {
+        //   logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${parsedEntry.title} (${parsedEntry.videoId})`);
+        //   continue;
+        // }
 
-        // Valid video found (not shorts, not upcoming)
+        // Valid video found (not shorts, treating all as 'none' type)
         validVideos.push({
           videoId: parsedEntry.videoId,
           channelId,
@@ -290,17 +292,17 @@ export class YouTubeMonitor {
       publishedAt: video.publishedAt,
       channelTitle: video.channelTitle,
       channelThumbnail: video.channelThumbnail,
-      processingStatus: video.videoType === 'live' ? 'pending' : 'pending', // live videos stay pending until they become 'none'
+      processingStatus: 'pending', // All videos set to pending (no live check)
       summary: null,
       transcript: null,
       processed: false,
-      videoType: video.videoType || 'none',
+      videoType: 'none', // All videos treated as 'none' type
     } as InsertVideo;
 
     await storage.createVideo(newVideo);
     await storage.updateChannelRecentVideo(video.channelId, video.videoId);
 
-    logWithTimestamp(`[YOUTUBE_MONITOR] New video saved: ${video.title} (${video.videoId}) [${video.videoType || 'none'}]`);
+    logWithTimestamp(`[YOUTUBE_MONITOR] New video saved: ${video.title} (${video.videoId}) [none]`);
   }
 
   private async scanSingleChannel(channel: YoutubeChannel): Promise<RSSVideo | null> {
@@ -361,24 +363,25 @@ export class YouTubeMonitor {
   private async processVideoSummary(video: RSSVideo): Promise<void> {
     logWithTimestamp(`[YOUTUBE_MONITOR] Processing summary for: ${video.title} (${video.videoId}) [${video.videoType || 'none'}]`);
 
+    // COMMENTED OUT: API quota optimization - no live stream check
     // Check if live stream has ended
-    if (video.videoType === 'live') {
-      const currentType = await youtubeApiUtils.getVideoType(video.videoId);
-
-      if (currentType === 'none') {
-        // Live stream ended, update videoType and continue processing
-        logWithTimestamp(`[YOUTUBE_MONITOR] Live stream ended for ${video.title} (${video.videoId}), proceeding with processing`);
-        await storage.updateVideoProcessingStatus(video.videoId, {
-          videoType: 'none',
-        });
-        // Update local object for processing below
-        video.videoType = 'none';
-      } else {
-        // Still live or upcoming, skip for now
-        logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video still in ${currentType} state: ${video.title} (${video.videoId})`);
-        return;
-      }
-    }
+    // if (video.videoType === 'live') {
+    //   const currentType = await youtubeApiUtils.getVideoType(video.videoId);
+    //
+    //   if (currentType === 'none') {
+    //     // Live stream ended, update videoType and continue processing
+    //     logWithTimestamp(`[YOUTUBE_MONITOR] Live stream ended for ${video.title} (${video.videoId}), proceeding with processing`);
+    //     await storage.updateVideoProcessingStatus(video.videoId, {
+    //       videoType: 'none',
+    //     });
+    //     // Update local object for processing below
+    //     video.videoType = 'none';
+    //   } else {
+    //     // Still live or upcoming, skip for now
+    //     logWithTimestamp(`[YOUTUBE_MONITOR] Skipping video still in ${currentType} state: ${video.title} (${video.videoId})`);
+    //     return;
+    //   }
+    // }
 
     try {
       // Update status to processing
@@ -664,17 +667,18 @@ export class YouTubeMonitor {
       await this.saveNewVideo(video);
     }
 
+    // COMMENTED OUT: API quota optimization - process all videos immediately
     // Skip live/upcoming videos - they will be processed later
-    if (video.videoType === 'live') {
-      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live video for now: ${video.title} (${video.videoId})`);
-      return;
-    }
-    if (video.videoType === 'upcoming') {
-      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${video.title} (${video.videoId})`);
-      return;
-    }
+    // if (video.videoType === 'live') {
+    //   logWithTimestamp(`[YOUTUBE_MONITOR] Skipping live video for now: ${video.title} (${video.videoId})`);
+    //   return;
+    // }
+    // if (video.videoType === 'upcoming') {
+    //   logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming video: ${video.title} (${video.videoId})`);
+    //   return;
+    // }
 
-    // Process summary immediately for 'none' type videos
+    // Process summary immediately for all videos (no type checking)
     await this.processVideoSummary(video);
   }
 

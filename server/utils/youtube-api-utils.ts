@@ -1,5 +1,6 @@
 import { google, youtube_v3 } from 'googleapis';
 import { logWithTimestamp, errorWithTimestamp } from './timestamp.js';
+import { errorLogger } from '../services/error-logging-service.js';
 
 export type VideoType = 'live' | 'upcoming' | 'none';
 
@@ -51,6 +52,17 @@ export class YouTubeAPIUtils {
       return videoType;
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_API_UTILS] Error getting video type for ${videoId}:`, error);
+
+      // Send to Slack for critical errors like quota exceeded
+      await errorLogger.logError(error as Error, {
+        service: 'YouTubeAPIUtils',
+        operation: 'getVideoType',
+        additionalInfo: {
+          videoId,
+          errorType: 'YouTube API Error',
+          possibleCause: 'Quota exceeded or network error'
+        }
+      });
 
       // In case of API error, default to 'none' to allow processing
       return 'none';
