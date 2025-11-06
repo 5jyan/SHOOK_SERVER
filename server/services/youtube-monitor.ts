@@ -406,8 +406,22 @@ export class YouTubeMonitor {
         processed: true
       });
 
-      // Send push notifications
-      await this.sendVideoNotification(video, result.summary);
+      // Send push notifications with timeout protection
+      try {
+        await Promise.race([
+          this.sendVideoNotification(video, result.summary),
+          this.createTimeoutPromise(30000) // 30 second timeout for notifications
+        ]);
+        logWithTimestamp(`[YOUTUBE_MONITOR] ✅ Push notifications sent for: ${video.title}`);
+      } catch (notificationError) {
+        // Log but don't fail - video summary is already saved
+        const errorMsg = notificationError instanceof Error ? notificationError.message : String(notificationError);
+        if (errorMsg === 'PROCESSING_TIMEOUT') {
+          errorWithTimestamp(`[YOUTUBE_MONITOR] ⚠️ Notification timeout for ${video.title} - continuing anyway`);
+        } else {
+          errorWithTimestamp(`[YOUTUBE_MONITOR] ⚠️ Notification error for ${video.title}:`, notificationError);
+        }
+      }
 
       logWithTimestamp(`[YOUTUBE_MONITOR] ✅ Successfully processed: ${video.title}`);
 
@@ -504,11 +518,32 @@ export class YouTubeMonitor {
     }
 
     this.state.isProcessingSummaries = true;
+    const startTime = Date.now();
+    const MAX_PROCESSING_TIME = 30 * 60 * 1000; // 30 minutes max for entire queue
 
     try {
       logWithTimestamp(`[YOUTUBE_MONITOR] Starting summary processing for ${this.state.summaryQueue.length} videos`);
 
       while (this.state.summaryQueue.length > 0) {
+        // Safety check: prevent infinite processing
+        const elapsedTime = Date.now() - startTime;
+        if (elapsedTime > MAX_PROCESSING_TIME) {
+          errorWithTimestamp(
+            `[YOUTUBE_MONITOR] ⚠️ Processing timeout reached (${Math.floor(elapsedTime / 1000 / 60)} minutes). ` +
+            `Stopping with ${this.state.summaryQueue.length} videos remaining.`
+          );
+          await errorLogger.logError(new Error('Summary queue processing timeout'), {
+            service: 'YouTubeMonitor',
+            operation: 'processSummaryQueue',
+            additionalInfo: {
+              elapsedTime: Math.floor(elapsedTime / 1000),
+              remainingVideos: this.state.summaryQueue.length,
+              reason: 'Maximum processing time exceeded'
+            }
+          });
+          break; // Exit while loop to release the lock
+        }
+
         // Process videos in batches
         const batch = this.state.summaryQueue.splice(0, this.CONCURRENT_LIMIT);
         await this.processSummaryBatch(batch);
@@ -520,6 +555,8 @@ export class YouTubeMonitor {
 
     } finally {
       this.state.isProcessingSummaries = false;
+      const totalTime = Date.now() - startTime;
+      logWithTimestamp(`[YOUTUBE_MONITOR] Processing session completed in ${Math.floor(totalTime / 1000)} seconds`);
     }
   }
 
