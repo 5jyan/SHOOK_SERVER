@@ -519,36 +519,74 @@ export class YouTubeMonitor {
 
     this.state.isProcessingSummaries = true;
     const startTime = Date.now();
-    const MAX_PROCESSING_TIME = 30 * 60 * 1000; // 30 minutes max for entire queue
+    const BATCH_TIMEOUT = 15 * 60 * 1000; // 15 minutes per batch
+    let consecutiveTimeouts = 0;
+    const MAX_CONSECUTIVE_TIMEOUTS = 3; // Stop after 3 consecutive batch timeouts
 
     try {
       logWithTimestamp(`[YOUTUBE_MONITOR] Starting summary processing for ${this.state.summaryQueue.length} videos`);
 
       while (this.state.summaryQueue.length > 0) {
-        // Safety check: prevent infinite processing
-        const elapsedTime = Date.now() - startTime;
-        if (elapsedTime > MAX_PROCESSING_TIME) {
-          errorWithTimestamp(
-            `[YOUTUBE_MONITOR] ⚠️ Processing timeout reached (${Math.floor(elapsedTime / 1000 / 60)} minutes). ` +
-            `Stopping with ${this.state.summaryQueue.length} videos remaining.`
-          );
-          await errorLogger.logError(new Error('Summary queue processing timeout'), {
-            service: 'YouTubeMonitor',
-            operation: 'processSummaryQueue',
-            additionalInfo: {
-              elapsedTime: Math.floor(elapsedTime / 1000),
-              remainingVideos: this.state.summaryQueue.length,
-              reason: 'Maximum processing time exceeded'
-            }
-          });
-          break; // Exit while loop to release the lock
-        }
-
-        // Process videos in batches
+        // Process videos in batches with timeout protection
         const batch = this.state.summaryQueue.splice(0, this.CONCURRENT_LIMIT);
-        await this.processSummaryBatch(batch);
 
-        logWithTimestamp(`[YOUTUBE_MONITOR] ${this.state.summaryQueue.length} videos remaining in queue`);
+        try {
+          // Wrap batch processing with timeout
+          await Promise.race([
+            this.processSummaryBatch(batch),
+            this.createTimeoutPromise(BATCH_TIMEOUT)
+          ]);
+
+          // Reset consecutive timeout counter on success
+          consecutiveTimeouts = 0;
+          logWithTimestamp(`[YOUTUBE_MONITOR] ${this.state.summaryQueue.length} videos remaining in queue`);
+
+        } catch (batchError) {
+          const errorMsg = batchError instanceof Error ? batchError.message : String(batchError);
+
+          if (errorMsg === 'PROCESSING_TIMEOUT') {
+            consecutiveTimeouts++;
+            errorWithTimestamp(
+              `[YOUTUBE_MONITOR] ⚠️ Batch processing timeout (${Math.floor(BATCH_TIMEOUT / 1000 / 60)} minutes). ` +
+              `Consecutive timeouts: ${consecutiveTimeouts}/${MAX_CONSECUTIVE_TIMEOUTS}`
+            );
+
+            await errorLogger.logError(new Error('Batch processing timeout'), {
+              service: 'YouTubeMonitor',
+              operation: 'processSummaryBatch',
+              additionalInfo: {
+                batchSize: batch.length,
+                remainingVideos: this.state.summaryQueue.length,
+                consecutiveTimeouts,
+                videoIds: batch.map(v => v.videoId).join(', ')
+              }
+            });
+
+            // Stop if too many consecutive timeouts
+            if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
+              errorWithTimestamp(
+                `[YOUTUBE_MONITOR] ⚠️ Stopping processing after ${MAX_CONSECUTIVE_TIMEOUTS} consecutive batch timeouts. ` +
+                `${this.state.summaryQueue.length} videos remaining.`
+              );
+              break;
+            }
+
+            // Continue to next batch
+            logWithTimestamp(`[YOUTUBE_MONITOR] ${this.state.summaryQueue.length} videos remaining in queue (continuing after timeout)`);
+
+          } else {
+            // Other error - log and continue
+            errorWithTimestamp(`[YOUTUBE_MONITOR] Batch processing error:`, batchError);
+            await errorLogger.logError(batchError as Error, {
+              service: 'YouTubeMonitor',
+              operation: 'processSummaryBatch',
+              additionalInfo: {
+                batchSize: batch.length,
+                remainingVideos: this.state.summaryQueue.length
+              }
+            });
+          }
+        }
       }
 
       logWithTimestamp('[YOUTUBE_MONITOR] All summaries processed');
