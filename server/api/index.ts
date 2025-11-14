@@ -6,15 +6,55 @@ import userRoutes from "./user.js";
 import pushTokenRoutes from "./push-tokens.js";
 import adminRoutes from "./admin.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
-import { channelService } from "../services/index.js";
+import { channelService, youtubeMonitor } from "../services/index.js";
 import { errorLogger } from "../services/error-logging-service.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { storage } from "../repositories/storage.js";
 
 import authRoutes from "./auth.js";
 
 const router = Router();
 
 logWithTimestamp('✅ Main API router loaded');
+
+// GET /api/health - Public health check endpoint (no authentication required)
+router.get("/health", async (req, res) => {
+  const startTime = Date.now();
+
+  try {
+    // Quick DB connection test
+    await storage.db.execute('SELECT 1');
+
+    const responseTime = Date.now() - startTime;
+    const monitorStatus = youtubeMonitor.getStatus();
+
+    res.json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+      uptime: `${Math.floor(process.uptime())}s`,
+      monitor: {
+        isMonitoring: monitorStatus.isMonitoring,
+        isProcessing: monitorStatus.isProcessingSummaries,
+        queueLength: monitorStatus.queueLength,
+      },
+      memory: {
+        used: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+        total: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`,
+      }
+    });
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    errorWithTimestamp("[HEALTH] Health check failed:", error);
+
+    res.status(503).json({
+      status: "unhealthy",
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+    });
+  }
+});
 
 router.use("/", authRoutes);
 
