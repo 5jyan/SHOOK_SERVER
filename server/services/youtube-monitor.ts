@@ -310,13 +310,12 @@ export class YouTubeMonitor {
 
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error scanning channel ${channel.channelId}:`, error);
-        await errorLogger.logError(error as Error, {
-          service: "YouTubeMonitor",
-          operation: "scanSingleChannel",
-          channelId: channel.channelId,
-          additionalInfo: { channelTitle: channel.title },
-        });
-      }
+      await errorLogger.logError(error as Error, {
+        service: "YouTubeMonitor",
+        operation: "scanSingleChannel",
+        channelId: channel.channelId,
+        additionalInfo: { channelTitle: channel.title },
+      });
 
       return null;
     }
