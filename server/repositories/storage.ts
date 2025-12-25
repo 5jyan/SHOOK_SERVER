@@ -57,7 +57,6 @@ export interface IStorage {
   getLiveVideos(limit: number): Promise<Video[]>;
   findSubscribedUsers(channelId: string): Promise<{ id: number }[]>;
   getAllYoutubeChannels(): Promise<YoutubeChannel[]>;
-  updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void>;
 
   // Push token methods
   createPushToken(pushToken: InsertPushToken): Promise<PushToken>;
@@ -213,9 +212,6 @@ export class DatabaseStorage implements IStorage {
         updatedAt: youtubeChannels.updatedAt,
         recentVideoId: youtubeChannels.recentVideoId,
         processed: youtubeChannels.processed,
-        isActive: youtubeChannels.isActive,
-        lastRssError: youtubeChannels.lastRssError,
-        lastRssErrorAt: youtubeChannels.lastRssErrorAt,
         subscriptionId: userChannels.id,
         subscribedAt: userChannels.createdAt
       })
@@ -641,27 +637,6 @@ export class DatabaseStorage implements IStorage {
     return users;
   }
 
-  async updateChannelActiveStatus(channelId: string, isActive: boolean, errorMessage: string | null): Promise<void> {
-    logWithTimestamp(`[storage.ts] updateChannelActiveStatus - channelId: ${channelId}, isActive: ${isActive}, errorMessage: ${errorMessage}`);
-    
-    const updateData: any = {
-      isActive,
-      updatedAt: new Date(),
-    };
-
-    if (!isActive && errorMessage) {
-      updateData.lastRssError = errorMessage;
-      updateData.lastRssErrorAt = new Date();
-    } else if (isActive) {
-      updateData.lastRssError = null;
-      updateData.lastRssErrorAt = null;
-    }
-
-    await db
-      .update(youtubeChannels)
-      .set(updateData)
-      .where(eq(youtubeChannels.channelId, channelId));
-  }
 }
 
 export const storage = new DatabaseStorage();

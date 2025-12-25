@@ -29,9 +29,6 @@ export const youtubeChannels = pgTable("youtube_channels", {
   updatedAt: timestamp("updated_at").defaultNow(),
   recentVideoId: text("recent_video_id"),
   processed: boolean("processed").default(false),
-  isActive: boolean("is_active").default(true),
-  lastRssError: text("last_rss_error"),
-  lastRssErrorAt: timestamp("last_rss_error_at"),
 });
 
 export const videos = pgTable("videos", {

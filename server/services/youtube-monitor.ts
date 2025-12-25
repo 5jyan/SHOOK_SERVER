@@ -165,15 +165,6 @@ export class YouTubeMonitor {
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
 
-      // Handle 404 errors for channel deactivation
-      if (error instanceof Error && error.message.includes('404')) {
-        await storage.updateChannelActiveStatus(
-          channelId,
-          false,
-          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
-        );
-      }
-
       return null;
     }
   }
@@ -245,15 +236,6 @@ export class YouTubeMonitor {
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error fetching RSS for channel ${channelId}:`, error);
 
-      // Handle 404 errors for channel deactivation
-      if (error instanceof Error && error.message.includes('404')) {
-        await storage.updateChannelActiveStatus(
-          channelId,
-          false,
-          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
-        );
-      }
-
       return [];
     }
   }
@@ -320,12 +302,6 @@ export class YouTubeMonitor {
         return null;
       }
 
-      // Reactivate channel if it was inactive
-      if (!channel.isActive) {
-        logWithTimestamp(`[YOUTUBE_MONITOR] Reactivating channel: ${channel.title}`);
-        await storage.updateChannelActiveStatus(channel.channelId, true, null);
-      }
-
       // Save video to DB with pending status (live stream check already done in findLatestValidVideo)
       await this.saveNewVideo(latestVideo);
 
@@ -334,16 +310,6 @@ export class YouTubeMonitor {
 
     } catch (error) {
       errorWithTimestamp(`[YOUTUBE_MONITOR] Error scanning channel ${channel.channelId}:`, error);
-
-      // Handle RSS 404 errors
-      if (error instanceof Error && error.message.includes('404')) {
-        logWithTimestamp(`[YOUTUBE_MONITOR] RSS 404 error - deactivating channel: ${channel.title}`);
-        await storage.updateChannelActiveStatus(
-          channel.channelId,
-          false,
-          `RSS 피드 접근 불가 (404) - ${new Date().toISOString()}`
-        );
-      } else {
         await errorLogger.logError(error as Error, {
           service: "YouTubeMonitor",
           operation: "scanSingleChannel",
@@ -799,6 +765,5 @@ export class YouTubeMonitor {
       isProcessingSummaries: this.state.isProcessingSummaries,
       queueLength: this.state.summaryQueue.length,
       concurrentLimit: this.CONCURRENT_LIMIT,
-    };
-  }
+    }
 }
