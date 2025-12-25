@@ -764,5 +764,6 @@ export class YouTubeMonitor {
       isProcessingSummaries: this.state.isProcessingSummaries,
       queueLength: this.state.summaryQueue.length,
       concurrentLimit: this.CONCURRENT_LIMIT,
-    }
+    };
+  }
 }
