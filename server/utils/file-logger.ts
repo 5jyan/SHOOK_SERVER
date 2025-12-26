@@ -28,7 +28,7 @@ function openStreamForDate(date: string): fs.WriteStream | undefined {
 
   try {
     fs.mkdirSync(logDir, { recursive: true });
-    const filePath = path.join(logDir, date);
+    const filePath = path.join(logDir, `${date}.log`);
     return fs.createWriteStream(filePath, { flags: "a" });
   } catch {
     return undefined;
