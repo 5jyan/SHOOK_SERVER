@@ -1,3 +1,7 @@
+import { initFileLogger } from "./file-logger.js";
+
+initFileLogger();
+
 export function getKoreanTimestamp(): string {
   const now = new Date();
   
