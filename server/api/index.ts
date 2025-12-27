@@ -9,7 +9,7 @@ import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { channelService, youtubeMonitor } from "../services/index.js";
 import { errorLogger } from "../services/error-logging-service.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
-import { storage } from "../repositories/storage.js";
+import { pool } from "../lib/db.js";
 
 import authRoutes from "./auth.js";
 
@@ -23,7 +23,7 @@ router.get("/health", async (req, res) => {
 
   try {
     // Quick DB connection test
-    await storage.db.execute('SELECT 1');
+    await pool.query("SELECT 1");
 
     const responseTime = Date.now() - startTime;
     const monitorStatus = youtubeMonitor.getStatus();
