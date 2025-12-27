@@ -103,6 +103,8 @@ jobs:
             # 기존 서비스 중지
             echo "⏹️ Stopping existing services..."
             docker compose down --remove-orphans 2>/dev/null || true
+            echo "Cleaning up stopped containers..."
+            docker container prune -f || true
             
             # 새 서비스 시작
             echo "▶️ Starting services..."
@@ -140,11 +142,20 @@ jobs:
               docker compose logs --tail 30 app
               exit 1
             fi
+            echo "Cleaning up unused images..."
+            docker image prune -af || true
+            current_image_id=$(docker inspect -f '{{.Image}}' shook-app 2>/dev/null || true)
+            if [ -n "$current_image_id" ]; then
+              old_image_ids=$(docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | awk -v current="$current_image_id" '$1 ~ /^ssaulpark\/shook:/ && $2 != current {print $2}' | sort -u)
+              if [ -n "$old_image_ids" ]; then
+                docker rmi -f $old_image_ids || true
+              fi
+            fi
+            echo "Remaining dangling images:"
+            docker images -f "dangling=true" --format "{{.ID}} {{.CreatedSince}}"
+
             
             # 사용하지 않는 이미지 정리
-            echo "🧹 Cleaning up unused images..."
-            docker container prune -f || true
-            docker image prune -af || true
             
             echo "🎉 Deployment completed successfully!"
 
