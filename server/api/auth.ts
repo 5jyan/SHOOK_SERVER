@@ -203,28 +203,18 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
     const email = kakaoUser.kakao_account?.email || null;
     const nickname = kakaoUser.properties?.nickname || "카카오 사용자";
 
-    // Find or create user in our database
-    let user = await storage.getUserByKakaoId(kakaoId);
+    const shouldLinkAccount = convertGuestAccount && req.isAuthenticated();
 
-    if (!user) {
-      // Check if we should convert guest account
-      if (convertGuestAccount && req.isAuthenticated()) {
-        const currentUser = req.user as any;
-        if (currentUser.authProvider === 'guest') {
-          // Convert guest account to Kakao account
-          user = await storage.convertGuestToKakao(currentUser.id, kakaoId, email);
-        } else {
-          // Create new user with Kakao info
-          user = await storage.createUser({
-            username: `kakao_${kakaoId}`,
-            email: email,
-            kakaoId: kakaoId,
-            authProvider: "kakao",
-            role: "user",
-          });
-        }
-      } else {
-        // Create new user with Kakao info
+    let user;
+
+    if (shouldLinkAccount) {
+      const currentUser = req.user as any;
+      user = await storage.linkKakaoAccount(currentUser.id, kakaoId, email);
+    } else {
+      // Find or create user in our database for login flow
+      user = await storage.getUserByKakaoId(kakaoId);
+
+      if (!user) {
         user = await storage.createUser({
           username: `kakao_${kakaoId}`,
           email: email,

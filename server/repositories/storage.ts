@@ -32,6 +32,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserEmail(userId: number, email: string): Promise<void>;
   deleteUser(userId: number): Promise<void>;
+  linkKakaoAccount(userId: number, kakaoId: string, email: string | null): Promise<User>;
   
   // YouTube Channel methods
   getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined>;
@@ -151,6 +152,65 @@ export class DatabaseStorage implements IStorage {
 
     logWithTimestamp(`[storage.ts] Guest user ${userId} successfully converted to Kakao account`);
     return updatedUser;
+  }
+
+  async linkKakaoAccount(userId: number, kakaoId: string, email: string | null): Promise<User> {
+    logWithTimestamp(`[storage.ts] linkKakaoAccount for user ${userId}`);
+
+    return db.transaction(async (tx) => {
+      const [currentUser] = await tx.select().from(users).where(eq(users.id, userId));
+      if (!currentUser) {
+        throw new Error(`User ${userId} not found`);
+      }
+
+      const [linkedUser] = await tx.select().from(users).where(eq(users.kakaoId, kakaoId));
+
+      if (linkedUser && linkedUser.id !== userId) {
+        logWithTimestamp(`[storage.ts] Unlinking Kakao from user ${linkedUser.id}`);
+        await tx.update(users).set({ kakaoId: null }).where(eq(users.id, linkedUser.id));
+
+        logWithTimestamp(`[storage.ts] Migrating channels from user ${linkedUser.id} to user ${userId}`);
+        const sourceChannels = await tx
+          .select({
+            channelId: userChannels.channelId,
+            createdAt: userChannels.createdAt,
+          })
+          .from(userChannels)
+          .where(eq(userChannels.userId, linkedUser.id));
+
+        await tx.delete(userChannels).where(eq(userChannels.userId, userId));
+
+        if (sourceChannels.length > 0) {
+          await tx.insert(userChannels).values(
+            sourceChannels.map((channel) => ({
+              userId,
+              channelId: channel.channelId,
+              createdAt: channel.createdAt,
+            }))
+          );
+        }
+      }
+
+      const updateData: { kakaoId: string; email?: string; authProvider?: string } = {
+        kakaoId,
+      };
+
+      if (!currentUser.email && email) {
+        updateData.email = email;
+      }
+
+      if (currentUser.authProvider === "guest") {
+        updateData.authProvider = "kakao";
+      }
+
+      const [updatedUser] = await tx
+        .update(users)
+        .set(updateData)
+        .where(eq(users.id, userId))
+        .returning();
+
+      return updatedUser;
+    });
   }
 
   async getYoutubeChannel(channelId: string): Promise<YoutubeChannel | undefined> {
