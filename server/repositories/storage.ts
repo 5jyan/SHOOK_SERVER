@@ -164,10 +164,15 @@ export class DatabaseStorage implements IStorage {
       }
 
       const [linkedUser] = await tx.select().from(users).where(eq(users.kakaoId, kakaoId));
+      let linkedUserRole: User["role"] | undefined = undefined;
 
       if (linkedUser && linkedUser.id !== userId) {
         logWithTimestamp(`[storage.ts] Unlinking Kakao from user ${linkedUser.id}`);
-        await tx.update(users).set({ kakaoId: null }).where(eq(users.id, linkedUser.id));
+        await tx
+          .update(users)
+          .set({ kakaoId: null, authProvider: "guest" })
+          .where(eq(users.id, linkedUser.id));
+        linkedUserRole = linkedUser.role;
 
         logWithTimestamp(`[storage.ts] Migrating channels from user ${linkedUser.id} to user ${userId}`);
         const sourceChannels = await tx
@@ -191,7 +196,7 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      const updateData: { kakaoId: string; email?: string; authProvider?: string } = {
+      const updateData: { kakaoId: string; email?: string; authProvider?: string; role?: User["role"] } = {
         kakaoId,
       };
 
@@ -201,6 +206,10 @@ export class DatabaseStorage implements IStorage {
 
       if (currentUser.authProvider === "guest") {
         updateData.authProvider = "kakao";
+      }
+
+      if (linkedUserRole && currentUser.role !== linkedUserRole) {
+        updateData.role = linkedUserRole;
       }
 
       const [updatedUser] = await tx
