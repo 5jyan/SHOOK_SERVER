@@ -77,6 +77,7 @@ router.post("/auth/email/login", async (req, res, next) => {
     // Create session
     req.login(user, (err) => {
       if (err) return next(err);
+      req.session.forceKakaoSync = { channels: true, videos: true };
       res.status(200).json({
         user: {
           id: user.id,

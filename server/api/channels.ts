@@ -30,8 +30,21 @@ router.get("/search", isAuthenticated, async (req, res) => {
 // Get user's channels
 router.get("/:userId", isAuthenticated, authorizeUser, async (req, res) => {
   try {
+    const forceSync = req.session.forceKakaoSync?.channels === true;
+    if (forceSync) {
+      delete req.headers["if-none-match"];
+      res.set("Cache-Control", "no-store");
+    }
+
     const channels = await channelService.getUserChannels(req.user!.id);
     res.json(channels);
+
+    if (forceSync && req.session.forceKakaoSync) {
+      req.session.forceKakaoSync.channels = false;
+      if (!req.session.forceKakaoSync.videos) {
+        delete req.session.forceKakaoSync;
+      }
+    }
   } catch (error) {
     errorWithTimestamp("[CHANNELS] Error getting user channels:", error);
     await errorLogger.logError(error as Error, {

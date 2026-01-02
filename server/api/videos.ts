@@ -12,12 +12,19 @@ const router = Router();
 router.get("/", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
   const username = req.user!.username;
+  const forceSync = req.session.forceKakaoSync?.videos === true;
   
   // Check for incremental sync parameter (move to outer scope for error handling)
   const sinceParam = req.query.since as string;
-  const since = sinceParam ? parseInt(sinceParam) : null;
+  const since = forceSync ? null : sinceParam ? parseInt(sinceParam) : null;
   
   try {
+    if (forceSync) {
+      delete req.headers["if-none-match"];
+      res.set("Cache-Control", "no-store");
+      logWithTimestamp(`[VIDEOS] Forcing full sync after Kakao login for user ${userId}`);
+    }
+
     logWithTimestamp(`[VIDEOS] Getting videos for user ${userId} (${username})`);
     
     // Get limit from query parameter (default: 50, max: 100)
@@ -56,6 +63,13 @@ router.get("/", isAuthenticated, async (req, res) => {
     }
     
     res.json(videos);
+
+    if (forceSync && req.session.forceKakaoSync) {
+      req.session.forceKakaoSync.videos = false;
+      if (!req.session.forceKakaoSync.channels) {
+        delete req.session.forceKakaoSync;
+      }
+    }
   } catch (error) {
     errorWithTimestamp(`[VIDEOS] Error getting videos for user ${userId}:`, error);
     await errorLogger.logError(error as Error, {
