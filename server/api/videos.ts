@@ -16,7 +16,10 @@ router.get("/", isAuthenticated, async (req, res) => {
   
   // Check for incremental sync parameter (move to outer scope for error handling)
   const sinceParam = req.query.since as string;
-  const since = forceSync ? null : sinceParam ? parseInt(sinceParam) : null;
+  const cursorParam = req.query.cursor as string | undefined;
+  const pagination = req.query.pagination === "1" || typeof cursorParam === "string";
+  const since = forceSync ? null : cursorParam ? null : sinceParam ? parseInt(sinceParam, 10) : null;
+  const effectiveCursor = forceSync ? undefined : cursorParam;
   
   try {
     if (forceSync) {
@@ -27,18 +30,28 @@ router.get("/", isAuthenticated, async (req, res) => {
 
     logWithTimestamp(`[VIDEOS] Getting videos for user ${userId} (${username})`);
     
-    // Get limit from query parameter (default: 50, max: 100)
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    // Get limit from query parameter
+    const limitParam = req.query.limit as string | undefined;
+    const parsedLimit = limitParam ? parseInt(limitParam, 10) : NaN;
+    const hasLimit = Number.isFinite(parsedLimit) && parsedLimit > 0;
+    const wantsAll = parsedLimit === 0;
+    const limit = since
+      ? Math.min(hasLimit ? parsedLimit : 50, 100)
+      : pagination
+        ? Math.min(hasLimit ? parsedLimit : 50, 100)
+        : wantsAll
+          ? 0
+          : Math.min(hasLimit ? parsedLimit : 50, 100);
     
     if (since) {
       logWithTimestamp(`[VIDEOS] Incremental sync requested since ${new Date(since).toISOString()}`);
       logWithTimestamp(`[VIDEOS] Requesting up to ${limit} new videos`);
     } else {
-      logWithTimestamp(`[VIDEOS] Full sync requested, limit: ${limit}`);
+      logWithTimestamp(`[VIDEOS] Full sync requested, limit: ${limit === 0 ? 'all' : limit}`);
     }
     
     // Bypass service layer to avoid circular import issues
-    const rawVideos = await storage.getVideosForUser(userId, limit, since || undefined);
+    const rawVideos = await storage.getVideosForUser(userId, limit, since || undefined, effectiveCursor);
     
     logWithTimestamp(`[VIDEOS] Successfully retrieved ${rawVideos.length} videos for user ${userId}`);
     
@@ -62,7 +75,15 @@ router.get("/", isAuthenticated, async (req, res) => {
       });
     }
     
-    res.json(videos);
+    if (pagination) {
+      const lastVideo = videos[videos.length - 1];
+      const nextCursor = lastVideo && limit > 0 && videos.length === limit
+        ? `${new Date(lastVideo.createdAt).getTime()}_${lastVideo.videoId}`
+        : null;
+      res.json({ videos, nextCursor });
+    } else {
+      res.json(videos);
+    }
 
     if (forceSync && req.session.forceKakaoSync) {
       req.session.forceKakaoSync.videos = false;

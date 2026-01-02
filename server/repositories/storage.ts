@@ -52,7 +52,7 @@ export interface IStorage {
   createVideo(video: InsertVideo): Promise<Video>;
   getVideo(videoId: string): Promise<Video | undefined>;
   getVideosByChannel(channelId: string, limit?: number): Promise<Video[]>;
-  getVideosForUser(userId: number, limit?: number, since?: number): Promise<Video[]>;
+  getVideosForUser(userId: number, limit?: number, since?: number, cursor?: string): Promise<Video[]>;
   updateVideoProcessingStatus(videoId: string, updates: Partial<Video>): Promise<void>;
   getPendingVideos(limit: number): Promise<Video[]>;
   getLiveVideos(limit: number): Promise<Video[]>;
@@ -394,9 +394,9 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(videos).where(eq(videos.channelId, channelId)).orderBy(desc(videos.publishedAt)).limit(limit);
   }
 
-  async getVideosForUser(userId: number, limit: number = 20, since?: number): Promise<Video[]> {
+  async getVideosForUser(userId: number, limit: number = 20, since?: number, cursor?: string): Promise<Video[]> {
     const sinceDate = since ? new Date(since) : null;
-    logWithTimestamp(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}`);
+    logWithTimestamp(`[storage.ts] getVideosForUser for userId: ${userId}, limit: ${limit === 0 ? 'all' : limit}${sinceDate ? `, since: ${sinceDate.toISOString()}` : ''}${cursor ? `, cursor: ${cursor}` : ''}`);
 
     // Get user's channel subscriptions with subscription dates
     const userSubscriptions = await db
@@ -557,14 +557,39 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // Sort by createdAt descending and apply limit
-    const sortedVideos = properFilteredVideos.sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ).slice(0, limit);
+    // Sort by createdAt descending and apply cursor (if any)
+    const sortedVideos = properFilteredVideos.sort((a, b) => {
+      const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return b.videoId.localeCompare(a.videoId);
+    });
 
-    logWithTimestamp(`[storage.ts] Filtered ${sortedVideos.length} videos for user ${userId} (after subscription filter + fallback)`);
+    let cursorFiltered = sortedVideos;
+    if (cursor) {
+      const [cursorTimePart, cursorId] = cursor.split("_");
+      const cursorTime = cursorTimePart ? parseInt(cursorTimePart, 10) : NaN;
+      if (Number.isFinite(cursorTime) && cursorId) {
+        cursorFiltered = sortedVideos.filter(video => {
+          const videoTime = new Date(video.createdAt).getTime();
+          if (videoTime < cursorTime) {
+            return true;
+          }
+          if (videoTime > cursorTime) {
+            return false;
+          }
+          return video.videoId < cursorId;
+        });
+      }
+    }
 
-    const userVideos = sortedVideos;
+    // Apply limit (0 = no limit)
+    const limitedVideos = limit === 0 ? cursorFiltered : cursorFiltered.slice(0, limit);
+
+    logWithTimestamp(`[storage.ts] Filtered ${limitedVideos.length} videos for user ${userId} (after subscription filter + fallback)`);
+
+    const userVideos = limitedVideos;
     
     // Log sample video with channel name for debugging
     if (userVideos.length > 0) {
