@@ -103,6 +103,40 @@ router.get("/", isAuthenticated, async (req, res) => {
   }
 });
 
+// GET /api/videos/:videoId - Get single video summary for authenticated user
+router.get("/:videoId", isAuthenticated, async (req, res) => {
+  const userId = req.user!.id;
+  const { videoId } = req.params;
+
+  try {
+    logWithTimestamp(`[VIDEOS] Getting single video ${videoId} for user ${userId}`);
+
+    const video = await storage.getVideo(videoId);
+    if (!video) {
+      res.status(404).json({ error: "Video not found." });
+      return;
+    }
+
+    const hasAccess = await storage.isUserSubscribedToChannel(userId, video.channelId);
+    if (!hasAccess) {
+      res.status(404).json({ error: "Video not found." });
+      return;
+    }
+
+    const [decoded] = decodeVideoHtmlEntities([video]);
+    res.json(decoded);
+  } catch (error) {
+    errorWithTimestamp(`[VIDEOS] Error getting video ${videoId} for user ${userId}:`, error);
+    await errorLogger.logError(error as Error, {
+      service: 'VideosRoute',
+      operation: 'getVideoById',
+      userId,
+      videoId
+    });
+    res.status(500).json({ error: "Failed to get video." });
+  }
+});
+
 // POST /api/videos/sample - Create sample data for testing (development only)
 router.post("/sample", isAuthenticated, async (req, res) => {
   const userId = req.user!.id;
