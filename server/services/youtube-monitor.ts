@@ -5,6 +5,7 @@ import { pushNotificationService } from "./push-notification-service.js";
 import { YoutubeChannel, Video, InsertVideo } from "../../shared/schema.js";
 import { decodeYouTubeTitle } from "../utils/html-decode.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { runWithBatchContext } from "../utils/transaction-context.js";
 import { youtubeApiUtils, VideoType } from "../utils/youtube-api-utils.js";
 
 interface RSSVideo {
@@ -568,88 +569,90 @@ export class YouTubeMonitor {
   // ================================
 
   public async monitorAllChannels(): Promise<void> {
-    const startTime = Date.now();
-    logWithTimestamp(`[YOUTUBE_MONITOR] Starting RSS scan cycle at ${new Date().toISOString()}`);
+    return runWithBatchContext("youtube-monitor", async () => {
+      const startTime = Date.now();
+      logWithTimestamp(`[YOUTUBE_MONITOR] Starting RSS scan cycle at ${new Date().toISOString()}`);
 
-    try {
-      // Don't reset queue - processing might be ongoing
-      // Instead, use Set-based deduplication to prevent duplicates
-      const videoIdsInQueue = new Set(this.state.summaryQueue.map(v => v.videoId));
-      logWithTimestamp(`[YOUTUBE_MONITOR] Current queue size: ${this.state.summaryQueue.length} videos (${videoIdsInQueue.size} unique)`);
+      try {
+        // Don't reset queue - processing might be ongoing
+        // Instead, use Set-based deduplication to prevent duplicates
+        const videoIdsInQueue = new Set(this.state.summaryQueue.map(v => v.videoId));
+        logWithTimestamp(`[YOUTUBE_MONITOR] Current queue size: ${this.state.summaryQueue.length} videos (${videoIdsInQueue.size} unique)`);
 
-      // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 3)
-      // This prevents duplicate queue entries since Phase 1 will skip videos already in DB
-      const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
-      logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
+        // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 3)
+        // This prevents duplicate queue entries since Phase 1 will skip videos already in DB
+        const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
+        logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
 
-      let addedPendingCount = 0;
-      for (const video of pendingVideos) {
-        // Skip if already in queue
-        if (videoIdsInQueue.has(video.videoId)) {
-          continue;
+        let addedPendingCount = 0;
+        for (const video of pendingVideos) {
+          // Skip if already in queue
+          if (videoIdsInQueue.has(video.videoId)) {
+            continue;
+          }
+
+          // Convert Video to RSSVideo format
+          const rssVideo: RSSVideo = {
+            videoId: video.videoId,
+            channelId: video.channelId,
+            title: video.title,
+            publishedAt: video.publishedAt,
+            channelTitle: video.channelTitle,
+            channelThumbnail: video.channelThumbnail,
+            videoType: video.videoType as VideoType | undefined,
+          };
+          this.state.summaryQueue.push(rssVideo);
+          videoIdsInQueue.add(video.videoId);
+          addedPendingCount++;
         }
 
-        // Convert Video to RSSVideo format
-        const rssVideo: RSSVideo = {
-          videoId: video.videoId,
-          channelId: video.channelId,
-          title: video.title,
-          publishedAt: video.publishedAt,
-          channelTitle: video.channelTitle,
-          channelThumbnail: video.channelThumbnail,
-          videoType: video.videoType as VideoType | undefined,
-        };
-        this.state.summaryQueue.push(rssVideo);
-        videoIdsInQueue.add(video.videoId);
-        addedPendingCount++;
-      }
+        logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedPendingCount} new pending videos (skipped ${pendingVideos.length - addedPendingCount} duplicates)`);
 
-      logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedPendingCount} new pending videos (skipped ${pendingVideos.length - addedPendingCount} duplicates)`);
+        // Phase 1: RSS Scan - collect new videos
+        // shouldProcessVideo() will automatically skip videos already in DB (from Phase 0.5)
+        const channels = await storage.getAllYoutubeChannels();
 
-      // Phase 1: RSS Scan - collect new videos
-      // shouldProcessVideo() will automatically skip videos already in DB (from Phase 0.5)
-      const channels = await storage.getAllYoutubeChannels();
+        logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
 
-      logWithTimestamp(`[YOUTUBE_MONITOR] Scanning ${channels.length} channels for new videos`);
-
-      let addedNewCount = 0;
-      for (const channel of channels) {
-        const newVideo = await this.scanSingleChannel(channel);
-        if (newVideo && !videoIdsInQueue.has(newVideo.videoId)) {
-          this.state.summaryQueue.push(newVideo);
-          videoIdsInQueue.add(newVideo.videoId);
-          addedNewCount++;
+        let addedNewCount = 0;
+        for (const channel of channels) {
+          const newVideo = await this.scanSingleChannel(channel);
+          if (newVideo && !videoIdsInQueue.has(newVideo.videoId)) {
+            this.state.summaryQueue.push(newVideo);
+            videoIdsInQueue.add(newVideo.videoId);
+            addedNewCount++;
+          }
         }
-      }
 
-      logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedNewCount} new videos from RSS scan`);
+        logWithTimestamp(`[YOUTUBE_MONITOR] Added ${addedNewCount} new videos from RSS scan`);
 
-      const scanTime = Date.now() - startTime;
-      const totalAdded = addedPendingCount + addedNewCount;
-      logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, added ${totalAdded} new videos to queue (${addedPendingCount} pending retries + ${addedNewCount} new from RSS)`);
+        const scanTime = Date.now() - startTime;
+        const totalAdded = addedPendingCount + addedNewCount;
+        logWithTimestamp(`[YOUTUBE_MONITOR] RSS scan completed in ${scanTime}ms, added ${totalAdded} new videos to queue (${addedPendingCount} pending retries + ${addedNewCount} new from RSS)`);
 
 
-      // Note: Live videos are now handled in processVideoSummary() via getPendingVideos()
-      // No need for separate Phase 1.6 anymore - live state check is integrated into main processing flow
-      logWithTimestamp(`[YOUTUBE_MONITOR] Total queue size: ${this.state.summaryQueue.length} videos (including videos from previous cycles)`);
+        // Note: Live videos are now handled in processVideoSummary() via getPendingVideos()
+        // No need for separate Phase 1.6 anymore - live state check is integrated into main processing flow
+        logWithTimestamp(`[YOUTUBE_MONITOR] Total queue size: ${this.state.summaryQueue.length} videos (including videos from previous cycles)`);
 
-      // Phase 2: Summary Processing (if any videos found)
-      if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
-        // Start processing asynchronously (don't await)
-        this.processSummaryQueue().catch(error => {
-          errorWithTimestamp('[YOUTUBE_MONITOR] Error in summary processing:', error);
+        // Phase 2: Summary Processing (if any videos found)
+        if (this.state.summaryQueue.length > 0 && !this.state.isProcessingSummaries) {
+          // Start processing asynchronously (don't await)
+          this.processSummaryQueue().catch(error => {
+            errorWithTimestamp('[YOUTUBE_MONITOR] Error in summary processing:', error);
+          });
+        }
+
+      } catch (error) {
+        errorWithTimestamp(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
+        await errorLogger.logError(error as Error, {
+          service: "YouTubeMonitor",
+          operation: "monitorAllChannels",
         });
       }
 
-    } catch (error) {
-      errorWithTimestamp(`[YOUTUBE_MONITOR] Error in monitoring cycle:`, error);
-      await errorLogger.logError(error as Error, {
-        service: "YouTubeMonitor",
-        operation: "monitorAllChannels",
-      });
-    }
-
-    logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Monitoring cycle completed at ${new Date().toISOString()}`);
+    });
   }
 
   // ================================

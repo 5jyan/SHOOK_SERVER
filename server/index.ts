@@ -10,6 +10,7 @@ import { setupPassport } from "./lib/auth.js";
 import apiRouter from "./api/index.js";
 import { youtubeMonitor } from "./services/index.js";
 import { logWithTimestamp, errorWithTimestamp } from "./utils/timestamp.js";
+import { runWithRequestContext } from "./utils/transaction-context.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +32,13 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 setupPassport();
+
+app.use((req, _res, next) => {
+  const basePath = `${req.baseUrl ?? ""}${req.path ?? ""}`;
+  const requestPath = basePath || req.path || req.originalUrl || "/";
+  const userId = (req.user as { id?: number } | undefined)?.id;
+  runWithRequestContext(requestPath, userId, () => next());
+});
 
 // Add logging for ALL requests
 app.use('*', (req, res, next) => {

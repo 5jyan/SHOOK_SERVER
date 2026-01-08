@@ -1,5 +1,6 @@
 // Push notification retry queue system
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { runWithBatchContext } from "../utils/transaction-context.js";
 import { errorLogger } from "./error-logging-service.js";
 import { storage } from "../repositories/storage.js";
 import { 
@@ -103,7 +104,9 @@ export class PushRetryQueue {
     // Process retries every 30 seconds
     this.retryTimer = setInterval(() => {
       if (!this.isProcessing) {
-        this.processRetryQueue();
+        runWithBatchContext("push-retry-queue", () => {
+          void this.processRetryQueue();
+        });
       }
     }, 30000);
   }

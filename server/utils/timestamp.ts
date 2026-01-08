@@ -1,4 +1,5 @@
 import { initFileLogger } from "./file-logger.js";
+import { getTransactionId } from "./transaction-context.js";
 
 initFileLogger();
 
@@ -19,10 +20,14 @@ export function getKoreanTimestamp(): string {
 
 export function logWithTimestamp(message: string, ...args: any[]): void {
   const timestamp = getKoreanTimestamp();
-  console.log(`${timestamp} ${message}`, ...args);
+  const transactionId = getTransactionId();
+  const formattedMessage = transactionId ? `[${transactionId}] ${message}` : message;
+  console.log(`${timestamp} ${formattedMessage}`, ...args);
 }
 
 export function errorWithTimestamp(message: string, ...args: any[]): void {
   const timestamp = getKoreanTimestamp();
-  console.error(`${timestamp} ${message}`, ...args);
+  const transactionId = getTransactionId();
+  const formattedMessage = transactionId ? `[${transactionId}] ${message}` : message;
+  console.error(`${timestamp} ${formattedMessage}`, ...args);
 }

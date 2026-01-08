@@ -1,5 +1,6 @@
 import { WebClient } from "@slack/web-api";
-import { getKoreanTimestamp, logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
+import { getTransactionId } from "../utils/transaction-context.js";
 
 class ErrorLoggingService {
   private slackClient?: WebClient;
@@ -43,11 +44,10 @@ class ErrorLoggingService {
     additionalInfo?: any;
   }) {
     try {
-      const timestamp = getKoreanTimestamp();
-      const errorMessage = this.formatErrorMessage(error, context, timestamp);
+      const errorMessage = this.formatErrorMessage(error, context);
 
       // 콘솔에 로그 출력
-      console.error(`${timestamp} [ERROR_LOGGING] ${errorMessage}`);
+      errorWithTimestamp(`[ERROR_LOGGING] ${errorMessage}`);
 
       // 슬랙으로 에러 전송
       if (this.slackEnabled && this.slackClient && this.slackChannel) {
@@ -60,11 +60,15 @@ class ErrorLoggingService {
     }
   }
 
-  private formatErrorMessage(error: Error, context?: any, timestamp?: string): string {
+  private formatErrorMessage(error: Error, context?: any): string {
     let message = `🚨 서비스 에러 발생\n`;
+    const transactionId = getTransactionId();
     message += `서비스: ${context?.service || 'Unknown'}\n`;
     message += `작업: ${context?.operation || 'Unknown'}\n`;
     message += `사용자 ID: ${context?.userId || 'N/A'}\n`;
+    if (transactionId) {
+      message += `TransactionId: ${transactionId}\n`;
+    }
     message += `에러: ${error.message}\n`;
     
     if (context?.additionalInfo) {
@@ -81,9 +85,7 @@ class ErrorLoggingService {
   async logCustomMessage(message: string, level: 'info' | 'warning' | 'error' = 'info') {
     try {
       const emoji = level === 'error' ? '🚨' : level === 'warning' ? '⚠️' : 'ℹ️';
-      const timestamp = getKoreanTimestamp();
-
-      console.log(`${timestamp} [ERROR_LOGGING] ${emoji} ${level.toUpperCase()}: ${message}`);
+      logWithTimestamp(`[ERROR_LOGGING] ${emoji} ${level.toUpperCase()}: ${message}`);
 
       // 슬랙으로 메시지 전송 (error와 warning만)
       if (this.slackEnabled && this.slackClient && this.slackChannel && level !== 'info') {

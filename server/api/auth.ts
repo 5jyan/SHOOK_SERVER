@@ -5,6 +5,7 @@ import { hashPassword } from "../lib/auth.js";
 import { scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { errorLogger } from "../services/error-logging-service.js";
+import { errorWithTimestamp } from "../utils/timestamp.js";
 
 const scryptAsync = promisify(scrypt);
 
@@ -88,7 +89,7 @@ router.post("/auth/email/login", async (req, res, next) => {
       });
     });
   } catch (error) {
-    console.error("Login error:", error);
+    errorWithTimestamp("Login error:", error);
     await errorLogger.logError(error as Error, {
       service: 'AuthRoutes',
       operation: 'emailLogin',
@@ -114,13 +115,13 @@ router.delete("/auth/account", async (req, res, next) => {
     // Destroy session after account deletion
     req.logout((err) => {
       if (err) {
-        console.error("Error logging out after account deletion:", err);
+        errorWithTimestamp("Error logging out after account deletion:", err);
         // Continue anyway since account is deleted
       }
       res.status(200).json({ success: true, message: "Account deleted successfully" });
     });
   } catch (error) {
-    console.error("Account deletion error:", error);
+    errorWithTimestamp("Account deletion error:", error);
     await errorLogger.logError(error as Error, {
       service: 'AuthRoutes',
       operation: 'deleteAccount',
@@ -168,7 +169,7 @@ router.post("/auth/guest", async (req, res, next) => {
       });
     });
   } catch (error) {
-    console.error("Guest account creation error:", error);
+    errorWithTimestamp("Guest account creation error:", error);
     await errorLogger.logError(error as Error, {
       service: 'AuthRoutes',
       operation: 'guestAccountCreation',
@@ -241,7 +242,7 @@ router.post("/auth/kakao/verify", async (req, res, next) => {
       });
     });
   } catch (error) {
-    console.error("Kakao verification error:", error);
+    errorWithTimestamp("Kakao verification error:", error);
     await errorLogger.logError(error as Error, {
       service: 'AuthRoutes',
       operation: 'kakaoVerify'

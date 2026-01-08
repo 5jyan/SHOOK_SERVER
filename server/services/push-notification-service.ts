@@ -61,7 +61,7 @@ export class PushNotificationService {
       const pushTokens = await storage.getPushTokensByUserId(userId);
       
       if (pushTokens.length === 0) {
-        console.warn(`🔔 [PushNotificationService] No push tokens found for user ${userId}`);
+        logWithTimestamp(`🔔 [PushNotificationService] No push tokens found for user ${userId}`);
         return false;
       }
 
@@ -91,7 +91,7 @@ export class PushNotificationService {
       const usersWithTokens = await storage.findUsersByChannelId(channelId);
       
       if (usersWithTokens.length === 0) {
-        console.warn(`🔔 [PushNotificationService] No subscribers with push tokens found for channel ${channelId}`);
+        logWithTimestamp(`🔔 [PushNotificationService] No subscribers with push tokens found for channel ${channelId}`);
         return 0;
       }
 
@@ -131,7 +131,7 @@ export class PushNotificationService {
       const tokenStrings = tokens.map(tokenRecord => tokenRecord.token);
 
       if (tokenStrings.length === 0) {
-        console.warn('🔔 [PushNotificationService] No tokens provided');
+        logWithTimestamp('🔔 [PushNotificationService] No tokens provided');
         return false;
       }
 
@@ -303,7 +303,7 @@ export class PushNotificationService {
             
             if (receipt.details && receipt.details.error === 'DeviceNotRegistered') {
               // TODO: Remove the token from database
-              console.warn('🔔 [PushNotificationService] Should remove invalid token from database');
+              logWithTimestamp('🔔 [PushNotificationService] Should remove invalid token from database');
             }
           }
         }
