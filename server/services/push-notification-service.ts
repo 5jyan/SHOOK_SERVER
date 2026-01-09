@@ -344,8 +344,8 @@ export class PushNotificationService {
     logWithTimestamp(`🔔 [PushNotificationService] Sending new video summary notification for channel ${channelId}`);
     
     const notification: PushNotificationPayload = {
-      title: `📺 ${videoData.channelName}`,
-      body: `새 영상: ${videoData.title}`,
+      title: videoData.channelName,
+      body: videoData.title,
       data: {
         type: 'new_video_summary',
         videoId: videoData.videoId,
