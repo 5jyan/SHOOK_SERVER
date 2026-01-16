@@ -3,8 +3,10 @@ import { ChannelService } from "./channel-service.js";
 import { YouTubeMonitor } from "./youtube-monitor.js";
 import { YouTubeSummaryService } from "./youtube-summary.js";
 import { PushNotificationService } from "./push-notification-service.js";
+import { PopularChannelsService } from "./popular-channels-service.js";
 
 export const channelService = new ChannelService();
 export const youtubeMonitor = new YouTubeMonitor();
 export const summaryService = new YouTubeSummaryService();
 export const pushNotificationService = new PushNotificationService();
+export const popularChannelsService = new PopularChannelsService();

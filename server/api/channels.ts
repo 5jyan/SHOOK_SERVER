@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { channelService } from "../services/index.js";
+import { channelService, popularChannelsService } from "../services/index.js";
 import { isAuthenticated, authorizeUser } from "../utils/auth-utils.js";
 import { errorLogger } from "../services/error-logging-service.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
@@ -24,6 +24,22 @@ router.get("/search", isAuthenticated, async (req, res) => {
       additionalInfo: { query: req.query.query }
     });
     res.status(500).json({ error: "Failed to search channels" });
+  }
+});
+
+// Get popular channels (cached daily)
+router.get("/popular", isAuthenticated, async (req, res) => {
+  try {
+    const channels = await popularChannelsService.getPopularChannels();
+    res.json(channels);
+  } catch (error) {
+    errorWithTimestamp("[CHANNELS] Error getting popular channels:", error);
+    await errorLogger.logError(error as Error, {
+      service: 'ChannelRoutes',
+      operation: 'getPopularChannels',
+      userId: req.user!.id
+    });
+    res.status(500).json({ error: "Failed to get popular channels" });
   }
 });
 

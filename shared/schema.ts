@@ -73,6 +73,18 @@ export const userChannels = pgTable("user_channels", {
   userChannelUnique: uniqueIndex("idx_user_channels_unique").on(table.userId, table.channelId),
 }));
 
+
+// Popular channels cache (daily refresh)
+export const popularChannels = pgTable("popular_channels", {
+  rank: integer("rank").primaryKey(),
+  channelId: text("channel_id").notNull().references(() => youtubeChannels.channelId),
+  userSubscriberCount: integer("user_subscriber_count").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  channelIdIdx: index("idx_popular_channels_channel_id").on(table.channelId),
+  channelUnique: uniqueIndex("idx_popular_channels_channel_unique").on(table.channelId),
+}));
+
 // Push notification tokens
 export const pushTokens = pgTable("push_tokens", {
   id: serial("id").primaryKey(),
@@ -114,6 +126,7 @@ export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
 export const youtubeChannelsRelations = relations(youtubeChannels, ({ many }) => ({
   userChannels: many(userChannels),
   videos: many(videos),
+  popularChannels: many(popularChannels),
 }));
 
 export const videosRelations = relations(videos, ({ one }) => ({
@@ -133,6 +146,14 @@ export const userChannelsRelations = relations(userChannels, ({ one }) => ({
     references: [youtubeChannels.channelId],
   }),
 }));
+
+export const popularChannelsRelations = relations(popularChannels, ({ one }) => ({
+  youtubeChannel: one(youtubeChannels, {
+    fields: [popularChannels.channelId],
+    references: [youtubeChannels.channelId],
+  }),
+}));
+
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -172,5 +193,7 @@ export type InsertVideo = z.infer<typeof insertVideoSchema>;
 export type Video = typeof videos.$inferSelect;
 export type InsertUserChannel = z.infer<typeof insertUserChannelSchema>;
 export type UserChannel = typeof userChannels.$inferSelect;
+export type InsertPopularChannel = typeof popularChannels.$inferInsert;
+export type PopularChannel = typeof popularChannels.$inferSelect;
 export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
 export type PushToken = typeof pushTokens.$inferSelect;

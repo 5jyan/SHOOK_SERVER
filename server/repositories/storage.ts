@@ -2,6 +2,7 @@ import {
   users, 
   youtubeChannels, 
   userChannels,
+  popularChannels,
   videos,
   pushTokens,
   type User, 
@@ -41,6 +42,11 @@ export interface IStorage {
   updateChannelRecentVideo(channelId: string, videoId: string): Promise<void>;
 
   // User Channel subscription methods
+  // Popular channels cache methods
+  getPopularChannels(): Promise<(YoutubeChannel & { rank: number; userSubscriberCount: number })[]>;
+  replacePopularChannels(entries: { rank: number; channelId: string; userSubscriberCount: number }[]): Promise<void>;
+  getTopSubscribedChannels(limit: number): Promise<{ channelId: string; subscriberCount: number }[]>;
+
   getUserChannels(userId: number): Promise<(YoutubeChannel & { subscriptionId: number; subscribedAt: Date | null })[]>;
   isUserSubscribedToChannel(userId: number, channelId: string): Promise<boolean>;
   subscribeUserToChannel(userId: number, channelId: string): Promise<UserChannel>;
@@ -332,6 +338,59 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userChannels.channelId, channelId));
     
     return result.length;
+  }
+
+  async getTopSubscribedChannels(limit: number): Promise<{ channelId: string; subscriberCount: number }[]> {
+    logWithTimestamp("[storage.ts] getTopSubscribedChannels");
+    const subscriberCount = sql<number>`count(*)`;
+    const result = await db
+      .select({
+        channelId: userChannels.channelId,
+        subscriberCount: subscriberCount.as("subscriber_count"),
+      })
+      .from(userChannels)
+      .groupBy(userChannels.channelId)
+      .orderBy(desc(subscriberCount), userChannels.channelId)
+      .limit(limit);
+
+    return result.map((row) => ({
+      channelId: row.channelId,
+      subscriberCount: row.subscriberCount,
+    }));
+  }
+
+  async replacePopularChannels(entries: { rank: number; channelId: string; userSubscriberCount: number }[]): Promise<void> {
+    logWithTimestamp("[storage.ts] replacePopularChannels");
+    await db.transaction(async (tx) => {
+      await tx.delete(popularChannels);
+      if (entries.length > 0) {
+        await tx.insert(popularChannels).values(entries);
+      }
+    });
+  }
+
+  async getPopularChannels(): Promise<(YoutubeChannel & { rank: number; userSubscriberCount: number })[]> {
+    logWithTimestamp("[storage.ts] getPopularChannels");
+    const result = await db
+      .select({
+        rank: popularChannels.rank,
+        userSubscriberCount: popularChannels.userSubscriberCount,
+        channelId: youtubeChannels.channelId,
+        handle: youtubeChannels.handle,
+        title: youtubeChannels.title,
+        description: youtubeChannels.description,
+        thumbnail: youtubeChannels.thumbnail,
+        subscriberCount: youtubeChannels.subscriberCount,
+        videoCount: youtubeChannels.videoCount,
+        updatedAt: youtubeChannels.updatedAt,
+        recentVideoId: youtubeChannels.recentVideoId,
+        processed: youtubeChannels.processed,
+      })
+      .from(popularChannels)
+      .innerJoin(youtubeChannels, eq(popularChannels.channelId, youtubeChannels.channelId))
+      .orderBy(popularChannels.rank);
+
+    return result;
   }
 
   async deleteYoutubeChannel(channelId: string): Promise<void> {
