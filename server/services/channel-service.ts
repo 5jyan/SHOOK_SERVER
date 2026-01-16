@@ -141,7 +141,7 @@ export class ChannelService {
     logWithTimestamp(`[CHANNEL_SERVICE] checkChannelLimit for user ${userId}`);
     const userChannels = await storage.getUserChannels(userId);
     const user = await storage.getUser(userId);
-    const maxChannels = 5;
+    const maxChannels = 7;
 
     // manager 역할 사용자는 채널 제한이 없음
     if (user?.role !== 'manager' && userChannels.length >= maxChannels) {
