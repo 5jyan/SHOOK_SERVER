@@ -279,6 +279,7 @@ export class YouTubeMonitor {
       summary: null,
       transcript: null,
       processed: false,
+      isSummarized: false,
       videoType: 'none', // All videos treated as 'none' type
     } as InsertVideo;
 
@@ -369,7 +370,8 @@ export class YouTubeMonitor {
         processingCompletedAt: new Date(),
         summary: result.summary,
         transcript: result.transcript,
-        processed: true
+        processed: true,
+        isSummarized: true
       });
 
       // Send push notifications with timeout protection
@@ -422,7 +424,8 @@ export class YouTubeMonitor {
         processed: true, // Stop retrying
         retryCount: newRetryCount,
         summary: null,
-        transcript: null
+        transcript: null,
+        isSummarized: false
       });
     } else {
       // Retry available - keep as pending for next cycle
@@ -434,7 +437,8 @@ export class YouTubeMonitor {
         processed: false, // Will be retried
         retryCount: newRetryCount,
         summary: null,
-        transcript: null
+        transcript: null,
+        isSummarized: false
       });
     }
   }

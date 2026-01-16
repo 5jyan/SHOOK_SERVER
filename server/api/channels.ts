@@ -92,7 +92,8 @@ router.post("/", isAuthenticated, async (req, res) => {
       latestVideoId: result.latestVideo?.videoId,
       latestVideoProcessed: result.latestVideo?.processed,
       latestVideoHasSummary: !!result.latestVideo?.summary,
-      latestVideoSummaryLength: result.latestVideo?.summary?.length || 0
+      latestVideoSummaryLength: result.latestVideo?.summary?.length || 0,
+      latestVideosCount: result.latestVideos?.length || 0
     });
 
     res.json(result);

@@ -183,9 +183,56 @@ export class ChannelService {
 
       const { subscription, channel } = await this.subscribeUser(userId, channelInfo.channelId);
 
-      // Scenario 1: Brand new channel - process latest 3 videos in background
+      // Scenario 1: Brand new channel - return latest videos immediately, process summaries in background
       if (isNewChannel) {
-        logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, processing latest videos in background`);
+        logWithTimestamp(`[CHANNEL_SERVICE] New channel detected, fetching latest videos for response`);
+
+        const { youtubeMonitor } = await import('./index.js');
+        let latestVideos = [] as Array<{
+          videoId: string;
+          channelId: string;
+          title: string;
+          publishedAt: Date;
+          summary: null;
+          transcript: null;
+          processed: false;
+          isSummarized: false;
+          errorMessage: null;
+          createdAt: Date;
+          channelTitle: string;
+          channelThumbnail: string | null;
+          processingStatus: 'pending';
+          processingStartedAt: null;
+          processingCompletedAt: null;
+          retryCount: number;
+          videoType: string;
+        }>;
+
+        try {
+          const rssVideos = await youtubeMonitor.getLatestVideosFromChannel(channelInfo.channelId, 3);
+          const createdAt = new Date();
+          latestVideos = rssVideos.map((video) => ({
+            videoId: video.videoId,
+            channelId: video.channelId,
+            title: video.title,
+            publishedAt: video.publishedAt,
+            summary: null,
+            transcript: null,
+            processed: false,
+            isSummarized: false,
+            errorMessage: null,
+            createdAt,
+            channelTitle: video.channelTitle,
+            channelThumbnail: video.channelThumbnail,
+            processingStatus: 'pending',
+            processingStartedAt: null,
+            processingCompletedAt: null,
+            retryCount: 0,
+            videoType: video.videoType || 'none',
+          }));
+        } catch (videoFetchError) {
+          errorWithTimestamp(`[CHANNEL_SERVICE] Failed to fetch latest videos for channel ${channelInfo.channelId}:`, videoFetchError);
+        }
 
         // Process videos asynchronously (don't await)
         // IMPORTANT: Use channelInfo.channelId (from API) instead of parameter channelId
@@ -201,10 +248,11 @@ export class ChannelService {
 
         return {
           success: true,
-          message: "채널이 성공적으로 추가되었습니다",
+          message: "채널이 성공적으로 추가되었습니다.",
           channel,
           subscription,
-          latestVideo: null // Videos processing in background
+          latestVideo: latestVideos.length > 0 ? latestVideos[0] : null,
+          latestVideos
         };
       }
 
@@ -220,10 +268,11 @@ export class ChannelService {
 
       return {
         success: true,
-        message: "채널이 성공적으로 추가되었습니다",
+        message: "채널이 성공적으로 추가되었습니다.",
         channel,
         subscription,
-        latestVideo: existingVideos.length > 0 ? existingVideos[0] : null // Return first video for backwards compatibility
+        latestVideo: existingVideos.length > 0 ? existingVideos[0] : null, // Return first video for backwards compatibility
+        latestVideos: existingVideos
       };
     }
     catch (error) {

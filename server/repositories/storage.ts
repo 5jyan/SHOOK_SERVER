@@ -485,6 +485,7 @@ export class DatabaseStorage implements IStorage {
         summary: videos.summary,
         transcript: videos.transcript,
         processed: videos.processed,
+        isSummarized: videos.isSummarized,
         errorMessage: videos.errorMessage,
         createdAt: videos.createdAt,
         channelTitle: videos.channelTitle,

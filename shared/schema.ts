@@ -39,6 +39,7 @@ export const videos = pgTable("videos", {
   summary: text("summary"),
   transcript: text("transcript"),
   processed: boolean("processed").default(false),
+  isSummarized: boolean("is_summarized").default(false),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),
   // Added fields for better performance and metadata
