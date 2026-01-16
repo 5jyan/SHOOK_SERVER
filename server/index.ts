@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 import { storage } from "./repositories/storage.js";
 import { setupPassport } from "./lib/auth.js";
 import apiRouter from "./api/index.js";
-import { youtubeMonitor } from "./services/index.js";
+import { youtubeMonitor, popularChannelsService } from "./services/index.js";
 import { logWithTimestamp, errorWithTimestamp } from "./utils/timestamp.js";
 import { runWithRequestContext } from "./utils/transaction-context.js";
 
@@ -113,5 +113,8 @@ app.use((req, res, next) => {
     
     youtubeMonitor.startMonitoring();
     logWithTimestamp(`[express] YouTube channel monitoring started`);
+
+    popularChannelsService.startDailyRefresh();
+    logWithTimestamp(`[express] Popular channels refresh scheduled`);
   });
 })();
