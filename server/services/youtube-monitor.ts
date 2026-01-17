@@ -411,6 +411,22 @@ export class YouTubeMonitor {
 
     // Get current retry count and increment
     const existingVideo = await storage.getVideo(video.videoId);
+
+    if (errorMsg.includes("UPCOMING_LIVE_EVENT")) {
+      logWithTimestamp(`[YOUTUBE_MONITOR] Skipping upcoming live video: ${video.title}`);
+      await storage.updateVideoProcessingStatus(video.videoId, {
+        processingStatus: 'failed',
+        processingCompletedAt: new Date(),
+        errorMessage: '라이브 예정 영상 - 스킵',
+        processed: true,
+        retryCount: existingVideo?.retryCount || 0,
+        summary: null,
+        transcript: null,
+        isSummarized: false
+      });
+      return;
+    }
+
     const currentRetryCount = existingVideo?.retryCount || 0;
     const newRetryCount = currentRetryCount + 1;
 

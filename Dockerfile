@@ -18,6 +18,10 @@ WORKDIR /app
 # Set production environment
 ENV NODE_ENV=production
 
+# Install Python for youtube-transcript-api execution
+RUN apk add --no-cache python3 py3-pip \
+  && pip3 install --no-cache-dir youtube-transcript-api
+
 # Copy package files and install production dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev

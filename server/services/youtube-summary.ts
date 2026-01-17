@@ -10,6 +10,7 @@ const DEFAULT_MODEL_STR = "gpt-5-mini";
 // </important_do_not_delete>
 
 const execFileAsync = promisify(execFile);
+const PYTHON_BIN = "python3";
 
 export class YouTubeSummaryService {
   private openai: OpenAI;
@@ -43,6 +44,11 @@ export class YouTubeSummaryService {
 
   // --- Helper functions for extractTranscript ---
 
+  private _isUpcomingLiveError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || "");
+    return message.toLowerCase().includes("live event will begin");
+  }
+
   private async _fetchTranscriptFromYoutubeTranscriptApi(
     videoId: string,
   ): Promise<string> {
@@ -55,17 +61,33 @@ export class YouTubeSummaryService {
       "    pass",
       "video_id = sys.argv[1]",
       "api = YouTubeTranscriptApi()",
+      "transcript = None",
       "try:",
-        "    transcript = api.fetch(video_id, ('ko', 'en'))",
+      "    transcript = api.fetch(video_id, ('ko',))",
       "except Exception:",
-      "    transcript = api.fetch(video_id)",
-      "data = transcript.to_raw_data()",
+      "    try:",
+      "        transcript = api.fetch(video_id, ('en',))",
+      "    except Exception:",
+      "        try:",
+      "            transcript = api.fetch(video_id)",
+      "        except Exception:",
+      "            transcript_list = api.list(video_id)",
+      "            try:",
+      "                transcript = transcript_list.find_generated_transcript(['ko', 'en'])",
+      "            except Exception:",
+      "                generated = getattr(transcript_list, '_generated_transcripts', {})",
+      "                if generated:",
+      "                    transcript = list(generated.values())[0]",
+      "                else:",
+      "                    raise",
+      "data_source = transcript.fetch() if hasattr(transcript, 'fetch') else transcript",
+      "data = data_source.to_raw_data()",
       "text = ' '.join([item.get('text', '') for item in data]).strip()",
       "print(text)",
     ].join("\n");
 
     const result = await execFileAsync(
-      "python",
+      PYTHON_BIN,
       ["-c", pythonCode, videoId],
       {
         timeout: 30000,
@@ -201,11 +223,15 @@ export class YouTubeSummaryService {
         `[YOUTUBE_SUMMARY] youtube-transcript-api failed, falling back to SupaData...`,
         error,
       );
+      const isUpcomingLive = this._isUpcomingLiveError(error);
       await errorLogger.logError(error as Error, {
         service: "YouTubeSummaryService",
         operation: "extractTranscript.youtubeTranscriptApi",
-        additionalInfo: { youtubeUrl, videoId },
+        additionalInfo: { youtubeUrl, videoId, isUpcomingLive },
       });
+      if (isUpcomingLive) {
+        throw new Error("UPCOMING_LIVE_EVENT");
+      }
       const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
       transcriptText = this._parseSupaDataResponse(responseText);
     }
