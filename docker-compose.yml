@@ -11,6 +11,9 @@ services:
       - .env
     environment:
       LOG_DIR: /var/log/shook
+      YTA_PROXY_URL: socks5h://tor:9050
+    depends_on:
+      - tor
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s
@@ -24,6 +27,12 @@ services:
         max-file: "3"
     volumes:
       - /var/log/shook:/var/log/shook
+  tor:
+    image: dperson/torproxy:latest
+    container_name: shook-tor
+    restart: unless-stopped
+    networks:
+      - default
 
 networks:
   default:
