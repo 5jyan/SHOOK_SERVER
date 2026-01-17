@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { errorLogger } from "./error-logging-service.js";
 import { validateYouTubeUrl } from "../utils/validation.js";
 import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
@@ -6,6 +8,8 @@ import { logWithTimestamp, errorWithTimestamp } from "../utils/timestamp.js";
 // <important_do_not_delete>
 const DEFAULT_MODEL_STR = "gpt-5-mini";
 // </important_do_not_delete>
+
+const execFileAsync = promisify(execFile);
 
 export class YouTubeSummaryService {
   private openai: OpenAI;
@@ -38,6 +42,48 @@ export class YouTubeSummaryService {
   }
 
   // --- Helper functions for extractTranscript ---
+
+  private async _fetchTranscriptFromYoutubeTranscriptApi(
+    videoId: string,
+  ): Promise<string> {
+    const pythonCode = [
+      "import sys",
+      "from youtube_transcript_api import YouTubeTranscriptApi",
+      "try:",
+      "    sys.stdout.reconfigure(encoding='utf-8')",
+      "except Exception:",
+      "    pass",
+      "video_id = sys.argv[1]",
+      "api = YouTubeTranscriptApi()",
+      "try:",
+        "    transcript = api.fetch(video_id, ('ko', 'en'))",
+      "except Exception:",
+      "    transcript = api.fetch(video_id)",
+      "data = transcript.to_raw_data()",
+      "text = ' '.join([item.get('text', '') for item in data]).strip()",
+      "print(text)",
+    ].join("\n");
+
+    const result = await execFileAsync(
+      "python",
+      ["-c", pythonCode, videoId],
+      {
+        timeout: 30000,
+        maxBuffer: 10 * 1024 * 1024,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: "utf-8",
+        },
+      },
+    );
+
+    const transcriptText = result.stdout.trim();
+    if (!transcriptText) {
+      throw new Error("Transcript empty from youtube-transcript-api.");
+    }
+
+    return transcriptText;
+  }
 
   private async _fetchTranscriptFromSupaData(youtubeUrl: string): Promise<string> {
     const requestUrl = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(youtubeUrl)}`;
@@ -146,8 +192,23 @@ export class YouTubeSummaryService {
     }
     logWithTimestamp(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
 
-    const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
-    const transcriptText = this._parseSupaDataResponse(responseText);
+    let transcriptText = "";
+    try {
+      logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting transcript via youtube-transcript-api...`);
+      transcriptText = await this._fetchTranscriptFromYoutubeTranscriptApi(videoId);
+    } catch (error) {
+      errorWithTimestamp(
+        `[YOUTUBE_SUMMARY] youtube-transcript-api failed, falling back to SupaData...`,
+        error,
+      );
+      await errorLogger.logError(error as Error, {
+        service: "YouTubeSummaryService",
+        operation: "extractTranscript.youtubeTranscriptApi",
+        additionalInfo: { youtubeUrl, videoId },
+      });
+      const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
+      transcriptText = this._parseSupaDataResponse(responseText);
+    }
 
     logWithTimestamp(
       `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
