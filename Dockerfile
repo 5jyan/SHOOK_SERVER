@@ -20,7 +20,7 @@ ENV NODE_ENV=production
 
 # Install Python for youtube-transcript-api execution
 RUN apk add --no-cache python3 py3-pip \
-  && pip3 install --no-cache-dir --break-system-packages youtube-transcript-api
+  && pip3 install --no-cache-dir --break-system-packages youtube-transcript-api requests[socks]
 
 # Copy package files and install production dependencies
 COPY package.json package-lock.json ./
