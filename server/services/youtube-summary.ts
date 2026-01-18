@@ -240,8 +240,7 @@ export class YouTubeSummaryService {
       if (isUpcomingLive) {
         throw new Error("UPCOMING_LIVE_EVENT");
       }
-      const responseText = await this._fetchTranscriptFromSupaData(youtubeUrl);
-      transcriptText = this._parseSupaDataResponse(responseText);
+      throw error;
     }
 
     logWithTimestamp(

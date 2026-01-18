@@ -30,6 +30,11 @@ export class YouTubeMonitor {
   private readonly CONCURRENT_LIMIT = 5; // Increased from 3 to 5 for faster processing
   private readonly SUMMARY_TIMEOUT = 120000; // 2 minutes
   private readonly MONITORING_INTERVAL = 10 * 60 * 1000; // 10 minutes (reduced API quota usage)
+  private readonly RETRY_DELAYS_MS = [
+    20 * 60 * 1000, // 20 minutes
+    90 * 60 * 1000, // 1 hour 30 minutes
+    3 * 60 * 60 * 1000, // 3 hours
+  ];
 
   // Runtime state
   private state = {
@@ -404,6 +409,16 @@ export class YouTubeMonitor {
     );
   }
 
+  private formatRetryDelay(delayMs: number): string {
+    const minutes = Math.round(delayMs / 60000);
+    if (minutes < 60) {
+      return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  }
+
   private async handleProcessingError(video: RSSVideo, error: any): Promise<void> {
     const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -429,14 +444,15 @@ export class YouTubeMonitor {
 
     const currentRetryCount = existingVideo?.retryCount || 0;
     const newRetryCount = currentRetryCount + 1;
+    const maxRetries = this.RETRY_DELAYS_MS.length;
 
-    if (newRetryCount >= 3) {
+    if (newRetryCount > maxRetries) {
       // Max retries reached - mark as processed and stop retrying
-      logWithTimestamp(`[YOUTUBE_MONITOR] Max retries reached (${newRetryCount}/3) for ${video.title}, marking as processed`);
+      logWithTimestamp(`[YOUTUBE_MONITOR] Max retries reached (${newRetryCount}/${maxRetries}) for ${video.title}, marking as processed`);
       await storage.updateVideoProcessingStatus(video.videoId, {
         processingStatus: 'failed',
         processingCompletedAt: new Date(),
-        errorMessage: `처리 실패: ${errorMsg} (재시도 3회 완료)`,
+        errorMessage: `?? ??: ${errorMsg} (??? ${maxRetries}? ??)`,
         processed: true, // Stop retrying
         retryCount: newRetryCount,
         summary: null,
@@ -444,12 +460,18 @@ export class YouTubeMonitor {
         isSummarized: false
       });
     } else {
-      // Retry available - keep as pending for next cycle
-      logWithTimestamp(`[YOUTUBE_MONITOR] Will retry for ${video.title} in next cycle (attempt ${newRetryCount + 1}/3)`);
+      // Retry available - keep as pending with backoff
+      const nextDelayMs = this.RETRY_DELAYS_MS[newRetryCount - 1];
+      const nextRetryAt = new Date(Date.now() + nextDelayMs);
+      const delayLabel = this.formatRetryDelay(nextDelayMs);
+      const totalAttempts = maxRetries + 1;
+      logWithTimestamp(
+        `[YOUTUBE_MONITOR] Will retry for ${video.title} in ${delayLabel} at ${nextRetryAt.toISOString()} (attempt ${newRetryCount + 1}/${totalAttempts})`,
+      );
       await storage.updateVideoProcessingStatus(video.videoId, {
         processingStatus: 'pending',
         processingCompletedAt: new Date(),
-        errorMessage: `처리 실패: ${errorMsg} (재시도 ${newRetryCount}/3)`,
+        errorMessage: `처리 실패: ${errorMsg} (재시도 ${newRetryCount}/${maxRetries}, ${delayLabel})`,
         processed: false, // Will be retried
         retryCount: newRetryCount,
         summary: null,
@@ -457,6 +479,7 @@ export class YouTubeMonitor {
         isSummarized: false
       });
     }
+
   }
 
   private async sendVideoNotification(video: RSSVideo, summary: string): Promise<void> {
@@ -599,7 +622,7 @@ export class YouTubeMonitor {
         const videoIdsInQueue = new Set(this.state.summaryQueue.map(v => v.videoId));
         logWithTimestamp(`[YOUTUBE_MONITOR] Current queue size: ${this.state.summaryQueue.length} videos (${videoIdsInQueue.size} unique)`);
 
-        // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 3)
+        // Phase 0.5: Add pending videos FIRST for retry (processed=false with retryCount < 4)
         // This prevents duplicate queue entries since Phase 1 will skip videos already in DB
         const pendingVideos = await storage.getPendingVideos(300); // Get all pending videos
         logWithTimestamp(`[YOUTUBE_MONITOR] Found ${pendingVideos.length} pending videos for retry`);
