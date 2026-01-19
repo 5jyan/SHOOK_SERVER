@@ -375,6 +375,7 @@ export class YouTubeMonitor {
         processingCompletedAt: new Date(),
         summary: result.summary,
         transcript: result.transcript,
+        transcriptSource: result.transcriptSource,
         processed: true,
         isSummarized: true
       });
