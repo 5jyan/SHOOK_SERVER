@@ -100,8 +100,7 @@ export class YouTubeSummaryService {
       "text = ' '.join([item.get('text', '') for item in data]).strip()",
       "payload = {'text': text, 'source': source or 'yta:unknown'}",
       "print(json.dumps(payload, ensure_ascii=True))",
-    ].join("
-");
+    ].join("\n");
 
     const result = await execFileAsync(
       PYTHON_BIN,
