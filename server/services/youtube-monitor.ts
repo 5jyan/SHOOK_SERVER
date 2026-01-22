@@ -32,8 +32,6 @@ export class YouTubeMonitor {
   private readonly MONITORING_INTERVAL = 10 * 60 * 1000; // 10 minutes (reduced API quota usage)
   private readonly RETRY_DELAYS_MS = [
     20 * 60 * 1000, // 20 minutes
-    90 * 60 * 1000, // 1 hour 30 minutes
-    3 * 60 * 60 * 1000, // 3 hours
   ];
 
   // Runtime state
@@ -375,7 +373,6 @@ export class YouTubeMonitor {
         processingCompletedAt: new Date(),
         summary: result.summary,
         transcript: result.transcript,
-        transcriptSource: result.transcriptSource,
         processed: true,
         isSummarized: true
       });

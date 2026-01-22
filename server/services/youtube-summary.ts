@@ -51,11 +51,10 @@ export class YouTubeSummaryService {
 
   private async _fetchTranscriptFromYoutubeTranscriptApi(
     videoId: string,
-  ): Promise<{ text: string; source: string }> {
+  ): Promise<string> {
     const pythonCode = [
       "import os",
       "import sys",
-      "import json",
       "from youtube_transcript_api import YouTubeTranscriptApi",
       "from youtube_transcript_api.proxies import GenericProxyConfig",
       "try:",
@@ -70,40 +69,11 @@ export class YouTubeSummaryService {
       "if proxy_http or proxy_https:",
       "    proxy_config = GenericProxyConfig(http_url=proxy_http, https_url=proxy_https)",
       "api = YouTubeTranscriptApi(proxy_config=proxy_config)",
-      "transcript = None",
-      "source = None",
-      "try:",
-      "    transcript = api.fetch(video_id, ('ko', 'en'))",
-      "    source = 'yta:ko,en'",
-      "except Exception:",
-      "    try:",
-      "        transcript = api.fetch(video_id, ('ko',))",
-      "        source = 'yta:ko'",
-      "    except Exception:",
-      "        try:",
-      "            transcript = api.fetch(video_id, ('en',))",
-      "            source = 'yta:en'",
-      "        except Exception:",
-      "            try:",
-      "                transcript = api.fetch(video_id)",
-      "                source = 'yta:auto'",
-      "            except Exception:",
-      "                transcript_list = api.list(video_id)",
-      "                try:",
-      "                    transcript = transcript_list.find_generated_transcript(['ko', 'en'])",
-      "                    source = 'yta:generated'",
-      "                except Exception:",
-      "                    generated = getattr(transcript_list, '_generated_transcripts', {})",
-      "                    if generated:",
-      "                        transcript = list(generated.values())[0]",
-      "                        source = 'yta:generated:first'",
-      "                    else:",
-      "                        raise",
+      "transcript = api.fetch(video_id, ('ko', 'en'))",
       "data_source = transcript.fetch() if hasattr(transcript, 'fetch') else transcript",
       "data = data_source.to_raw_data()",
       "text = ' '.join([item.get('text', '') for item in data]).strip()",
-      "payload = {'text': text, 'source': source or 'yta:unknown'}",
-      "print(json.dumps(payload, ensure_ascii=True))",
+      "print(text)",
     ].join("\n");
 
     const result = await execFileAsync(
@@ -119,24 +89,11 @@ export class YouTubeSummaryService {
       },
     );
 
-    const stdoutText = result.stdout.trim();
-    if (!stdoutText) {
+    const transcriptText = result.stdout.trim();
+    if (!transcriptText) {
       throw new Error("Transcript empty from youtube-transcript-api.");
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(stdoutText);
-    } catch (parseError) {
-      errorWithTimestamp(`[YOUTUBE_SUMMARY] Failed to parse transcript JSON`, parseError);
-      throw new Error("Transcript parse failed from youtube-transcript-api.");
-    }
-
-    if (!parsed.text || !parsed.text.trim()) {
-      throw new Error("Transcript empty from youtube-transcript-api.");
-    }
-
-    return { text: parsed.text, source: parsed.source || "yta:unknown" };
+    return transcriptText;
   }
 
   private async _fetchTranscriptFromSupaData(youtubeUrl: string): Promise<string> {
@@ -237,7 +194,7 @@ export class YouTubeSummaryService {
    */
   async extractTranscript(
     youtubeUrl: string,
-  ): Promise<{ text: string; source: string }> {
+  ): Promise<string> {
     logWithTimestamp(
       `[YOUTUBE_SUMMARY] Extracting transcript for URL: ${youtubeUrl}`,
     );
@@ -249,12 +206,9 @@ export class YouTubeSummaryService {
     logWithTimestamp(`[YOUTUBE_SUMMARY] Video ID extracted: ${videoId}`);
 
     let transcriptText = "";
-    let transcriptSource = "";
     try {
       logWithTimestamp(`[YOUTUBE_SUMMARY] Requesting transcript via youtube-transcript-api...`);
-      const transcriptResult = await this._fetchTranscriptFromYoutubeTranscriptApi(videoId);
-      transcriptText = transcriptResult.text;
-      transcriptSource = transcriptResult.source;
+      transcriptText = await this._fetchTranscriptFromYoutubeTranscriptApi(videoId);
     } catch (error) {
       errorWithTimestamp(
         `[YOUTUBE_SUMMARY] youtube-transcript-api failed, falling back to SupaData...`,
@@ -275,7 +229,7 @@ export class YouTubeSummaryService {
     logWithTimestamp(
       `[YOUTUBE_SUMMARY] Transcript successfully extracted: ${transcriptText.length} characters`,
     );
-    return { text: transcriptText, source: transcriptSource };
+    return transcriptText;
   }
 
   private _buildOpenAIPrompt(transcript: string, youtubeUrl: string): string {
@@ -339,12 +293,11 @@ export class YouTubeSummaryService {
    */
   async processYouTubeUrl(
     youtubeUrl: string,
-  ): Promise<{ transcript: string; transcriptSource: string; summary: string }> {
+  ): Promise<{ transcript: string; summary: string }> {
     logWithTimestamp(`[YOUTUBE_SUMMARY] Processing YouTube URL: ${youtubeUrl}`);
 
     // 1. Transcript extraction
-    const transcriptResult = await this.extractTranscript(youtubeUrl);
-    const transcript = transcriptResult.text;
+    const transcript = await this.extractTranscript(youtubeUrl);
 
     // 2. Summary generation
     const summary = await this.summarizeTranscript(transcript, youtubeUrl);
@@ -355,7 +308,6 @@ export class YouTubeSummaryService {
 
     return {
       transcript,
-      transcriptSource: transcriptResult.source,
       summary,
     };
   }

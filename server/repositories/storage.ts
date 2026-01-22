@@ -431,14 +431,12 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(videos.processingStatus, 'pending'),
           eq(videos.processed, false),
-          sql`(${videos.retryCount} IS NULL OR ${videos.retryCount} < 4)`,
+          sql`(${videos.retryCount} IS NULL OR ${videos.retryCount} < 2)`,
           sql`(
             ${videos.processingCompletedAt} IS NULL
             OR ${videos.retryCount} IS NULL
             OR ${videos.retryCount} = 0
             OR (${videos.retryCount} = 1 AND ${videos.processingCompletedAt} <= now() - interval '20 minutes')
-            OR (${videos.retryCount} = 2 AND ${videos.processingCompletedAt} <= now() - interval '90 minutes')
-            OR (${videos.retryCount} = 3 AND ${videos.processingCompletedAt} <= now() - interval '180 minutes')
           )`
         )
       )

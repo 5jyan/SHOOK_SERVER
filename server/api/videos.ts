@@ -60,7 +60,9 @@ router.get("/", isAuthenticated, async (req, res) => {
     }
     
     // Decode HTML entities in titles and summaries
-    const videos = decodeVideoHtmlEntities(rawVideos);
+    const videos = decodeVideoHtmlEntities(rawVideos).filter(
+      (video) => video.processingStatus === "completed",
+    );
     
     // Log first video as sample (without full content to avoid spam)
     if (videos.length > 0) {
