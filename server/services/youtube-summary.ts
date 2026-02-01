@@ -80,7 +80,7 @@ export class YouTubeSummaryService {
       PYTHON_BIN,
       ["-c", pythonCode, videoId],
       {
-        timeout: 30000,
+        timeout: 90000,
         maxBuffer: 10 * 1024 * 1024,
         env: {
           ...process.env,
